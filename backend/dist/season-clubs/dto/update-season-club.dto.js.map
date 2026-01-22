@@ -1,0 +1,1 @@
+{"version":3,"file":"update-season-club.dto.js","sourceRoot":"","sources":["../../../src/season-clubs/dto/update-season-club.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,6CAA8C;AAE9C,MAAa,mBAAmB;CAO/B;AAPD,kDAOC;AADC;IALC,IAAA,qBAAW,EAAC;QACX,WAAW,EAAE,0DAA0D;QACvE,OAAO,EAAE,sBAAsB;QAC/B,QAAQ,EAAE,KAAK;KAChB,CAAC;8BACU,IAAI;sDAAC"}

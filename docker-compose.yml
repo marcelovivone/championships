@@ -1,0 +1,15 @@
+services:
+  db_championships:
+    image: postgres:15
+    container_name: championships_container
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=knpt041121
+      - POSTGRES_DB=championships_db
+    ports:
+      - "5433:5432" # Windows 5433 -> Docker 5432
+    volumes:
+      - championships_db_data:/var/lib/postgresql/data
+
+volumes:
+  championships_db_data:

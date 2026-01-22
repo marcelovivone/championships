@@ -1,0 +1,1278 @@
+{
+  "info": {
+    "_postman_id": "championships-api-collection",
+    "name": "Championships API",
+    "description": "Complete API test suite for Championships Backend - Includes all endpoints for testing CRUD operations, filtering, and error handling.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Countries",
+      "item": [
+        {
+          "name": "Get All Countries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/countries",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries"]
+            },
+            "description": "Retrieve all countries from the database"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Country by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/countries/77",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries", "77"]
+            },
+            "description": "Retrieve a specific country by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Countries by Continent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/countries/continent/Europe",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries", "continent", "Europe"]
+            },
+            "description": "Retrieve countries filtered by continent"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Country",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Switzerland\",\n  \"continent\": \"Europe\",\n  \"code\": \"SUI\",\n  \"flagUrl\": \"https://flagcdn.com/ch.svg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/countries",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries"]
+            },
+            "description": "Create a new country"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Country",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Swiss Confederation\",\n  \"continent\": \"Europe\",\n  \"code\": \"CHE\",\n  \"flagUrl\": \"https://flagcdn.com/ch.svg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/countries/77",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries", "77"]
+            },
+            "description": "Update an existing country"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Country",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/countries/77",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries", "77"]
+            },
+            "description": "Delete a country by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sports",
+      "item": [
+        {
+          "name": "Get All Sports",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sports",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports"]
+            },
+            "description": "Retrieve all sports"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sport by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sports/15",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports", "15"]
+            },
+            "description": "Retrieve a specific sport by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sports by Type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sports/type/collective",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports", "type", "collective"]
+            },
+            "description": "Retrieve sports filtered by type (collective/individual)"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Sport",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Tennis\",\n  \"reducedName\": \"TN\",\n  \"type\": \"individual\",\n  \"divisionType\": \"set\",\n  \"divisionsNumber\": 3,\n  \"divisionTime\": 0,\n  \"scoreType\": \"games\",\n  \"hasOvertime\": false,\n  \"hasPenalties\": false,\n  \"imageUrl\": \"https://img.icons8.com/color/96/tennis.png\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sports",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports"]
+            },
+            "description": "Create a new sport"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Sport",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Basketball Pro\",\n  \"reducedName\": \"BP\",\n  \"type\": \"collective\",\n  \"divisionType\": \"quarter\",\n  \"divisionsNumber\": 4,\n  \"divisionTime\": 12,\n  \"scoreType\": \"points\",\n  \"hasOvertime\": true,\n  \"hasPenalties\": false,\n  \"imageUrl\": \"https://img.icons8.com/color/96/basketball.png\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/sports/15",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports", "15"]
+            },
+            "description": "Update an existing sport"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Sport",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sports/15",
+              "host": ["{{baseUrl}}"],
+              "path": ["sports", "15"]
+            },
+            "description": "Delete a sport by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Cities",
+      "item": [
+        {
+          "name": "Get All Cities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cities",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities"]
+            },
+            "description": "Retrieve all cities"
+          },
+          "response": []
+        },
+        {
+          "name": "Get City by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cities/22",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities", "22"]
+            },
+            "description": "Retrieve a specific city by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create City",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Zurich\",\n  \"countryId\": 77\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/cities",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities"]
+            },
+            "description": "Create a new city"
+          },
+          "response": []
+        },
+        {
+          "name": "Update City",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"New York City\",\n  \"countryId\": 79\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/cities/22",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities", "22"]
+            },
+            "description": "Update an existing city"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete City",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/cities/22",
+              "host": ["{{baseUrl}}"],
+              "path": ["cities", "22"]
+            },
+            "description": "Delete a city by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Clubs",
+      "item": [
+        {
+          "name": "Get All Clubs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clubs",
+              "host": ["{{baseUrl}}"],
+              "path": ["clubs"]
+            },
+            "description": "Retrieve all clubs"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Club by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clubs/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["clubs", "13"]
+            },
+            "description": "Retrieve a specific club by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Club",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Juventus\",\n  \"shortName\": \"JUV\",\n  \"foundationYear\": 1897,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/en/0/03/Juventus_FC_logo.svg\",\n  \"countryId\": 84\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clubs",
+              "host": ["{{baseUrl}}"],
+              "path": ["clubs"]
+            },
+            "description": "Create a new club"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Club",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Los Angeles Lakers Elite\",\n  \"shortName\": \"LAL\",\n  \"foundationYear\": 1947,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/commons/3/3c/Los_Angeles_Lakers_logo.svg\",\n  \"countryId\": 79\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/clubs/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["clubs", "13"]
+            },
+            "description": "Update an existing club"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Club",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clubs/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["clubs", "13"]
+            },
+            "description": "Delete a club by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Stadiums",
+      "item": [
+        {
+          "name": "Get All Stadiums",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stadiums",
+              "host": ["{{baseUrl}}"],
+              "path": ["stadiums"]
+            },
+            "description": "Retrieve all stadiums/gymnasiums"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stadium by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stadiums/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["stadiums", "13"]
+            },
+            "description": "Retrieve a specific stadium by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Stadium",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"San Siro\",\n  \"type\": \"stadium\",\n  \"capacity\": 80018,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/San_Siro_Aug_2011.jpg/1024px-San_Siro_Aug_2011.jpg\",\n  \"cityId\": 35\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stadiums",
+              "host": ["{{baseUrl}}"],
+              "path": ["stadiums"]
+            },
+            "description": "Create a new stadium"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Stadium",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Madison Square Garden Premium\",\n  \"type\": \"gymnasium\",\n  \"capacity\": 19812,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/commons/9/95/Madison_Square_Garden_-_November_13%2C_2014.jpg\",\n  \"cityId\": 22\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/stadiums/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["stadiums", "13"]
+            },
+            "description": "Update an existing stadium"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Stadium",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/stadiums/13",
+              "host": ["{{baseUrl}}"],
+              "path": ["stadiums", "13"]
+            },
+            "description": "Delete a stadium by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Leagues",
+      "item": [
+        {
+          "name": "Get All Leagues",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/leagues",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues"]
+            },
+            "description": "Retrieve all leagues"
+          },
+          "response": []
+        },
+        {
+          "name": "Get League by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/leagues/24",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues", "24"]
+            },
+            "description": "Retrieve a specific league by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create League",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originalName\": \"La Liga\",\n  \"secondaryName\": \"Primera División\",\n  \"sportId\": 17,\n  \"countryId\": 81,\n  \"startYear\": 2024,\n  \"endYear\": 2025,\n  \"numberOfTurns\": 2,\n  \"numberOfRounds\": 38,\n  \"minDivisionsNumber\": 1,\n  \"maxDivisionsNumber\": 1,\n  \"hasAscends\": true,\n  \"ascendsQuantity\": 1,\n  \"hasDescends\": true,\n  \"descendsQuantity\": 1,\n  \"hasSubLeagues\": false,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/en/8/86/La_Liga.svg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/leagues",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues"]
+            },
+            "description": "Create a new league"
+          },
+          "response": []
+        },
+        {
+          "name": "Update League",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originalName\": \"National Basketball Association\",\n  \"secondaryName\": \"NBA Pro\",\n  \"sportId\": 15,\n  \"countryId\": 79,\n  \"startYear\": 2024,\n  \"endYear\": 2025,\n  \"numberOfTurns\": 1,\n  \"numberOfRounds\": 82,\n  \"minDivisionsNumber\": 4,\n  \"maxDivisionsNumber\": 4,\n  \"hasAscends\": false,\n  \"hasDescends\": false,\n  \"hasSubLeagues\": true,\n  \"numberOfSubLeagues\": 2,\n  \"imageUrl\": \"https://upload.wikimedia.org/wikipedia/en/0/03/National_Basketball_Association_logo.svg\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/leagues/24",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues", "24"]
+            },
+            "description": "Update an existing league"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete League",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/leagues/24",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues", "24"]
+            },
+            "description": "Delete a league by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Add League Link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/leagues/24/links/25",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues", "24", "links", "25"]
+            },
+            "description": "Create partnership between two leagues"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove League Link",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/leagues/24/links/25",
+              "host": ["{{baseUrl}}"],
+              "path": ["leagues", "24", "links", "25"]
+            },
+            "description": "Remove partnership between two leagues"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Seasons & Season Clubs",
+      "item": [
+        {
+          "name": "Get Season Clubs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/season-clubs",
+              "host": ["{{baseUrl}}"],
+              "path": ["season-clubs"]
+            },
+            "description": "Retrieve all season clubs"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Phases",
+      "item": [
+        {
+          "name": "Get All Phases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/phases",
+              "host": ["{{baseUrl}}"],
+              "path": ["phases"]
+            },
+            "description": "Retrieve all phases"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Phase by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/phases/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["phases", "1"]
+            },
+            "description": "Retrieve a specific phase by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Phase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Group Stage\",\n  \"description\": \"Initial group phase of tournament\",\n  \"leagueId\": 24,\n  \"startDate\": \"2024-10-01\",\n  \"endDate\": \"2024-12-31\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/phases",
+              "host": ["{{baseUrl}}"],
+              "path": ["phases"]
+            },
+            "description": "Create a new phase"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Phase",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Group Stage Updated\",\n  \"description\": \"Updated group phase\",\n  \"leagueId\": 24,\n  \"startDate\": \"2024-10-01\",\n  \"endDate\": \"2024-12-31\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/phases/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["phases", "1"]
+            },
+            "description": "Update an existing phase"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Phase",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/phases/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["phases", "1"]
+            },
+            "description": "Delete a phase by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Groups",
+      "item": [
+        {
+          "name": "Get All Groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups"]
+            },
+            "description": "Retrieve all groups"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Group by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/groups/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups", "1"]
+            },
+            "description": "Retrieve a specific group by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Group",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Group A\",\n  \"phaseId\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/groups",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups"]
+            },
+            "description": "Create a new group"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Group",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Group A Updated\",\n  \"phaseId\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/groups/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups", "1"]
+            },
+            "description": "Update an existing group"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Group",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/groups/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["groups", "1"]
+            },
+            "description": "Delete a group by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Matches",
+      "item": [
+        {
+          "name": "Get All Matches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches"]
+            },
+            "description": "Retrieve all matches"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Match by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "1"]
+            },
+            "description": "Retrieve a specific match by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Match",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"homeTeamId\": 13,\n  \"awayTeamId\": 14,\n  \"phaseId\": 1,\n  \"groupId\": 1,\n  \"matchDate\": \"2024-10-15T18:00:00Z\",\n  \"status\": \"scheduled\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/matches",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches"]
+            },
+            "description": "Create a new match"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Match",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"homeTeamId\": 13,\n  \"awayTeamId\": 14,\n  \"phaseId\": 1,\n  \"groupId\": 1,\n  \"matchDate\": \"2024-10-16T18:00:00Z\",\n  \"status\": \"scheduled\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/matches/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "1"]
+            },
+            "description": "Update an existing match"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Match Score",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"homeScore\": 2,\n  \"awayScore\": 1,\n  \"status\": \"finished\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/matches/1/score",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "1", "score"]
+            },
+            "description": "Update match score"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Match",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/matches/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["matches", "1"]
+            },
+            "description": "Delete a match by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Standings",
+      "item": [
+        {
+          "name": "Get All Standings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/standings",
+              "host": ["{{baseUrl}}"],
+              "path": ["standings"]
+            },
+            "description": "Retrieve all standings"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Standing by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/standings/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["standings", "1"]
+            },
+            "description": "Retrieve a specific standing by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Standing",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": 13,\n  \"leagueId\": 24,\n  \"phaseId\": 1,\n  \"round\": 1,\n  \"wins\": 0,\n  \"losses\": 0,\n  \"draws\": 0,\n  \"pointsFor\": 0,\n  \"pointsAgainst\": 0,\n  \"position\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/standings",
+              "host": ["{{baseUrl}}"],
+              "path": ["standings"]
+            },
+            "description": "Create a new standing"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Standing",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"teamId\": 13,\n  \"leagueId\": 24,\n  \"phaseId\": 1,\n  \"round\": 1,\n  \"wins\": 1,\n  \"losses\": 0,\n  \"draws\": 0,\n  \"pointsFor\": 100,\n  \"pointsAgainst\": 85,\n  \"position\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/standings/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["standings", "1"]
+            },
+            "description": "Update an existing standing"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Standing",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/standings/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["standings", "1"]
+            },
+            "description": "Delete a standing by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Match Divisions",
+      "item": [
+        {
+          "name": "Get All Match Divisions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-divisions",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-divisions"]
+            },
+            "description": "Retrieve all match divisions (quarters, periods, sets, etc.)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Match Division by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-divisions/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-divisions", "1"]
+            },
+            "description": "Retrieve a specific match division by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Match Division",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": 1,\n  \"divisionNumber\": 1,\n  \"homeScore\": 25,\n  \"awayScore\": 22,\n  \"status\": \"finished\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/match-divisions",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-divisions"]
+            },
+            "description": "Create a new match division"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Match Division",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": 1,\n  \"divisionNumber\": 1,\n  \"homeScore\": 25,\n  \"awayScore\": 23,\n  \"status\": \"finished\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/match-divisions/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-divisions", "1"]
+            },
+            "description": "Update an existing match division"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Match Division",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-divisions/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-divisions", "1"]
+            },
+            "description": "Delete a match division by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Match Events",
+      "item": [
+        {
+          "name": "Get All Match Events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-events"]
+            },
+            "description": "Retrieve all match events (goals, fouls, substitutions, etc.)"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Match Event by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-events/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-events", "1"]
+            },
+            "description": "Retrieve a specific match event by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Match Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": 1,\n  \"teamId\": 13,\n  \"playerId\": 1,\n  \"eventType\": \"goal\",\n  \"minute\": 45,\n  \"description\": \"Goal scored\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/match-events",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-events"]
+            },
+            "description": "Create a new match event"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Match Event",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"matchId\": 1,\n  \"teamId\": 13,\n  \"playerId\": 1,\n  \"eventType\": \"goal\",\n  \"minute\": 46,\n  \"description\": \"Goal corrected minute\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/match-events/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-events", "1"]
+            },
+            "description": "Update an existing match event"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Match Event",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/match-events/1",
+              "host": ["{{baseUrl}}"],
+              "path": ["match-events", "1"]
+            },
+            "description": "Delete a match event by ID"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error Handling Tests",
+      "item": [
+        {
+          "name": "Get Non-existent Country (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/countries/99999",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries", "99999"]
+            },
+            "description": "Test 404 error handling"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Country with Missing Fields (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"TestCountry\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/countries",
+              "host": ["{{baseUrl}}"],
+              "path": ["countries"]
+            },
+            "description": "Test 400 Bad Request error handling"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import * as schema from '../db/schema';
+import { CreateSportDto, PaginationDto, UpdateSportDto } from '../common/dtos';
+export declare class SportsService {
+    private db;
+    constructor(db: NodePgDatabase<typeof schema>);
+    findAll(paginationDto: PaginationDto): Promise<{
+        data: {
+            id: number;
+            name: string;
+            reducedName: string;
+            type: string;
+            divisionType: string;
+            divisionsNumber: number;
+            divisionTime: number;
+            scoreType: string;
+            hasOvertime: boolean;
+            hasPenalties: boolean;
+            imageUrl: string;
+            createdAt: Date;
+        }[];
+        total: number;
+    }>;
+    findOne(id: number): Promise<{
+        id: number;
+        name: string;
+        reducedName: string;
+        type: string;
+        divisionType: string;
+        divisionsNumber: number;
+        divisionTime: number;
+        scoreType: string;
+        hasOvertime: boolean;
+        hasPenalties: boolean;
+        imageUrl: string;
+        createdAt: Date;
+    }>;
+    findByType(type: 'collective' | 'individual'): Promise<{
+        id: number;
+        name: string;
+        reducedName: string;
+        type: string;
+        divisionType: string;
+        divisionsNumber: number;
+        divisionTime: number;
+        scoreType: string;
+        hasOvertime: boolean;
+        hasPenalties: boolean;
+        imageUrl: string;
+        createdAt: Date;
+    }[]>;
+    create(createSportDto: CreateSportDto): Promise<{
+        id: number;
+        name: string;
+        reducedName: string;
+        type: string;
+        divisionType: string;
+        divisionsNumber: number;
+        divisionTime: number;
+        scoreType: string;
+        hasOvertime: boolean;
+        hasPenalties: boolean;
+        imageUrl: string;
+        createdAt: Date;
+    }>;
+    update(id: number, updateSportDto: UpdateSportDto): Promise<{
+        id: number;
+        name: string;
+        reducedName: string;
+        type: string;
+        divisionType: string;
+        divisionsNumber: number;
+        divisionTime: number;
+        scoreType: string;
+        hasOvertime: boolean;
+        hasPenalties: boolean;
+        imageUrl: string;
+        createdAt: Date;
+    }>;
+    remove(id: number): Promise<{
+        id: number;
+        name: string;
+        reducedName: string;
+        type: string;
+        divisionType: string;
+        divisionsNumber: number;
+        divisionTime: number;
+        scoreType: string;
+        hasOvertime: boolean;
+        hasPenalties: boolean;
+        imageUrl: string;
+        createdAt: Date;
+    }>;
+}
