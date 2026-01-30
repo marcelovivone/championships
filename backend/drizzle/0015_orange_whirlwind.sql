@@ -1,0 +1,1 @@
+ALTER TABLE "leagues" DROP COLUMN "number_of_turns";

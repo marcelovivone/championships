@@ -1,9 +1,9 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, asc, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { stadiums, cities } from '../db/schema';
-import { CreateStadiumDto, PaginationDto, UpdateStadiumDto } from '../common/dtos';
+import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
 export class StadiumsService {
@@ -15,9 +15,20 @@ export class StadiumsService {
   /**
    * Get all stadiums with city information
    */
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
+    const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
     const offset = (page - 1) * limit;
+
+    const sortableColumns = ['name', 'type', 'capacity', 'cityId'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    // Determine the sort column
+    let sortColumn = stadiums.name;
+    if (orderByField === 'type') sortColumn = stadiums.type;
+    else if (orderByField === 'capacity') sortColumn = stadiums.capacity;
+    else if (orderByField === 'cityId') sortColumn = stadiums.cityId;
 
     try {
       const data = await this.db
@@ -35,7 +46,7 @@ export class StadiumsService {
         })
         .from(stadiums)
         .leftJoin(cities, eq(stadiums.cityId, cities.id))
-        .orderBy(stadiums.name)
+        .orderBy(order(sortColumn))
         .limit(limit)
         .offset(offset);
 

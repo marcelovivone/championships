@@ -18,7 +18,7 @@ export default defineConfig({
   // Database connection credentials based on docker-compose.yml
   dbCredentials: {
     // Format: postgresql://[user]:[password]@[host]:[port]/[database]
-    // User: admin, Password: knpt041121, Port: 5433, DB: championships
-    url: 'postgresql://admin:knpt041121@localhost:5433/championships',
+    // User: admin, Password: knpt041121, Port: 5433, DB: championships_db
+    url: 'postgresql://admin:knpt041121@localhost:5433/championships_db',
   },
 });

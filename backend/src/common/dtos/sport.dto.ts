@@ -28,9 +28,13 @@ export class CreateSportDto {
   @IsString()
   divisionType: string;
 
-  @ApiProperty({ example: 2, description: 'Number of divisions (e.g. 2 halves, 4 quarters)' })
+  @ApiProperty({ example: 2, description: 'Minimum number of match divisions (e.g. 2 halves minimum)' })
   @IsInt()
-  divisionsNumber: number;
+  minMatchDivisionNumber: number;
+
+  @ApiProperty({ example: 2, description: 'Maximum number of match divisions (e.g. 2 halves, 4 quarters max)' })
+  @IsInt()
+  maxMatchDivisionNumber: number;
 
   @ApiProperty({ example: 45, description: 'Time per division in minutes' })
   @IsInt()
@@ -47,6 +51,10 @@ export class CreateSportDto {
   @ApiProperty({ example: true, description: 'Does the sport have penalties/shootouts?' })
   @IsBoolean()
   hasPenalties: boolean;
+
+  @ApiProperty({ example: false, description: 'Is this the default sport?' })
+  @IsBoolean()
+  flgDefault: boolean;
 
   @ApiProperty({ example: 'https://example.com/football.png', description: 'URL to sport icon' })
   @IsUrl()

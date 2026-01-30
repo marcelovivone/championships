@@ -20,7 +20,7 @@ import { CreateCountryDto, UpdateCountryDto, CountryResponseDto, PaginationDto, 
  * Provides endpoints for CRUD operations on countries.
  */
 @ApiTags('countries')
-@Controller('countries')
+@Controller({ path: 'countries', version: '1' })
 export class CountriesController {
   constructor(private readonly countriesService: CountriesService) {}
 

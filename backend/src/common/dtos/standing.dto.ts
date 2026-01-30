@@ -19,10 +19,6 @@ export class CreateStandingDto {
 
   @ApiProperty({ example: 1 })
   @IsInt()
-  phaseId: number;
-
-  @ApiProperty({ example: 1 })
-  @IsInt()
   roundId: number;
 
   @ApiProperty({ example: 1, required: false })

@@ -35,6 +35,12 @@ export class UsersService {
     return user;
   }
 
+  async findAll() {
+    const allUsers = await this.db.select().from(users);
+    // Remove passwords from all users
+    return allUsers.map(({ password, ...user }) => user);
+  }
+
   async findOne(id: number) {
     const user = await this.db.select().from(users).where(eq(users.id, id)).limit(1);
     if (!user.length) throw new NotFoundException('User not found');

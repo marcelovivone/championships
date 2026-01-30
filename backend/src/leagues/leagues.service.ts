@@ -1,9 +1,9 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, asc, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { leagues, sports } from '../db/schema';
-import { CreateLeagueDto, PaginationDto, UpdateLeagueDto } from '../common/dtos';
+import { leagues, sports, countries } from '../db/schema';
+import { CreateLeagueDto, PaginationDto, UpdateLeagueDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
 export class LeaguesService {
@@ -13,25 +13,106 @@ export class LeaguesService {
   ) {}
 
   /**
-   * Get all leagues
+   * Get all leagues with pagination
    */
-  async findAll(paginationDto: PaginationDto) {
-    const { page = 1, limit = 10 } = paginationDto;
+  async findAllPaginated(page: number, limit: number, sortBy: string, sortOrder: 'asc' | 'desc') {
     const offset = (page - 1) * limit;
 
+    const sortableColumns = ['originalName', 'sportId', 'countryId', 'flgDefault', 'typeOfSchedule', 'numberOfRoundsMatches', 'flgRoundAutomatic', 'hasSubLeagues', 'hasAscends', 'hasDescends', 'sportName', 'countryName'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'originalName';
+    const order = sortOrder === 'desc' ? desc : asc;
+
     try {
+      // Determine the sort column - handle related fields properly
+      let orderByClause: any;
+      switch (orderByField) {
+        case 'sportName':
+          orderByClause = order(sports.name);
+          break;
+        case 'countryName':
+          orderByClause = order(schema.countries.name);
+          break;
+        case 'sportId':
+          orderByClause = order(leagues.sportId);
+          break;
+        case 'countryId':
+          orderByClause = order(leagues.countryId);
+          break;
+        case 'flgDefault':
+          orderByClause = order(leagues.flgDefault);
+          break;
+        case 'typeOfSchedule':
+          orderByClause = order(leagues.typeOfSchedule);
+          break;
+        case 'numberOfRoundsMatches':
+          orderByClause = order(leagues.numberOfRoundsMatches);
+          break;
+        case 'flgRoundAutomatic':
+          orderByClause = order(leagues.flgRoundAutomatic);
+          break;
+        case 'hasSubLeagues':
+          orderByClause = order(leagues.hasSubLeagues);
+          break;
+        case 'hasAscends':
+          orderByClause = order(leagues.hasAscends);
+          break;
+        case 'hasDescends':
+          orderByClause = order(leagues.hasDescends);
+          break;
+        case 'originalName':
+        default:
+          orderByClause = order(leagues.originalName);
+          break;
+      }
+
       const data = await this.db
-        .select()
+        .select({
+          id: leagues.id,
+          originalName: leagues.originalName,
+          secondaryName: leagues.secondaryName,
+          sportId: leagues.sportId,
+          countryId: leagues.countryId,
+          cityId: leagues.cityId,
+          flgDefault: leagues.flgDefault,
+          typeOfSchedule: leagues.typeOfSchedule,
+          numberOfRoundsMatches: leagues.numberOfRoundsMatches,
+          minDivisionsNumber: leagues.minDivisionsNumber,
+          maxDivisionsNumber: leagues.maxDivisionsNumber,
+          divisionsTime: leagues.divisionsTime,
+          hasOvertimeOverride: leagues.hasOvertimeOverride,
+          hasPenaltiesOverride: leagues.hasPenaltiesOverride,
+          hasAscends: leagues.hasAscends,
+          ascendsQuantity: leagues.ascendsQuantity,
+          hasDescends: leagues.hasDescends,
+          descendsQuantity: leagues.descendsQuantity,
+          hasSubLeagues: leagues.hasSubLeagues,
+          numberOfSubLeagues: leagues.numberOfSubLeagues,
+          flgRoundAutomatic: leagues.flgRoundAutomatic,
+          imageUrl: leagues.imageUrl,
+          createdAt: leagues.createdAt,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
+          country: {
+            id: schema.countries.id,
+            name: schema.countries.name,
+          },
+        })
         .from(leagues)
-        .orderBy(leagues.originalName)
+        .leftJoin(sports, eq(leagues.sportId, sports.id))
+        .leftJoin(schema.countries, eq(leagues.countryId, schema.countries.id))
+        .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
       const totalResult = await this.db
         .select({ count: sql<number>`count(*)` })
-        .from(leagues);
+        .from(leagues)
+        .leftJoin(sports, eq(leagues.sportId, sports.id))
+        .leftJoin(schema.countries, eq(leagues.countryId, schema.countries.id));
       const total = Number(totalResult[0].count);
-      return { data, total };
+      return { data, total, page, limit };
     } catch (error) {
       throw new BadRequestException('Failed to fetch paginated leagues');
     }
@@ -99,6 +180,50 @@ export class LeaguesService {
   }
 
   /**
+   * Find all leagues by sport
+   */
+  async findAllBySport(sportId: number) {
+    try {
+      return await this.db
+        .select({
+          id: schema.leagues.id,
+          originalName: schema.leagues.originalName,
+          secondaryName: schema.leagues.secondaryName,
+          sportId: schema.leagues.sportId,
+          countryId: schema.leagues.countryId,
+          cityId: schema.leagues.cityId,
+          flgDefault: schema.leagues.flgDefault,
+          typeOfSchedule: schema.leagues.typeOfSchedule,
+          numberOfRoundsMatches: schema.leagues.numberOfRoundsMatches,
+          minDivisionsNumber: schema.leagues.minDivisionsNumber,
+          maxDivisionsNumber: schema.leagues.maxDivisionsNumber,
+          divisionsTime: schema.leagues.divisionsTime,
+          hasOvertimeOverride: schema.leagues.hasOvertimeOverride,
+          hasPenaltiesOverride: schema.leagues.hasPenaltiesOverride,
+          hasAscends: schema.leagues.hasAscends,
+          ascendsQuantity: schema.leagues.ascendsQuantity,
+          hasDescends: schema.leagues.hasDescends,
+          descendsQuantity: schema.leagues.descendsQuantity,
+          hasSubLeagues: schema.leagues.hasSubLeagues,
+          numberOfSubLeagues: schema.leagues.numberOfSubLeagues,
+          flgRoundAutomatic: schema.leagues.flgRoundAutomatic,
+          imageUrl: schema.leagues.imageUrl,
+          sport: schema.sports,
+          country: schema.countries,
+          city: schema.cities,
+          createdAt: schema.leagues.createdAt,
+        })
+        .from(schema.leagues)
+        .leftJoin(schema.sports, eq(schema.leagues.sportId, schema.sports.id))
+        .leftJoin(schema.countries, eq(schema.leagues.countryId, schema.countries.id))
+        .leftJoin(schema.cities, eq(schema.leagues.cityId, schema.cities.id))
+        .where(eq(schema.leagues.sportId, sportId));
+    } catch (error) {
+      throw new BadRequestException('Failed to fetch leagues by sport');
+    }
+  }
+
+  /**
    * Create new league
    */
   async create(createLeagueDto: CreateLeagueDto) {
@@ -112,6 +237,17 @@ export class LeaguesService {
 
       if (!sport || sport.length === 0) {
         throw new BadRequestException(`Sport with ID ${createLeagueDto.sportId} not found`);
+      }
+
+      // If setting this league as default, unset all other defaults for this sport
+      if (createLeagueDto.flgDefault) {
+        await this.db
+          .update(leagues)
+          .set({ flgDefault: false })
+          .where(and(
+            eq(leagues.sportId, createLeagueDto.sportId),
+            eq(leagues.flgDefault, true)
+          ));
       }
 
       const result = await this.db
@@ -132,7 +268,7 @@ export class LeaguesService {
   async update(id: number, updateLeagueDto: UpdateLeagueDto) {
     try {
       // Verify league exists
-      await this.findOne(id);
+      const existingLeague = await this.findOne(id);
 
       // If updating sport, verify it exists
       if (updateLeagueDto.sportId) {
@@ -145,6 +281,18 @@ export class LeaguesService {
         if (!sport || sport.length === 0) {
           throw new BadRequestException(`Sport with ID ${updateLeagueDto.sportId} not found`);
         }
+      }
+
+      // If setting this league as default, unset all other defaults for this sport
+      if (updateLeagueDto.flgDefault === true) {
+        const sportId = updateLeagueDto.sportId || existingLeague.sportId;
+        await this.db
+          .update(leagues)
+          .set({ flgDefault: false })
+          .where(and(
+            eq(leagues.sportId, sportId),
+            eq(leagues.flgDefault, true)
+          ));
       }
 
       const result = await this.db

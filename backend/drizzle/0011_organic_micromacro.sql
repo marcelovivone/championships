@@ -1,0 +1,1 @@
+ALTER TABLE "clubs" ALTER COLUMN "foundation_year" DROP NOT NULL;

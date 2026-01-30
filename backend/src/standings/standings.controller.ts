@@ -20,7 +20,7 @@ import { CreateStandingDto, UpdateStandingDto, StandingResponseDto } from '../co
  * Provides endpoints for retrieving standings filtered by league and round.
  */
 @ApiTags('standings')
-@Controller('standings')
+@Controller({ path: 'standings', version: '1' })
 export class StandingsController {
   constructor(private readonly standingsService: StandingsService) {}
 

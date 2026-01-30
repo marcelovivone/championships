@@ -24,7 +24,7 @@ import {
  * Provides endpoints for CRUD operations on divisions within matches.
  */
 @ApiTags('match-divisions')
-@Controller('match-divisions')
+@Controller({ path: 'match-divisions', version: '1' })
 export class MatchDivisionsController {
   constructor(private readonly matchDivisionsService: MatchDivisionsService) {}
 

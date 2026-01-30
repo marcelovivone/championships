@@ -32,27 +32,23 @@ export class CreateLeagueDto {
   @IsInt()
   cityId?: number;
 
-  @ApiProperty({ example: 2024, description: 'Start year of the season' })
-  @IsInt()
-  startYear: number;
+  @ApiProperty({ example: false, description: 'Is this the default league for the sport?' })
+  @IsBoolean()
+  flgDefault: boolean;
 
-  @ApiProperty({ example: 2025, description: 'End year of the season' })
-  @IsInt()
-  endYear: number;
+  @ApiProperty({ example: 'Round', description: 'Schedule type: Round for round-based leagues, Date for date-based leagues' })
+  @IsEnum(['Round', 'Date'])
+  typeOfSchedule: 'Round' | 'Date';
 
-  @ApiProperty({ example: 2, description: 'Number of turns (e.g. home and away)' })
+  @ApiProperty({ example: 38, description: 'Number of rounds (for round-based leagues) or number of matches (for date-based leagues)' })
   @IsInt()
-  numberOfTurns: number;
+  numberOfRoundsMatches: number;
 
-  @ApiProperty({ example: 38, description: 'Total number of rounds' })
-  @IsInt()
-  numberOfRounds: number;
-
-  @ApiProperty({ example: 2, description: 'Minimum number of match divisions (e.g. halves)' })
+  @ApiProperty({ example: 2, description: 'Minimum number of match divisions (e.g. halves), can be 0' })
   @IsInt()
   minDivisionsNumber: number;
 
-  @ApiProperty({ example: 2, description: 'Maximum number of match divisions' })
+  @ApiProperty({ example: 2, description: 'Maximum number of match divisions, can be 0' })
   @IsInt()
   maxDivisionsNumber: number;
 
@@ -100,6 +96,11 @@ export class CreateLeagueDto {
   @Type(() => Number)
   @IsInt()
   numberOfSubLeagues?: number;
+
+  @ApiProperty({ example: true, description: 'Automatically update current round based on dates', required: false })
+  @IsOptional()
+  @IsBoolean()
+  flgRoundAutomatic?: boolean;
 
   @ApiProperty({ example: 'https://example.com/league-logo.png', required: false })
   @IsOptional()

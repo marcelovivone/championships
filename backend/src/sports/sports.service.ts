@@ -1,9 +1,9 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, asc, desc, and, or, ilike } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { sports } from '../db/schema';
-import { CreateSportDto, PaginationDto, UpdateSportDto } from '../common/dtos';
+import { CreateSportDto, PaginationDto, UpdateSportDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
 export class SportsService {
@@ -13,27 +13,51 @@ export class SportsService {
   ) {}
 
   /**
-   * Get all sports
+   * Get all sports with pagination, sorting, and filtering
    */
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
+    const { sortBy, sortOrder, search } = filteringDto;
     const offset = (page - 1) * limit;
 
+    const sortableColumns = ['name', 'reducedName', 'type', 'divisionType', 'minMatchDivisionNumber', 'maxMatchDivisionNumber', 'divisionTime', 'scoreType', 'hasOvertime', 'hasPenalties', 'flgDefault'];
+    const orderBy = sortableColumns.includes(sortBy) ? sortBy : 'name';
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    // Build WHERE clause
+    const whereConditions = [];
+    if (search) {
+      whereConditions.push(
+        or(
+          ilike(sports.name, `%${search}%`),
+          ilike(sports.reducedName, `%${search}%`),
+          ilike(sports.type, `%${search}%`),
+        ),
+      );
+    }
+    const finalWhere = and(...whereConditions);
+
     try {
-      const data = await this.db
-        .select()
+      const query = this.db.select().from(sports).where(finalWhere);
+
+      // Get total count matching the filter
+      const totalResult = await this.db
+        .select({ count: sql<number>`count(*)` })
         .from(sports)
-        .orderBy(sports.name)
+        .where(finalWhere);
+      
+      const total = Number(totalResult[0].count);
+      
+      // Get paginated and sorted data
+      const data = await query
+        .orderBy(order(sports[orderBy]))
         .limit(limit)
         .offset(offset);
 
-      const totalResult = await this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(sports);
-      const total = Number(totalResult[0].count);
-      return { data, total };
+      return { data, total, page, limit };
     } catch (error) {
-      throw new BadRequestException('Failed to fetch paginated sports');
+      console.error('Error fetching sports:', error);
+      throw new BadRequestException('Failed to fetch paginated and filtered sports');
     }
   }
 
@@ -89,6 +113,14 @@ export class SportsService {
         throw new BadRequestException(`Sport "${createSportDto.name}" already exists`);
       }
 
+      // If setting this sport as default, unset all other defaults
+      if (createSportDto.flgDefault) {
+        await this.db
+          .update(sports)
+          .set({ flgDefault: false })
+          .where(eq(sports.flgDefault, true));
+      }
+
       const result = await this.db
         .insert(sports)
         .values(createSportDto)
@@ -120,6 +152,14 @@ export class SportsService {
         if (existing && existing.length > 0 && existing[0].id !== id) {
           throw new BadRequestException(`Sport "${updateSportDto.name}" already exists`);
         }
+      }
+
+      // If setting this sport as default, unset all other defaults
+      if (updateSportDto.flgDefault === true) {
+        await this.db
+          .update(sports)
+          .set({ flgDefault: false })
+          .where(eq(sports.flgDefault, true));
       }
 
       const result = await this.db

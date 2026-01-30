@@ -2,14 +2,13 @@
  * User DTOs
  */
 
-import { IsString, IsEmail, IsEnum, IsOptional, MinLength } from 'class-validator';
+import { IsString, IsEmail, IsEnum, IsOptional, MinLength, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PartialType } from '@nestjs/swagger';
 
-export enum UserRole {
+export enum UserProfile {
   ADMIN = 'admin',
-  EDITOR = 'editor',
-  USER = 'user',
+  FINAL_USER = 'final_user',
 }
 
 export class CreateUserDto {
@@ -26,10 +25,15 @@ export class CreateUserDto {
   @IsString()
   name: string;
 
-  @ApiProperty({ enum: UserRole, default: UserRole.USER })
+  @ApiProperty({ enum: UserProfile, default: UserProfile.FINAL_USER })
   @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+  @IsEnum(UserProfile)
+  profile?: UserProfile;
+
+  @ApiProperty({ example: true, default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }
 
 export class UpdateUserDto extends PartialType(CreateUserDto) {}
@@ -44,9 +48,19 @@ export class UserResponseDto {
   @ApiProperty({ example: 'John Doe' })
   name: string;
 
-  @ApiProperty({ enum: UserRole, example: UserRole.ADMIN })
-  role: string;
+  @ApiProperty({ enum: UserProfile, example: UserProfile.ADMIN })
+  profile: string;
+
+  @ApiProperty({ example: true })
+  isActive: boolean;
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ 
+    example: ['main_screen', 'leagues', 'standings'],
+    description: 'List of menu items the user can access',
+    required: false
+  })
+  allowedMenuItems?: string[];
 }

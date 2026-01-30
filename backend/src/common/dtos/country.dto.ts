@@ -2,7 +2,7 @@
  * Country DTOs (Data Transfer Objects)
  */
 
-import { IsString, IsInt, IsOptional, IsUrl, IsEnum } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsUrl, IsEnum, ValidateIf } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -30,6 +30,7 @@ export class CreateCountryDto {
 
   @ApiProperty({ example: 'https://flagcdn.com/br.svg', description: 'URL to the country flag image', required: false })
   @IsOptional()
+  @ValidateIf((object: CreateCountryDto) => object.flagUrl !== '' && object.flagUrl !== null && object.flagUrl !== undefined)
   @IsUrl()
   flagUrl?: string;
 }

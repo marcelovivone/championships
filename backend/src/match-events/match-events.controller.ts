@@ -24,7 +24,7 @@ import {
  * Provides endpoints for CRUD operations on events within matches.
  */
 @ApiTags('match-events')
-@Controller('match-events')
+@Controller({ path: 'match-events', version: '1' })
 export class MatchEventsController {
   constructor(private readonly matchEventsService: MatchEventsService) {}
 

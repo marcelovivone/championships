@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse } from '@nestjs/swagger';
 import { SportsService } from './sports.service';
-import { CreateSportDto, UpdateSportDto, SportResponseDto, PaginationDto } from '../common/dtos';
+import { CreateSportDto, UpdateSportDto, SportResponseDto, PaginationDto, FilteringDto } from '../common/dtos';
 
 /**
  * Sports Controller
@@ -16,7 +16,7 @@ import { CreateSportDto, UpdateSportDto, SportResponseDto, PaginationDto } from 
  * DELETE /sports/:id          - Delete sport
  */
 @ApiTags('sports')
-@Controller('sports')
+@Controller({ path: 'sports', version: '1' })
 export class SportsController {
   constructor(private readonly sportsService: SportsService) {}
 
@@ -37,8 +37,8 @@ export class SportsController {
     },
   })
   @Get()
-  async findAll(@Query() paginationDto: PaginationDto) {
-    return this.sportsService.findAll(paginationDto);
+  async findAll(@Query() paginationDto: PaginationDto, @Query() filteringDto: FilteringDto) {
+    return this.sportsService.findAll(paginationDto, filteringDto);
   }
 
   /**

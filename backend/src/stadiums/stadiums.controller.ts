@@ -13,14 +13,14 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse } from '@nestjs/swagger';
 import { StadiumsService } from './stadiums.service';
-import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, StadiumResponseDto } from '../common/dtos';
+import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, StadiumResponseDto, FilteringDto } from '../common/dtos';
 
 /**
  * Controller for managing stadium-related data.
  * Provides endpoints for CRUD operations on stadiums and filtering by city/type.
  */
 @ApiTags('stadiums')
-@Controller('stadiums')
+@Controller({ path: 'stadiums', version: '1' })
 export class StadiumsController {
   constructor(private readonly stadiumsService: StadiumsService) {}
 
@@ -43,6 +43,7 @@ export class StadiumsController {
   @Get()
   async findAll(
     @Query() paginationDto: PaginationDto,
+    @Query() filteringDto: FilteringDto,
     @Query('cityId') cityId?: string,
     @Query('type') type?: string,
   ) {
@@ -50,7 +51,7 @@ export class StadiumsController {
       return this.stadiumsService.findByCity(parseInt(cityId, 10), paginationDto);
     }
     // Note: findByType is not paginated in this update, but can be added.
-    return this.stadiumsService.findAll(paginationDto);
+    return this.stadiumsService.findAll(paginationDto, filteringDto);
   }
 
   /**

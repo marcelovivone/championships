@@ -14,18 +14,18 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
 import { LeaguesService } from './leagues.service';
-import { CreateLeagueDto, PaginationDto, UpdateLeagueDto, LeagueResponseDto } from '../common/dtos';
+import { CreateLeagueDto, PaginationDto, UpdateLeagueDto, LeagueResponseDto, FilteringDto } from '../common/dtos';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
-import { UserRole } from '../common/dtos/user.dto';
+import { UserProfile } from '../common/dtos/user.dto';
 
 /**
  * Controller for managing league-related data.
  * Provides endpoints for CRUD operations on leagues, filtering by sport.
  */
 @ApiTags('leagues')
-@Controller('leagues')
+@Controller({ path: 'leagues', version: '1' })
 export class LeaguesController {
   constructor(private readonly leaguesService: LeaguesService) {}
 
@@ -46,12 +46,25 @@ export class LeaguesController {
     },
   })
   @Get()
-  async findAll(@Query() paginationDto: PaginationDto, @Query('sportId') sportId?: string) {
-    const { page, limit } = paginationDto;
+  async findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+    @Query('sportId') sportId?: string,
+  ) {
+    // If sportId is provided, return leagues filtered by sport
     if (sportId) {
-      return this.leaguesService.findBySport(parseInt(sportId, 10), { page, limit });
+      return this.leaguesService.findAllBySport(Number(sportId));
     }
-    return this.leaguesService.findAll({ page, limit });
+
+    // Otherwise use pagination
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    const sort = sortBy || 'originalName';
+    const order = sortOrder === 'desc' ? 'desc' : 'asc';
+
+    return this.leaguesService.findAllPaginated(pageNum, limitNum, sort, order);
   }
 
   /**
@@ -72,7 +85,7 @@ export class LeaguesController {
    */
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @Roles(UserProfile.ADMIN)
   @ApiOperation({ summary: 'Create a new league' })
   @ApiResponse({ status: 201, description: 'The league has been successfully created.' })
   @Post()

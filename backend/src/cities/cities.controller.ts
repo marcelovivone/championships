@@ -13,14 +13,14 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse } from '@nestjs/swagger';
 import { CitiesService } from './cities.service';
-import { CreateCityDto, PaginationDto, UpdateCityDto, CityResponseDto } from '../common/dtos';
+import { CreateCityDto, PaginationDto, UpdateCityDto, CityResponseDto, FilteringDto } from '../common/dtos';
 
 /**
  * Controller for managing city-related data.
  * Provides endpoints for CRUD operations on cities and filtering by country.
  */
 @ApiTags('cities')
-@Controller('cities')
+@Controller({ path: 'cities', version: '1' })
 export class CitiesController {
   constructor(private readonly citiesService: CitiesService) {}
 
@@ -41,12 +41,12 @@ export class CitiesController {
     },
   })
   @Get()
-  async findAll(@Query() paginationDto: PaginationDto, @Query('countryId') countryId?: string) {
+  async findAll(@Query() paginationDto: PaginationDto, @Query() filteringDto: FilteringDto, @Query('countryId') countryId?: string) {
     const { page, limit } = paginationDto;
     if (countryId) {
       return this.citiesService.findByCountry(parseInt(countryId, 10), { page, limit });
     }
-    return this.citiesService.findAll({ page, limit });
+    return this.citiesService.findAll({ page, limit }, filteringDto);
   }
 
   /**

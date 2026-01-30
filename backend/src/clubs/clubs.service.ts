@@ -1,9 +1,9 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, asc, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { clubs, countries } from '../db/schema';
-import { CreateClubDto, PaginationDto, UpdateClubDto } from '../common/dtos';
+import { clubs, countries, cities } from '../db/schema';
+import { CreateClubDto, PaginationDto, UpdateClubDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
 export class ClubsService {
@@ -15,9 +15,21 @@ export class ClubsService {
   /**
    * Get all clubs with country information
    */
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
+    const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
     const offset = (page - 1) * limit;
+
+    const sortableColumns = ['name', 'shortName', 'foundationYear', 'cityId', 'countryId'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    // Determine the sort column
+    let sortColumn = clubs.name;
+    if (orderByField === 'shortName') sortColumn = clubs.shortName;
+    else if (orderByField === 'foundationYear') sortColumn = clubs.foundationYear;
+    else if (orderByField === 'cityId') sortColumn = clubs.cityId;
+    else if (orderByField === 'countryId') sortColumn = clubs.countryId;
 
     try {
       const data = await this.db
@@ -27,15 +39,21 @@ export class ClubsService {
           shortName: clubs.shortName,
           foundationYear: clubs.foundationYear,
           imageUrl: clubs.imageUrl,
+          cityId: clubs.cityId,
           countryId: clubs.countryId,
+          city: {
+            id: cities.id,
+            name: cities.name,
+          },
           country: {
             id: countries.id,
             name: countries.name,
           },
         })
         .from(clubs)
+        .leftJoin(cities, eq(clubs.cityId, cities.id))
         .leftJoin(countries, eq(clubs.countryId, countries.id))
-        .orderBy(clubs.name)
+        .orderBy(order(sortColumn))
         .limit(limit)
         .offset(offset);
 

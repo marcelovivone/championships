@@ -8,6 +8,10 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateMatchDto {
+  @ApiProperty({ example: 1, description: 'Sport ID' })
+  @IsInt()
+  sportId: number;
+
   @ApiProperty({ example: 1, description: 'League ID' })
   @IsInt()
   leagueId: number;
@@ -16,13 +20,10 @@ export class CreateMatchDto {
   @IsInt()
   seasonId: number;
 
-  @ApiProperty({ example: 1, description: 'Phase ID' })
+  @ApiProperty({ example: 1, description: 'Round ID (optional - only for Round-based leagues)', required: false })
+  @IsOptional()
   @IsInt()
-  phaseId: number;
-
-  @ApiProperty({ example: 1, description: 'Round ID' })
-  @IsInt()
-  roundId: number;
+  roundId?: number;
 
   @ApiProperty({ example: 1, description: 'Group ID (optional)', required: false })
   @IsOptional()
@@ -91,9 +92,6 @@ export class MatchResponseDto {
 
   @ApiProperty({ example: 1 })
   seasonId: number;
-
-  @ApiProperty({ example: 1 })
-  phaseId: number;
 
   @ApiProperty({ example: 1 })
   roundId: number;

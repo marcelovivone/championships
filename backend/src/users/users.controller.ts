@@ -4,9 +4,16 @@ import { UsersService } from './users.service';
 import { CreateUserDto, UserResponseDto } from '../common/dtos';
 
 @ApiTags('users')
-@Controller('users')
+@Controller({ path: 'users', version: '1' })
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @ApiOperation({ summary: 'Get all users' })
+  @ApiResponse({ status: 200, description: 'List of users' })
+  @Get()
+  async findAll() {
+    return this.usersService.findAll();
+  }
 
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully', type: UserResponseDto })

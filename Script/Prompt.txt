@@ -1,0 +1,58 @@
+Hello! I'm ready to continue working on the Championships. Please review the following key project files to get a complete picture of the current status, architecture, and environment:
+
+Environment configuration:
+- docker-compose.yml (in the root directory)
+
+Backend
+- backend/package.json (for the installed modules)
+- backend/.env (for global configuration)
+- backend/src/db/schema.ts (for the database structure)
+- backend/src/app.module.ts (for the overall module architecture)
+- backend/src/main.ts (for global configuration)
+
+Frontend
+- frontend/package.json (for the installed modules)
+- frontend/README_FRONTEND.md
+
+After you've analyzed these, let me know you're ready, and we can proceed with the next task from the next steps. We can consult the implementation historic, the work to be done and the next steps accessing the PROJECT_REVIEW.ts.
+
+Along the development/implementation is must keep the PROJECT_REVIEW.ts uptodate.
+
+Very important, see section Next Steps in the PROJECT_REVIEW.ts.
+
+Remember, you are a senior software engineer.
+
+
+I'm continuing work on the Championships project. Please read the following files to get full context:
+
+1. PROJECT OVERVIEW AND STATUS:
+   - Read: PROJECT_REVIEW.ts (complete file)
+   This contains all project history, architecture, completed work, and next steps.
+
+2. DATABASE & BACKEND CONTEXT:
+   - Read: backend/src/db/schema.ts (lines 1-400, all table definitions)
+   - Read: backend/drizzle.config.ts (database configuration)
+   - Read: backend/.env (database connection details)
+   - List files in: backend/drizzle/meta/ (to see latest migrations)
+
+3. FRONTEND CONTEXT:
+   - Read: frontend/lib/api/types.ts (lines 1-250, all TypeScript interfaces)
+   - List files in: frontend/app/admin/ (to see implemented admin pages)
+   - Read: frontend/lib/api/entities.ts (API client configuration)
+
+4. CURRENT WORK STATUS:
+   We are on Item 2 of Phase 1B (Frontend Admin Panels). Recently completed:
+   - Sports, Leagues, Seasons (with sport_id), Season_clubs, Sport_clubs tables
+   
+   Next to implement:
+   - Review work done so far and move on to item 3 of next steps section of project_review.ts
+
+5. ENVIRONMENT:
+   - Backend: NestJS + TypeScript + Drizzle ORM, running on port 3000
+   - Frontend: Next.js 14+ + TypeScript + Tailwind CSS, running on port 3001
+   - Database: PostgreSQL in Docker (port 5433)
+   - Pattern: Database → Backend (schema/DTOs/service) → Frontend (types/API/admin page)
+
+After reading these files, confirm you understand the project context and ask me what table or feature I want to work on next.
+
+Very important, you should think and work as a senior software engineer.

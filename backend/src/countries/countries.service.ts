@@ -15,7 +15,7 @@ export class CountriesService {
   /**
    * Get all countries with pagination, sorting, and filtering
    */
-  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto) {
+  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
     const { sortBy, sortOrder, search } = filteringDto;
     const offset = (page - 1) * limit;

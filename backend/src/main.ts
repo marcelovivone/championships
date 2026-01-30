@@ -11,6 +11,12 @@ async function bootstrap() {
     logger: WinstonModule.createLogger(winstonConfig),
   });
 
+  // Enable CORS for frontend
+  app.enableCors({
+    origin: ['http://localhost:3001', 'http://localhost:3000'],
+    credentials: true,
+  });
+
   // Enable API Versioning (URI-based: /v1/, /v2/, etc.)
   app.enableVersioning({
     type: VersioningType.URI,
@@ -19,10 +25,9 @@ async function bootstrap() {
   });
   
   // Enable global validation pipes
-  // Note: Disabled temporarily for testing - DTOs need to be aligned with schema
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
-    forbidNonWhitelisted: true,
+    forbidNonWhitelisted: false, // Allow extra fields but strip them
     transform: true,
   }));
 

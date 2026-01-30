@@ -13,14 +13,14 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiOkResponse } from '@nestjs/swagger';
 import { ClubsService } from './clubs.service';
-import { CreateClubDto, PaginationDto, UpdateClubDto } from '../common/dtos';
+import { CreateClubDto, PaginationDto, UpdateClubDto, FilteringDto } from '../common/dtos';
 
 /**
  * Controller for managing club-related data.
  * Provides endpoints for CRUD operations on clubs.
  */
 @ApiTags('clubs')
-@Controller('clubs')
+@Controller({ path: 'clubs', version: '1' })
 export class ClubsController {
   constructor(private readonly clubsService: ClubsService) {}
 
@@ -41,12 +41,12 @@ export class ClubsController {
     },
   })
   @Get()
-  async findAll(@Query() paginationDto: PaginationDto, @Query('countryId') countryId?: string) {
+  async findAll(@Query() paginationDto: PaginationDto, @Query() filteringDto: FilteringDto, @Query('countryId') countryId?: string) {
     const { page, limit } = paginationDto;
     if (countryId) {
       return this.clubsService.findByCountry(parseInt(countryId, 10), { page, limit });
     }
-    return this.clubsService.findAll({ page, limit });
+    return this.clubsService.findAll({ page, limit }, filteringDto);
   }
 
   /**

@@ -1,0 +1,1 @@
+ALTER TABLE "sports" ADD COLUMN "flg_default" boolean DEFAULT false NOT NULL;

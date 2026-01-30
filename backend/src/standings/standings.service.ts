@@ -78,8 +78,8 @@ export class StandingsService {
       return await this.db
         .select()
         .from(standings)
-        .innerJoin(schema.phases, eq(standings.phaseId, schema.phases.id))
-        .innerJoin(seasons, eq(schema.phases.seasonId, seasons.id))
+        .innerJoin(rounds, eq(standings.roundId, rounds.id))
+        .innerJoin(seasons, eq(rounds.seasonId, seasons.id))
         .where(
           and(
             eq(seasons.leagueId, leagueId),
@@ -113,8 +113,7 @@ export class StandingsService {
       return await this.db
         .select()
         .from(standings)
-        .innerJoin(schema.phases, eq(standings.phaseId, schema.phases.id))
-        .innerJoin(seasons, eq(schema.phases.seasonId, seasons.id))
+        .innerJoin(seasons, eq(standings.seasonId, seasons.id))
         .where(eq(seasons.leagueId, leagueId))
         .orderBy(desc(standings.points), asc(standings.goalDifference))
         .then(results => results.map(r => r.standings));
@@ -129,15 +128,15 @@ export class StandingsService {
    */
   async create(createStandingDto: CreateStandingDto) {
     try {
-      // Verify phase exists
-      const phase = await this.db
+      // Verify season exists
+      const season = await this.db
         .select()
-        .from(schema.phases)
-        .where(eq(schema.phases.id, createStandingDto.phaseId))
+        .from(seasons)
+        .where(eq(seasons.id, createStandingDto.seasonId))
         .limit(1);
 
-      if (!phase || phase.length === 0) {
-        throw new BadRequestException(`Phase with ID ${createStandingDto.phaseId} not found`);
+      if (!season || season.length === 0) {
+        throw new BadRequestException(`Season with ID ${createStandingDto.seasonId} not found`);
       }
 
       // Verify group exists if provided
@@ -183,7 +182,6 @@ export class StandingsService {
         .values({
           leagueId: createStandingDto.leagueId,
           seasonId: createStandingDto.seasonId,
-          phaseId: createStandingDto.phaseId,
           roundId: createStandingDto.roundId || 1,
           groupId: createStandingDto.groupId || null,
           clubId: createStandingDto.clubId,
@@ -212,19 +210,6 @@ export class StandingsService {
     try {
       // Verify standing exists
       await this.findOne(id);
-
-      // Validate foreign keys if being updated
-      if (updateStandingDto.phaseId) {
-        const phase = await this.db
-          .select()
-          .from(schema.phases)
-          .where(eq(schema.phases.id, updateStandingDto.phaseId))
-          .limit(1);
-
-        if (!phase || phase.length === 0) {
-          throw new BadRequestException(`Phase with ID ${updateStandingDto.phaseId} not found`);
-        }
-      }
 
       const result = await this.db
         .update(standings)
@@ -264,14 +249,14 @@ export class StandingsService {
    * Record round stats (internal use by MatchesService)
    * Updates standings when a match is finalized
    */
-  async recordRoundStats(phaseId: number, groupId: number, clubId: number, newStats: any) {
+  async recordRoundStats(roundId: number, groupId: number, clubId: number, newStats: any) {
     const lastEntry = await this.db
       .select()
       .from(standings)
       .where(
         and(
           eq(standings.clubId, clubId),
-          eq(standings.phaseId, phaseId),
+          eq(standings.roundId, roundId),
         ),
       )
       .orderBy(desc(standings.id))

@@ -1,9 +1,9 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, asc, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { cities, countries } from '../db/schema';
-import { CreateCityDto, PaginationDto, UpdateCityDto } from '../common/dtos';
+import { CreateCityDto, PaginationDto, UpdateCityDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
 export class CitiesService {
@@ -15,9 +15,17 @@ export class CitiesService {
   /**
    * Get all cities with country information
    */
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
+    const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
     const offset = (page - 1) * limit;
+
+    const sortableColumns = ['name', 'countryId'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    // Determine the sort column
+    const sortColumn = orderByField === 'countryId' ? cities.countryId : cities.name;
 
     try {
       const data = await this.db
@@ -34,7 +42,7 @@ export class CitiesService {
         })
         .from(cities)
         .leftJoin(countries, eq(cities.countryId, countries.id))
-        .orderBy(cities.name)
+        .orderBy(order(sortColumn))
         .limit(limit)
         .offset(offset);
 

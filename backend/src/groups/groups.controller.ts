@@ -13,29 +13,31 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { GroupsService } from './groups.service';
-import { CreateGroupDto, UpdateGroupDto, GroupResponseDto } from '../common/dtos';
+import { CreateGroupDto } from './dto/create-group.dto';
+import { UpdateGroupDto } from './dto/update-group.dto';
+import { groups } from '../db/schema';
 
 /**
  * Controller for managing group-related data.
- * Provides endpoints for CRUD operations on groups within phases/rounds.
+ * Provides endpoints for CRUD operations on groups within seasons.
  */
 @ApiTags('groups')
-@Controller('groups')
+@Controller({ path: 'groups', version: '1' })
 export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
 
   /**
    * GET /groups
-   * Retrieve all groups, optionally filtered by phase/round
+   * Retrieve all groups, optionally filtered by season
    */
   @ApiOperation({ summary: 'Retrieve all groups' })
   @ApiResponse({ status: 200, description: 'List of groups' })
   @Get()
   async findAll(
-    @Query('phaseId') phaseId?: string,
-  ): Promise<GroupResponseDto[]> {
-    if (phaseId) {
-      return this.groupsService.findByPhase(parseInt(phaseId, 10));
+    @Query('seasonId') seasonId?: string,
+  ) {
+    if (seasonId) {
+      return this.groupsService.findBySeason(parseInt(seasonId, 10));
     }
     return this.groupsService.findAll();
   }
@@ -48,7 +50,7 @@ export class GroupsController {
   @ApiResponse({ status: 200, description: 'The group details' })
   @ApiResponse({ status: 404, description: 'Group not found' })
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<GroupResponseDto> {
+  async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.groupsService.findOne(id);
   }
 
@@ -60,7 +62,7 @@ export class GroupsController {
   @ApiResponse({ status: 201, description: 'The group has been successfully created.' })
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(@Body() createGroupDto: CreateGroupDto): Promise<GroupResponseDto> {
+  async create(@Body() createGroupDto: CreateGroupDto) {
     return this.groupsService.create(createGroupDto);
   }
 
@@ -75,7 +77,7 @@ export class GroupsController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() updateGroupDto: UpdateGroupDto,
-  ): Promise<GroupResponseDto> {
+  ) {
     return this.groupsService.update(id, updateGroupDto);
   }
 

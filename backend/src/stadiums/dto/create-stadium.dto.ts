@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsInt } from 'class-validator';
+import { IsString, IsNotEmpty, IsInt, IsOptional } from 'class-validator';
 
 export class CreateStadiumDto {
   @IsString()
@@ -10,6 +10,18 @@ export class CreateStadiumDto {
   cityId: number;
 
   @IsInt()
+  @IsOptional()
+  capacity?: number;
+
+  @IsString()
   @IsNotEmpty()
-  capacity: number;
+  type: string; // 'stadium' or 'gymnasium'
+
+  @IsInt()
+  @IsOptional()
+  yearConstructed?: number;
+
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
 }

@@ -20,11 +20,13 @@ export const sports = pgTable('sports', {
   reducedName: varchar('reduced_name', { length: 20 }).notNull(), // e.g., 'FB', 'BB'
   type: varchar('type', { length: 20 }).notNull(), // 'collective' or 'individual'
   divisionType: varchar('division_type', { length: 20 }).notNull(), // 'period', 'quarter', 'set', 'time'
-  divisionsNumber: integer('divisions_number').notNull(), // e.g., 2 for football, 3 for ice hockey, 4 for basketball
+  minMatchDivisionNumber: integer('min_match_divisions_number').notNull(), // Added as per requirements
+  maxMatchDivisionNumber: integer('max_match_divisions_number').notNull(), // Renamed from divisions_number as per requirements
   divisionTime: integer('division_time').notNull(), // In minutes (45 for football, 20 for ice hockey, etc.)
   scoreType: varchar('score_type', { length: 20 }).notNull(), // 'goals' or 'points'
   hasOvertime: boolean('has_overtime').default(false).notNull(),
   hasPenalties: boolean('has_penalties').default(false).notNull(),
+  flgDefault: boolean('flg_default').default(false).notNull(),
   imageUrl: text('image_url').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -72,8 +74,9 @@ export const clubs = pgTable('clubs', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 150 }).notNull(),
   shortName: varchar('short_name', { length: 50 }),
-  foundationYear: integer('foundation_year').notNull(), // Mandatory field per specification
+  foundationYear: integer('foundation_year'), // Changed from .notNull() to allow NULL values
   countryId: integer('country_id').references(() => countries.id).notNull(), // Mandatory per specification
+  cityId: integer('city_id').references(() => cities.id), // Changed to allow NULL
   imageUrl: text('image_url'), // Shield/emblem image
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -102,10 +105,7 @@ export const leagues = pgTable('leagues', {
   sportId: integer('sport_id').references(() => sports.id).notNull(),
   countryId: integer('country_id').references(() => countries.id), // NULL for international tournaments
   cityId: integer('city_id').references(() => cities.id), // NULL for leagues spanning multiple cities
-  startYear: integer('start_year').notNull(), // Season start year
-  endYear: integer('end_year').notNull(), // Season end year
-  numberOfTurns: integer('number_of_turns').notNull(), // Number of turns/legs (typically 1 or 2)
-  numberOfRounds: integer('number_of_rounds').notNull(), // Total rounds in the season
+  numberOfRoundsMatches: integer('number_of_rounds_matches').default(0).notNull(), // Changed from numberOfTurns as per requirements
   
   // Division configuration (can override sport defaults)
   minDivisionsNumber: integer('min_divisions_number').notNull(), // Minimum match divisions
@@ -123,8 +123,11 @@ export const leagues = pgTable('leagues', {
   // Sub-league configuration (e.g., East/West conferences in NHL)
   hasSubLeagues: boolean('has_sub_leagues').notNull().default(false), // Does the league have divisions/conferences?
   numberOfSubLeagues: integer('number_of_sub_leagues'), // Number of divisions/conferences (required if hasSubLeagues = true)
+  flgRoundAutomatic: boolean('flg_round_automatic').default(true).notNull(),
+  typeOfSchedule: varchar('type_of_schedule', { length: 10 }).default('Round').notNull(),
   
   imageUrl: text('image_url'),
+  flgDefault: boolean('flg_default').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -140,25 +143,17 @@ export const leagueLinks = pgTable('league_links', {
 });
 
 // ============================================================================
-// 9. LEAGUE_DIVISIONS (Sub-leagues/Conferences) TABLE
-// ============================================================================
-// Examples: NHL East/West, NBA Eastern/Western Conferences, Liga Mx Apertura/Clausura groups
-export const leagueDivisions = pgTable('league_divisions', {
-  id: serial('id').primaryKey(),
-  leagueId: integer('league_id').references(() => leagues.id).notNull(),
-  name: varchar('name', { length: 100 }).notNull(), // e.g., 'East', 'West', 'North', 'South'
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
-// ============================================================================
 // 10. SEASONS TABLE
 // ============================================================================
 export const seasons = pgTable('seasons', {
   id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
   leagueId: integer('league_id').references(() => leagues.id).notNull(),
-  startYear: integer('year').notNull(), // Season year/identifier
-  endYear: integer('year').notNull(), // Season year/identifier
+  startYear: integer('start_year').notNull(), // Season year/identifier
+  endYear: integer('end_year').notNull(), // Season year/identifier
   status: varchar('status', { length: 20 }).default('planned').notNull(), // 'planned', 'ongoing', 'finished'
+  flgDefault: boolean('flg_default').default(false).notNull(),
+  numberOfGroups: integer('number_of_groups').default(0).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -169,23 +164,11 @@ export const seasons = pgTable('seasons', {
 // Example: Arsenal participates in Premier League 2025/2026 season
 export const seasonClubs = pgTable('season_clubs', {
   id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
+  leagueId: integer('league_id').references(() => leagues.id).notNull(),
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
   clubId: integer('club_id').references(() => clubs.id).notNull(),
-  joinDate: timestamp('join_date').notNull(), // When the club joined this season
-  leaveDate: timestamp('leave_date'), // When the club left (NULL = still active)
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-// ============================================================================
-// 11. PHASES TABLE - Tournament phases (Regular Season, Playoffs, etc.)
-// ============================================================================
-export const phases = pgTable('phases', {
-  id: serial('id').primaryKey(),
-  seasonId: integer('season_id').references(() => seasons.id).notNull(),
-  name: varchar('name', { length: 100 }).notNull(), // e.g., 'Regular Season', 'Playoffs', 'Finals'
-  type: varchar('type', { length: 50 }).notNull(), // 'league', 'knockout', 'groups'
-  order: integer('order').notNull(), // Display order
+  groupId: integer('group_id').references(() => groups.id), // NULL if not assigned to a group
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -195,10 +178,11 @@ export const phases = pgTable('phases', {
 export const rounds = pgTable('rounds', {
   id: serial('id').primaryKey(),
   leagueId: integer('league_id').references(() => leagues.id).notNull(),
-  phaseId: integer('phase_id').references(() => phases.id).notNull(),
+  seasonId: integer('season_id').references(() => seasons.id).notNull(), // Adding seasonId as it seems to be missing
   roundNumber: integer('round_number').notNull(), // Sequential round number (1, 2, 3, ...)
   startDate: timestamp('start_date'),
   endDate: timestamp('end_date'),
+  flgCurrent: boolean('flg_current').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -207,18 +191,10 @@ export const rounds = pgTable('rounds', {
 // ============================================================================
 export const groups = pgTable('groups', {
   id: serial('id').primaryKey(),
-  phaseId: integer('phase_id').references(() => phases.id).notNull(),
   name: varchar('name', { length: 50 }).notNull(), // e.g., 'Group A', 'Group B', 'Key 1'
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
-// ============================================================================
-// 14. GROUP_CLUBS - Many-to-Many relationship between Groups and Clubs
-// ============================================================================
-export const groupClubs = pgTable('group_clubs', {
-  id: serial('id').primaryKey(),
-  groupId: integer('group_id').references(() => groups.id).notNull(),
-  clubId: integer('club_id').references(() => clubs.id).notNull(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
+  leagueId: integer('league_id').references(() => leagues.id).notNull(),
+  seasonId: integer('season_id').references(() => seasons.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -227,12 +203,11 @@ export const groupClubs = pgTable('group_clubs', {
 // ============================================================================
 export const matches = pgTable('matches', {
   id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
   leagueId: integer('league_id').references(() => leagues.id).notNull(),
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
-  phaseId: integer('phase_id').references(() => phases.id).notNull(),
   roundId: integer('round_id').references(() => rounds.id).notNull(),
   groupId: integer('group_id').references(() => groups.id), // NULL if not part of group stage
-  leagueDivisionId: integer('league_division_id').references(() => leagueDivisions.id), // e.g., division/conference
   turn: integer('turn').notNull().default(1), // 1 or 2 (for double round-robin leagues)
   homeClubId: integer('home_club_id').references(() => clubs.id).notNull(),
   awayClubId: integer('away_club_id').references(() => clubs.id).notNull(),
@@ -289,10 +264,8 @@ export const standings = pgTable('standings', {
   id: serial('id').primaryKey(),
   leagueId: integer('league_id').references(() => leagues.id).notNull(),
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
-  phaseId: integer('phase_id').references(() => phases.id).notNull(),
   roundId: integer('round_id').references(() => rounds.id).notNull(),
   groupId: integer('group_id').references(() => groups.id), // NULL if no group stage
-  leagueDivisionId: integer('league_division_id').references(() => leagueDivisions.id), // Standings per division if applicable
   clubId: integer('club_id').references(() => clubs.id).notNull(),
   
   // General statistics
@@ -341,7 +314,58 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 255 }).notNull().unique(),
   password: text('password').notNull(), // Will store hashed password
   name: varchar('name', { length: 100 }).notNull(),
-  role: varchar('role', { length: 20 }).default('user').notNull(), // 'admin', 'editor', 'user'
+  profile: varchar('profile', { length: 20 }).default('user').notNull(), // 'admin', 'final_user'
+  isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 20. MENU_ITEMS TABLE - Menu options for different user profiles
+// ============================================================================
+export const menuItems = pgTable('menu_items', {
+  id: serial('id').primaryKey(),
+  code: varchar('code', { length: 50 }).notNull().unique(),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  category: varchar('category', { length: 50 }).notNull(), // 'admin', 'final_user', etc.
+  parentId: integer('parent_id'), // For hierarchical menu structure
+  order: integer('order').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 21. PROFILE_PERMISSIONS TABLE - Define permissions for user profiles
+// ============================================================================
+export const profilePermissions = pgTable('profile_permissions', {
+  id: serial('id').primaryKey(),
+  profile: varchar('profile', { length: 20 }).notNull(), // 'admin', 'final_user', etc.
+  menuItemId: integer('menu_item_id').references(() => menuItems.id).notNull(),
+  canAccess: boolean('can_access').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 22. USER_PERMISSIONS TABLE - Specific permissions for individual users
+// ============================================================================
+export const userPermissions = pgTable('user_permissions', {
+  id: serial('id').primaryKey(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  menuItemId: integer('menu_item_id').references(() => menuItems.id).notNull(),
+  canAccess: boolean('can_access').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 23. SPORT_CLUBS TABLE - Association between sports and clubs
+// ============================================================================
+export const sportClubs = pgTable('sport_clubs', {
+  id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
+  clubId: integer('club_id').references(() => clubs.id).notNull(),
+  flgActive: boolean('flg_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });

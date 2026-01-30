@@ -13,7 +13,7 @@ import { SeasonClubsService } from './season-clubs.service';
 import { CreateSeasonClubDto, UpdateSeasonClubDto, SeasonClubResponseDto } from './dto';
 
 @ApiTags('season-clubs')
-@Controller('season-clubs')
+@Controller({ path: 'season-clubs', version: '1' })
 export class SeasonClubsController {
   constructor(private readonly seasonClubsService: SeasonClubsService) {}
 
@@ -27,8 +27,19 @@ export class SeasonClubsController {
     description: 'List of all season-club associations',
     type: [SeasonClubResponseDto],
   })
-  async findAll(): Promise<SeasonClubResponseDto[]> {
-    return await this.seasonClubsService.findAll();
+  async findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+  ): Promise<any> {
+    // Handle pagination
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    const sort = sortBy || 'createdAt';
+    const order = sortOrder === 'desc' ? 'desc' : 'asc';
+
+    return await this.seasonClubsService.findAllPaginated(pageNum, limitNum, sort, order);
   }
 
   /**
