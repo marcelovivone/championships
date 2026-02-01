@@ -21,8 +21,12 @@ let SeasonClubsController = class SeasonClubsController {
     constructor(seasonClubsService) {
         this.seasonClubsService = seasonClubsService;
     }
-    async findAll() {
-        return await this.seasonClubsService.findAll();
+    async findAll(page, limit, sortBy, sortOrder) {
+        const pageNum = page ? parseInt(page, 10) : 1;
+        const limitNum = limit ? parseInt(limit, 10) : 10;
+        const sort = sortBy || 'createdAt';
+        const order = sortOrder === 'desc' ? 'desc' : 'asc';
+        return await this.seasonClubsService.findAllPaginated(pageNum, limitNum, sort, order);
     }
     async findOne(id) {
         return await this.seasonClubsService.findOne(parseInt(id));
@@ -52,8 +56,12 @@ __decorate([
         description: 'List of all season-club associations',
         type: [dto_1.SeasonClubResponseDto],
     }),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
+    __param(2, (0, common_1.Query)('sortBy')),
+    __param(3, (0, common_1.Query)('sortOrder')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], SeasonClubsController.prototype, "findAll", null);
 __decorate([
@@ -144,7 +152,7 @@ __decorate([
 ], SeasonClubsController.prototype, "remove", null);
 exports.SeasonClubsController = SeasonClubsController = __decorate([
     (0, swagger_1.ApiTags)('season-clubs'),
-    (0, common_1.Controller)('season-clubs'),
+    (0, common_1.Controller)({ path: 'season-clubs', version: '1' }),
     __metadata("design:paramtypes", [season_clubs_service_1.SeasonClubsService])
 ], SeasonClubsController);
 //# sourceMappingURL=season-clubs.controller.js.map

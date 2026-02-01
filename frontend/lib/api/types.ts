@@ -259,6 +259,7 @@ export interface Match {
   group?: Group;
   createdAt: string;
   updatedAt: string;
+  availableStadiums?: Stadium[]; // Stadiums available for the home club
 }
 
 export interface MatchDivision {

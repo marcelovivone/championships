@@ -6,5 +6,6 @@ export declare class AuthController {
     login(loginDto: LoginDto): Promise<{
         accessToken: string;
         user: any;
+        allowedMenuItems: string[];
     }>;
 }

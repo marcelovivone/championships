@@ -26,7 +26,22 @@ __decorate([
 ], CreateStadiumDto.prototype, "cityId", void 0);
 __decorate([
     (0, class_validator_1.IsInt)(),
-    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)
 ], CreateStadiumDto.prototype, "capacity", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], CreateStadiumDto.prototype, "type", void 0);
+__decorate([
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Number)
+], CreateStadiumDto.prototype, "yearConstructed", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateStadiumDto.prototype, "imageUrl", void 0);
 //# sourceMappingURL=create-stadium.dto.js.map

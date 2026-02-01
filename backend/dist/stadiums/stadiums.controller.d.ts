@@ -1,9 +1,9 @@
 import { StadiumsService } from './stadiums.service';
-import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, StadiumResponseDto } from '../common/dtos';
+import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, StadiumResponseDto, FilteringDto } from '../common/dtos';
 export declare class StadiumsController {
     private readonly stadiumsService;
     constructor(stadiumsService: StadiumsService);
-    findAll(paginationDto: PaginationDto, cityId?: string, type?: string): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto: FilteringDto, cityId?: string, type?: string): Promise<{
         data: {
             id: number;
             name: string;

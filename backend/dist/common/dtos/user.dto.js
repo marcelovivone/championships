@@ -9,16 +9,15 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.UserResponseDto = exports.UpdateUserDto = exports.CreateUserDto = exports.UserRole = void 0;
+exports.UserResponseDto = exports.UpdateUserDto = exports.CreateUserDto = exports.UserProfile = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const swagger_2 = require("@nestjs/swagger");
-var UserRole;
-(function (UserRole) {
-    UserRole["ADMIN"] = "admin";
-    UserRole["EDITOR"] = "editor";
-    UserRole["USER"] = "user";
-})(UserRole || (exports.UserRole = UserRole = {}));
+var UserProfile;
+(function (UserProfile) {
+    UserProfile["ADMIN"] = "admin";
+    UserProfile["FINAL_USER"] = "final_user";
+})(UserProfile || (exports.UserProfile = UserProfile = {}));
 class CreateUserDto {
 }
 exports.CreateUserDto = CreateUserDto;
@@ -39,11 +38,17 @@ __decorate([
     __metadata("design:type", String)
 ], CreateUserDto.prototype, "name", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: UserRole, default: UserRole.USER }),
+    (0, swagger_1.ApiProperty)({ enum: UserProfile, default: UserProfile.FINAL_USER }),
     (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsEnum)(UserRole),
+    (0, class_validator_1.IsEnum)(UserProfile),
     __metadata("design:type", String)
-], CreateUserDto.prototype, "role", void 0);
+], CreateUserDto.prototype, "profile", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true, default: true }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateUserDto.prototype, "isActive", void 0);
 class UpdateUserDto extends (0, swagger_2.PartialType)(CreateUserDto) {
 }
 exports.UpdateUserDto = UpdateUserDto;
@@ -63,11 +68,23 @@ __decorate([
     __metadata("design:type", String)
 ], UserResponseDto.prototype, "name", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ enum: UserRole, example: UserRole.ADMIN }),
+    (0, swagger_1.ApiProperty)({ enum: UserProfile, example: UserProfile.ADMIN }),
     __metadata("design:type", String)
-], UserResponseDto.prototype, "role", void 0);
+], UserResponseDto.prototype, "profile", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], UserResponseDto.prototype, "isActive", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Date)
 ], UserResponseDto.prototype, "createdAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: ['main_screen', 'leagues', 'standings'],
+        description: 'List of menu items the user can access',
+        required: false
+    }),
+    __metadata("design:type", Array)
+], UserResponseDto.prototype, "allowedMenuItems", void 0);
 //# sourceMappingURL=user.dto.js.map

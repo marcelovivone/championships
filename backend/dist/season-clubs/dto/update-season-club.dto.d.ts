@@ -1,3 +1,7 @@
 export declare class UpdateSeasonClubDto {
-    leaveDate?: Date;
+    sportId?: number;
+    leagueId?: number;
+    seasonId?: number;
+    clubId?: number;
+    groupId?: number;
 }

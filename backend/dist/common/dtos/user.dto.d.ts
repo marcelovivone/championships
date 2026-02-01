@@ -1,13 +1,13 @@
-export declare enum UserRole {
+export declare enum UserProfile {
     ADMIN = "admin",
-    EDITOR = "editor",
-    USER = "user"
+    FINAL_USER = "final_user"
 }
 export declare class CreateUserDto {
     email: string;
     password: string;
     name: string;
-    role?: UserRole;
+    profile?: UserProfile;
+    isActive?: boolean;
 }
 declare const UpdateUserDto_base: import("@nestjs/common").Type<Partial<CreateUserDto>>;
 export declare class UpdateUserDto extends UpdateUserDto_base {
@@ -16,7 +16,9 @@ export declare class UserResponseDto {
     id: number;
     email: string;
     name: string;
-    role: string;
+    profile: string;
+    isActive: boolean;
     createdAt: Date;
+    allowedMenuItems?: string[];
 }
 export {};

@@ -94,7 +94,7 @@ __decorate([
 ], MatchDivisionsController.prototype, "remove", null);
 exports.MatchDivisionsController = MatchDivisionsController = __decorate([
     (0, swagger_1.ApiTags)('match-divisions'),
-    (0, common_1.Controller)('match-divisions'),
+    (0, common_1.Controller)({ path: 'match-divisions', version: '1' }),
     __metadata("design:paramtypes", [match_divisions_service_1.MatchDivisionsService])
 ], MatchDivisionsController);
 //# sourceMappingURL=match-divisions.controller.js.map

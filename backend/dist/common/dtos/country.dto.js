@@ -42,6 +42,7 @@ __decorate([
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 'https://flagcdn.com/br.svg', description: 'URL to the country flag image', required: false }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((object) => object.flagUrl !== '' && object.flagUrl !== null && object.flagUrl !== undefined),
     (0, class_validator_1.IsUrl)(),
     __metadata("design:type", String)
 ], CreateCountryDto.prototype, "flagUrl", void 0);

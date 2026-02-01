@@ -12,6 +12,7 @@ import { SeasonClubsModule } from './season-clubs/season-clubs.module';
 import { SportClubsModule } from './sport-clubs/sport-clubs.module';
 import { GroupsModule } from './groups/groups.module';
 import { RoundsModule } from './rounds/rounds.module';
+import { MatchesModule } from './matches/matches.module';
 import { MatchDivisionsModule } from './match-divisions/match-divisions.module';
 import { MatchEventsModule } from './match-events/match-events.module';
 import { StandingsModule } from './standings/standings.module';
@@ -41,6 +42,7 @@ import { APP_GUARD } from '@nestjs/core';
     SportClubsModule,
     GroupsModule,
     RoundsModule,
+    MatchesModule,
     MatchDivisionsModule,
     MatchEventsModule,
     StandingsModule,

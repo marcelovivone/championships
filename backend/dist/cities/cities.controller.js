@@ -21,12 +21,12 @@ let CitiesController = class CitiesController {
     constructor(citiesService) {
         this.citiesService = citiesService;
     }
-    async findAll(paginationDto, countryId) {
+    async findAll(paginationDto, filteringDto, countryId) {
         const { page, limit } = paginationDto;
         if (countryId) {
             return this.citiesService.findByCountry(parseInt(countryId, 10), { page, limit });
         }
-        return this.citiesService.findAll({ page, limit });
+        return this.citiesService.findAll({ page, limit }, filteringDto);
     }
     async findOne(id) {
         return this.citiesService.findOne(id);
@@ -57,9 +57,10 @@ __decorate([
     }),
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
-    __param(1, (0, common_1.Query)('countryId')),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, common_1.Query)('countryId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.PaginationDto, String]),
+    __metadata("design:paramtypes", [dtos_1.PaginationDto, dtos_1.FilteringDto, String]),
     __metadata("design:returntype", Promise)
 ], CitiesController.prototype, "findAll", null);
 __decorate([
@@ -106,7 +107,7 @@ __decorate([
 ], CitiesController.prototype, "remove", null);
 exports.CitiesController = CitiesController = __decorate([
     (0, swagger_1.ApiTags)('cities'),
-    (0, common_1.Controller)('cities'),
+    (0, common_1.Controller)({ path: 'cities', version: '1' }),
     __metadata("design:paramtypes", [cities_service_1.CitiesService])
 ], CitiesController);
 //# sourceMappingURL=cities.controller.js.map

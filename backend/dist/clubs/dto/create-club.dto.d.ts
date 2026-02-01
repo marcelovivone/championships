@@ -1,7 +1,8 @@
 export declare class CreateClubDto {
     name: string;
+    shortName?: string;
     foundationYear?: number;
-    cityId: number;
     countryId: number;
-    shieldUrl?: string;
+    cityId: number;
+    imageUrl?: string;
 }

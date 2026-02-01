@@ -72,8 +72,8 @@ let StandingsService = class StandingsService {
             return await this.db
                 .select()
                 .from(schema_1.standings)
-                .innerJoin(schema.phases, (0, drizzle_orm_1.eq)(schema_1.standings.phaseId, schema.phases.id))
-                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema.phases.seasonId, schema_1.seasons.id))
+                .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, schema_1.seasons.id))
                 .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.seasons.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.roundId, roundId)))
                 .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.points), (0, drizzle_orm_1.asc)(schema_1.standings.goalDifference))
                 .then(results => results.map(r => r.standings));
@@ -97,8 +97,7 @@ let StandingsService = class StandingsService {
             return await this.db
                 .select()
                 .from(schema_1.standings)
-                .innerJoin(schema.phases, (0, drizzle_orm_1.eq)(schema_1.standings.phaseId, schema.phases.id))
-                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema.phases.seasonId, schema_1.seasons.id))
+                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, schema_1.seasons.id))
                 .where((0, drizzle_orm_1.eq)(schema_1.seasons.leagueId, leagueId))
                 .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.points), (0, drizzle_orm_1.asc)(schema_1.standings.goalDifference))
                 .then(results => results.map(r => r.standings));
@@ -111,13 +110,13 @@ let StandingsService = class StandingsService {
     }
     async create(createStandingDto) {
         try {
-            const phase = await this.db
+            const season = await this.db
                 .select()
-                .from(schema.phases)
-                .where((0, drizzle_orm_1.eq)(schema.phases.id, createStandingDto.phaseId))
+                .from(schema_1.seasons)
+                .where((0, drizzle_orm_1.eq)(schema_1.seasons.id, createStandingDto.seasonId))
                 .limit(1);
-            if (!phase || phase.length === 0) {
-                throw new common_1.BadRequestException(`Phase with ID ${createStandingDto.phaseId} not found`);
+            if (!season || season.length === 0) {
+                throw new common_1.BadRequestException(`Season with ID ${createStandingDto.seasonId} not found`);
             }
             if (createStandingDto.groupId) {
                 const group = await this.db
@@ -152,7 +151,6 @@ let StandingsService = class StandingsService {
                 .values({
                 leagueId: createStandingDto.leagueId,
                 seasonId: createStandingDto.seasonId,
-                phaseId: createStandingDto.phaseId,
                 roundId: createStandingDto.roundId || 1,
                 groupId: createStandingDto.groupId || null,
                 clubId: createStandingDto.clubId,
@@ -177,16 +175,6 @@ let StandingsService = class StandingsService {
     async update(id, updateStandingDto) {
         try {
             await this.findOne(id);
-            if (updateStandingDto.phaseId) {
-                const phase = await this.db
-                    .select()
-                    .from(schema.phases)
-                    .where((0, drizzle_orm_1.eq)(schema.phases.id, updateStandingDto.phaseId))
-                    .limit(1);
-                if (!phase || phase.length === 0) {
-                    throw new common_1.BadRequestException(`Phase with ID ${updateStandingDto.phaseId} not found`);
-                }
-            }
             const result = await this.db
                 .update(schema_1.standings)
                 .set(updateStandingDto)
@@ -215,11 +203,11 @@ let StandingsService = class StandingsService {
             throw new common_1.BadRequestException('Failed to delete standing');
         }
     }
-    async recordRoundStats(phaseId, groupId, clubId, newStats) {
+    async recordRoundStats(roundId, groupId, clubId, newStats) {
         const lastEntry = await this.db
             .select()
             .from(schema_1.standings)
-            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId), (0, drizzle_orm_1.eq)(schema_1.standings.phaseId, phaseId)))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId), (0, drizzle_orm_1.eq)(schema_1.standings.roundId, roundId)))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.id))
             .limit(1);
         const prev = lastEntry[0] || {

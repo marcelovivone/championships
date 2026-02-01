@@ -26,4 +26,14 @@ __decorate([
     (0, class_validator_1.MinLength)(2),
     __metadata("design:type", String)
 ], CreateCountryDto.prototype, "code", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], CreateCountryDto.prototype, "continent", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateCountryDto.prototype, "flagUrl", void 0);
 //# sourceMappingURL=create-country.dto.js.map

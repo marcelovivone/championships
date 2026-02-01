@@ -1,7 +1,6 @@
 export declare class CreateStandingDto {
     leagueId: number;
     seasonId: number;
-    phaseId: number;
     roundId: number;
     groupId?: number;
     leagueDivisionId?: number;

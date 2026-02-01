@@ -51,32 +51,27 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateLeagueDto.prototype, "cityId", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 2024, description: 'Start year of the season' }),
+    (0, swagger_2.ApiProperty)({ example: false, description: 'Is this the default league for the sport?' }),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateLeagueDto.prototype, "flgDefault", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 'Round', description: 'Schedule type: Round for round-based leagues, Date for date-based leagues' }),
+    (0, class_validator_1.IsEnum)(['Round', 'Date']),
+    __metadata("design:type", String)
+], CreateLeagueDto.prototype, "typeOfSchedule", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 38, description: 'Number of rounds (for round-based leagues) or number of matches (for date-based leagues)' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateLeagueDto.prototype, "startYear", void 0);
+], CreateLeagueDto.prototype, "numberOfRoundsMatches", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 2025, description: 'End year of the season' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateLeagueDto.prototype, "endYear", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 2, description: 'Number of turns (e.g. home and away)' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateLeagueDto.prototype, "numberOfTurns", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 38, description: 'Total number of rounds' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateLeagueDto.prototype, "numberOfRounds", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 2, description: 'Minimum number of match divisions (e.g. halves)' }),
+    (0, swagger_2.ApiProperty)({ example: 2, description: 'Minimum number of match divisions (e.g. halves), can be 0' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateLeagueDto.prototype, "minDivisionsNumber", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 2, description: 'Maximum number of match divisions' }),
+    (0, swagger_2.ApiProperty)({ example: 2, description: 'Maximum number of match divisions, can be 0' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateLeagueDto.prototype, "maxDivisionsNumber", void 0);
@@ -134,6 +129,12 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateLeagueDto.prototype, "numberOfSubLeagues", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: true, description: 'Automatically update current round based on dates', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateLeagueDto.prototype, "flgRoundAutomatic", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 'https://example.com/league-logo.png', required: false }),
     (0, class_validator_1.IsOptional)(),

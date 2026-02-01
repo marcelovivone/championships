@@ -14,10 +14,14 @@ const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const bcrypt = require("bcrypt");
 const users_service_1 = require("../users/users.service");
+const permissions_service_1 = require("../permissions/permissions.service");
+const round_auto_update_service_1 = require("../rounds/round-auto-update.service");
 let AuthService = class AuthService {
-    constructor(usersService, jwtService) {
+    constructor(usersService, jwtService, permissionsService, roundAutoUpdateService) {
         this.usersService = usersService;
         this.jwtService = jwtService;
+        this.permissionsService = permissionsService;
+        this.roundAutoUpdateService = roundAutoUpdateService;
     }
     async validateUser(email, pass) {
         const user = await this.usersService.findByEmail(email);
@@ -32,10 +36,16 @@ let AuthService = class AuthService {
         if (!user) {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
-        const payload = { email: user.email, sub: user.id, role: user.role };
+        if (user.profile === 'admin') {
+            this.roundAutoUpdateService.autoUpdateCurrentRounds().catch(error => {
+            });
+        }
+        const allowedMenuItems = await this.permissionsService.getUserAllowedMenuItems(user.id);
+        const payload = { email: user.email, sub: user.id, profile: user.profile };
         return {
             accessToken: this.jwtService.sign(payload),
-            user,
+            user: user,
+            allowedMenuItems,
         };
     }
 };
@@ -43,6 +53,8 @@ exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [users_service_1.UsersService,
-        jwt_1.JwtService])
+        jwt_1.JwtService,
+        permissions_service_1.PermissionsService,
+        round_auto_update_service_1.RoundAutoUpdateService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

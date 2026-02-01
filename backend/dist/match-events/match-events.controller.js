@@ -94,7 +94,7 @@ __decorate([
 ], MatchEventsController.prototype, "remove", null);
 exports.MatchEventsController = MatchEventsController = __decorate([
     (0, swagger_1.ApiTags)('match-events'),
-    (0, common_1.Controller)('match-events'),
+    (0, common_1.Controller)({ path: 'match-events', version: '1' }),
     __metadata("design:paramtypes", [match_events_service_1.MatchEventsService])
 ], MatchEventsController);
 //# sourceMappingURL=match-events.controller.js.map

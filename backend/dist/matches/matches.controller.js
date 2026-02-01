@@ -16,106 +16,85 @@ exports.MatchesController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const matches_service_1 = require("./matches.service");
-const dtos_1 = require("../common/dtos");
+const match_dto_1 = require("../common/dtos/match.dto");
 let MatchesController = class MatchesController {
     constructor(matchesService) {
         this.matchesService = matchesService;
     }
-    async findAll(phaseId, groupId, roundId) {
-        if (roundId) {
-            return this.matchesService.findByRound(parseInt(roundId, 10));
-        }
-        if (groupId) {
-            return this.matchesService.findByGroup(parseInt(groupId, 10));
-        }
-        if (phaseId) {
-            return this.matchesService.findByPhase(parseInt(phaseId, 10));
-        }
-        return this.matchesService.findAll();
+    async findAll(page = 1, limit = 10, sortBy, sortOrder) {
+        return await this.matchesService.findAllPaginated(Number(page), Number(limit), sortBy, sortOrder);
     }
     async findOne(id) {
-        return this.matchesService.findOne(id);
+        return await this.matchesService.findOne(id);
     }
     async create(createMatchDto) {
-        return this.matchesService.create(createMatchDto);
+        return await this.matchesService.create(createMatchDto);
     }
     async update(id, updateMatchDto) {
-        return this.matchesService.update(id, updateMatchDto);
-    }
-    async updateScore(id, updateScoreDto) {
-        return this.matchesService.updateScore(id, updateScoreDto);
+        return await this.matchesService.update(id, updateMatchDto);
     }
     async remove(id) {
-        await this.matchesService.remove(id);
+        return await this.matchesService.remove(id);
     }
 };
 exports.MatchesController = MatchesController;
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Retrieve all matches' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'List of matches' }),
     (0, common_1.Get)(),
-    __param(0, (0, common_1.Query)('phaseId')),
-    __param(1, (0, common_1.Query)('groupId')),
-    __param(2, (0, common_1.Query)('roundId')),
+    (0, swagger_1.ApiOperation)({ summary: 'Get all matches with pagination' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Successfully retrieved matches.' }),
+    __param(0, (0, common_1.Query)('page', common_1.ValidationPipe)),
+    __param(1, (0, common_1.Query)('limit', common_1.ValidationPipe)),
+    __param(2, (0, common_1.Query)('sortBy')),
+    __param(3, (0, common_1.Query)('sortOrder')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [Number, Number, String, String]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "findAll", null);
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Retrieve a match by ID' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'The match details' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found' }),
     (0, common_1.Get)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    (0, swagger_1.ApiOperation)({ summary: 'Get a match by ID' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Successfully retrieved match.' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found.' }),
+    __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "findOne", null);
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Create a new match' }),
-    (0, swagger_1.ApiResponse)({ status: 201, description: 'The match has been successfully created.' }),
     (0, common_1.Post)(),
-    (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
+    (0, swagger_1.ApiOperation)({ summary: 'Create a new match' }),
+    (0, swagger_1.ApiResponse)({ status: 201, description: 'Successfully created match.' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid input data.' }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.CreateMatchDto]),
+    __metadata("design:paramtypes", [match_dto_1.CreateMatchDto]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "create", null);
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Update a match' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'The match has been successfully updated.' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found' }),
     (0, common_1.Put)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    (0, swagger_1.ApiOperation)({ summary: 'Update a match by ID' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'Successfully updated match.' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found.' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Invalid input data.' }),
+    __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, dtos_1.UpdateMatchDto]),
+    __metadata("design:paramtypes", [Number, match_dto_1.UpdateMatchDto]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "update", null);
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Update match score' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'Score updated and standings calculated' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found' }),
-    (0, common_1.Put)(':id/score'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Body)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, dtos_1.UpdateMatchScoreDto]),
-    __metadata("design:returntype", Promise)
-], MatchesController.prototype, "updateScore", null);
-__decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Delete a match' }),
-    (0, swagger_1.ApiResponse)({ status: 204, description: 'The match has been successfully deleted.' }),
-    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found' }),
     (0, common_1.Delete)(':id'),
     (0, common_1.HttpCode)(common_1.HttpStatus.NO_CONTENT),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    (0, swagger_1.ApiOperation)({ summary: 'Delete a match by ID' }),
+    (0, swagger_1.ApiResponse)({ status: 204, description: 'Successfully deleted match.' }),
+    (0, swagger_1.ApiResponse)({ status: 404, description: 'Match not found.' }),
+    __param(0, (0, common_1.Param)('id')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "remove", null);
 exports.MatchesController = MatchesController = __decorate([
-    (0, swagger_1.ApiTags)('matches'),
+    (0, swagger_1.ApiTags)('Matches'),
     (0, common_1.Controller)('matches'),
     __metadata("design:paramtypes", [matches_service_1.MatchesService])
 ], MatchesController);

@@ -22,7 +22,7 @@ let CountriesService = class CountriesService {
     constructor(db) {
         this.db = db;
     }
-    async findAll(paginationDto, filteringDto) {
+    async findAll(paginationDto, filteringDto = {}) {
         const { page = 1, limit = 10 } = paginationDto;
         const { sortBy, sortOrder, search } = filteringDto;
         const offset = (page - 1) * limit;

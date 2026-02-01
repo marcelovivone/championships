@@ -1,9 +1,9 @@
 import { CitiesService } from './cities.service';
-import { CreateCityDto, PaginationDto, UpdateCityDto, CityResponseDto } from '../common/dtos';
+import { CreateCityDto, PaginationDto, UpdateCityDto, CityResponseDto, FilteringDto } from '../common/dtos';
 export declare class CitiesController {
     private readonly citiesService;
     constructor(citiesService: CitiesService);
-    findAll(paginationDto: PaginationDto, countryId?: string): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto: FilteringDto, countryId?: string): Promise<{
         data: {
             id: number;
             name: string;

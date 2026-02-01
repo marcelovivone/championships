@@ -22,9 +22,20 @@ let StadiumsService = class StadiumsService {
     constructor(db) {
         this.db = db;
     }
-    async findAll(paginationDto) {
+    async findAll(paginationDto, filteringDto = {}) {
         const { page = 1, limit = 10 } = paginationDto;
+        const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
         const offset = (page - 1) * limit;
+        const sortableColumns = ['name', 'type', 'capacity', 'cityId'];
+        const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+        const order = sortOrder === 'desc' ? drizzle_orm_1.desc : drizzle_orm_1.asc;
+        let sortColumn = schema_1.stadiums.name;
+        if (orderByField === 'type')
+            sortColumn = schema_1.stadiums.type;
+        else if (orderByField === 'capacity')
+            sortColumn = schema_1.stadiums.capacity;
+        else if (orderByField === 'cityId')
+            sortColumn = schema_1.stadiums.cityId;
         try {
             const data = await this.db
                 .select({
@@ -41,7 +52,7 @@ let StadiumsService = class StadiumsService {
             })
                 .from(schema_1.stadiums)
                 .leftJoin(schema_1.cities, (0, drizzle_orm_1.eq)(schema_1.stadiums.cityId, schema_1.cities.id))
-                .orderBy(schema_1.stadiums.name)
+                .orderBy(order(sortColumn))
                 .limit(limit)
                 .offset(offset);
             const totalResult = await this.db

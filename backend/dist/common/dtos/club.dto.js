@@ -13,6 +13,7 @@ exports.ClubResponseDto = exports.UpdateClubDto = exports.CreateClubDto = void 0
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const swagger_2 = require("@nestjs/swagger");
+const getCurrentYear = () => new Date().getFullYear();
 class CreateClubDto {
 }
 exports.CreateClubDto = CreateClubDto;
@@ -28,10 +29,22 @@ __decorate([
     __metadata("design:type", String)
 ], CreateClubDto.prototype, "shortName", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 1902, description: 'Year the club was founded' }),
-    (0, class_validator_1.IsInt)(),
+    (0, swagger_2.ApiProperty)({ example: 1902, description: 'Year the club was founded', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((object) => object.foundationYear !== undefined &&
+        object.foundationYear !== null &&
+        object.foundationYear !== ""),
+    (0, class_validator_1.IsInt)({ message: 'Foundation year must be a valid integer' }),
+    (0, class_validator_1.Min)(1800, { message: 'Foundation year must be 1800 or later' }),
+    (0, class_validator_1.Max)(getCurrentYear(), { message: 'Foundation year cannot be in the future' }),
     __metadata("design:type", Number)
 ], CreateClubDto.prototype, "foundationYear", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1, description: 'ID of the city the club belongs to', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateClubDto.prototype, "cityId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1, description: 'ID of the country the club belongs to' }),
     (0, class_validator_1.IsInt)(),
@@ -40,6 +53,7 @@ __decorate([
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 'https://example.com/logo.png', description: 'URL to club logo', required: false }),
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((object) => object.imageUrl !== '' && object.imageUrl !== null && object.imageUrl !== undefined),
     (0, class_validator_1.IsUrl)(),
     __metadata("design:type", String)
 ], CreateClubDto.prototype, "imageUrl", void 0);

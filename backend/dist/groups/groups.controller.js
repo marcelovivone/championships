@@ -16,14 +16,15 @@ exports.GroupsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const groups_service_1 = require("./groups.service");
-const dtos_1 = require("../common/dtos");
+const create_group_dto_1 = require("./dto/create-group.dto");
+const update_group_dto_1 = require("./dto/update-group.dto");
 let GroupsController = class GroupsController {
     constructor(groupsService) {
         this.groupsService = groupsService;
     }
-    async findAll(phaseId) {
-        if (phaseId) {
-            return this.groupsService.findByPhase(parseInt(phaseId, 10));
+    async findAll(seasonId) {
+        if (seasonId) {
+            return this.groupsService.findBySeason(parseInt(seasonId, 10));
         }
         return this.groupsService.findAll();
     }
@@ -45,7 +46,7 @@ __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Retrieve all groups' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'List of groups' }),
     (0, common_1.Get)(),
-    __param(0, (0, common_1.Query)('phaseId')),
+    __param(0, (0, common_1.Query)('seasonId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
@@ -67,7 +68,7 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.CreateGroupDto]),
+    __metadata("design:paramtypes", [create_group_dto_1.CreateGroupDto]),
     __metadata("design:returntype", Promise)
 ], GroupsController.prototype, "create", null);
 __decorate([
@@ -78,7 +79,7 @@ __decorate([
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, dtos_1.UpdateGroupDto]),
+    __metadata("design:paramtypes", [Number, update_group_dto_1.UpdateGroupDto]),
     __metadata("design:returntype", Promise)
 ], GroupsController.prototype, "update", null);
 __decorate([
@@ -94,7 +95,7 @@ __decorate([
 ], GroupsController.prototype, "remove", null);
 exports.GroupsController = GroupsController = __decorate([
     (0, swagger_1.ApiTags)('groups'),
-    (0, common_1.Controller)('groups'),
+    (0, common_1.Controller)({ path: 'groups', version: '1' }),
     __metadata("design:paramtypes", [groups_service_1.GroupsService])
 ], GroupsController);
 //# sourceMappingURL=groups.controller.js.map

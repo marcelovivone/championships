@@ -21,6 +21,11 @@ class CreateMatchDto {
 }
 exports.CreateMatchDto = CreateMatchDto;
 __decorate([
+    (0, swagger_2.ApiProperty)({ example: 1, description: 'Sport ID' }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateMatchDto.prototype, "sportId", void 0);
+__decorate([
     (0, swagger_2.ApiProperty)({ example: 1, description: 'League ID' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
@@ -31,12 +36,8 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateMatchDto.prototype, "seasonId", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Phase ID' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateMatchDto.prototype, "phaseId", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Round ID' }),
+    (0, swagger_2.ApiProperty)({ example: 1, description: 'Round ID (optional - only for Round-based leagues)', required: false }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateMatchDto.prototype, "roundId", void 0);
@@ -124,10 +125,6 @@ __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     __metadata("design:type", Number)
 ], MatchResponseDto.prototype, "seasonId", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1 }),
-    __metadata("design:type", Number)
-], MatchResponseDto.prototype, "phaseId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     __metadata("design:type", Number)

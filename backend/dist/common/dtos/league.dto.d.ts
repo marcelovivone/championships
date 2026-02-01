@@ -4,10 +4,9 @@ export declare class CreateLeagueDto {
     sportId: number;
     countryId?: number;
     cityId?: number;
-    startYear: number;
-    endYear: number;
-    numberOfTurns: number;
-    numberOfRounds: number;
+    flgDefault: boolean;
+    typeOfSchedule: 'Round' | 'Date';
+    numberOfRoundsMatches: number;
     minDivisionsNumber: number;
     maxDivisionsNumber: number;
     divisionsTime?: number;
@@ -19,6 +18,7 @@ export declare class CreateLeagueDto {
     descendsQuantity?: number;
     hasSubLeagues: boolean;
     numberOfSubLeagues?: number;
+    flgRoundAutomatic?: boolean;
     imageUrl?: string;
 }
 declare const UpdateLeagueDto_base: import("@nestjs/common").Type<Partial<CreateLeagueDto>>;

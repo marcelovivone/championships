@@ -8,10 +8,8 @@ export declare class StandingsService {
         id: number;
         leagueId: number;
         seasonId: number;
-        phaseId: number;
         roundId: number;
         groupId: number;
-        leagueDivisionId: number;
         clubId: number;
         points: number;
         played: number;
@@ -44,10 +42,8 @@ export declare class StandingsService {
         id: number;
         leagueId: number;
         seasonId: number;
-        phaseId: number;
         roundId: number;
         groupId: number;
-        leagueDivisionId: number;
         clubId: number;
         points: number;
         played: number;
@@ -80,10 +76,8 @@ export declare class StandingsService {
         id: number;
         leagueId: number;
         seasonId: number;
-        phaseId: number;
         roundId: number;
         groupId: number;
-        leagueDivisionId: number;
         clubId: number;
         points: number;
         played: number;
@@ -116,10 +110,8 @@ export declare class StandingsService {
         id: number;
         leagueId: number;
         seasonId: number;
-        phaseId: number;
         roundId: number;
         groupId: number;
-        leagueDivisionId: number;
         clubId: number;
         points: number;
         played: number;
@@ -154,11 +146,9 @@ export declare class StandingsService {
         clubId: number;
         leagueId: number;
         seasonId: number;
-        updatedAt: Date;
-        phaseId: number;
         groupId: number;
         roundId: number;
-        leagueDivisionId: number;
+        updatedAt: Date;
         points: number;
         played: number;
         wins: number;
@@ -188,10 +178,8 @@ export declare class StandingsService {
         id: number;
         leagueId: number;
         seasonId: number;
-        phaseId: number;
         roundId: number;
         groupId: number;
-        leagueDivisionId: number;
         clubId: number;
         points: number;
         played: number;
@@ -226,11 +214,9 @@ export declare class StandingsService {
         clubId: number;
         leagueId: number;
         seasonId: number;
-        updatedAt: Date;
-        phaseId: number;
         groupId: number;
         roundId: number;
-        leagueDivisionId: number;
+        updatedAt: Date;
         points: number;
         played: number;
         wins: number;
@@ -256,5 +242,5 @@ export declare class StandingsService {
         awayLosses: number;
         awayDraws: number;
     }>;
-    recordRoundStats(phaseId: number, groupId: number, clubId: number, newStats: any): Promise<void>;
+    recordRoundStats(roundId: number, groupId: number, clubId: number, newStats: any): Promise<void>;
 }

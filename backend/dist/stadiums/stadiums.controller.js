@@ -21,11 +21,11 @@ let StadiumsController = class StadiumsController {
     constructor(stadiumsService) {
         this.stadiumsService = stadiumsService;
     }
-    async findAll(paginationDto, cityId, type) {
+    async findAll(paginationDto, filteringDto, cityId, type) {
         if (cityId) {
             return this.stadiumsService.findByCity(parseInt(cityId, 10), paginationDto);
         }
-        return this.stadiumsService.findAll(paginationDto);
+        return this.stadiumsService.findAll(paginationDto, filteringDto);
     }
     async findOne(id) {
         return this.stadiumsService.findOne(id);
@@ -56,10 +56,12 @@ __decorate([
     }),
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
-    __param(1, (0, common_1.Query)('cityId')),
-    __param(2, (0, common_1.Query)('type')),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, common_1.Query)('cityId')),
+    __param(3, (0, common_1.Query)('type')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.PaginationDto, String, String]),
+    __metadata("design:paramtypes", [dtos_1.PaginationDto,
+        dtos_1.FilteringDto, String, String]),
     __metadata("design:returntype", Promise)
 ], StadiumsController.prototype, "findAll", null);
 __decorate([
@@ -106,7 +108,7 @@ __decorate([
 ], StadiumsController.prototype, "remove", null);
 exports.StadiumsController = StadiumsController = __decorate([
     (0, swagger_1.ApiTags)('stadiums'),
-    (0, common_1.Controller)('stadiums'),
+    (0, common_1.Controller)({ path: 'stadiums', version: '1' }),
     __metadata("design:paramtypes", [stadiums_service_1.StadiumsService])
 ], StadiumsController);
 //# sourceMappingURL=stadiums.controller.js.map

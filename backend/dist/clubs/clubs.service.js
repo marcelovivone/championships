@@ -21,9 +21,22 @@ let ClubsService = class ClubsService {
     constructor(db) {
         this.db = db;
     }
-    async findAll(paginationDto) {
+    async findAll(paginationDto, filteringDto = {}) {
         const { page = 1, limit = 10 } = paginationDto;
+        const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
         const offset = (page - 1) * limit;
+        const sortableColumns = ['name', 'shortName', 'foundationYear', 'cityId', 'countryId'];
+        const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+        const order = sortOrder === 'desc' ? drizzle_orm_1.desc : drizzle_orm_1.asc;
+        let sortColumn = schema_1.clubs.name;
+        if (orderByField === 'shortName')
+            sortColumn = schema_1.clubs.shortName;
+        else if (orderByField === 'foundationYear')
+            sortColumn = schema_1.clubs.foundationYear;
+        else if (orderByField === 'cityId')
+            sortColumn = schema_1.clubs.cityId;
+        else if (orderByField === 'countryId')
+            sortColumn = schema_1.clubs.countryId;
         try {
             const data = await this.db
                 .select({
@@ -32,15 +45,21 @@ let ClubsService = class ClubsService {
                 shortName: schema_1.clubs.shortName,
                 foundationYear: schema_1.clubs.foundationYear,
                 imageUrl: schema_1.clubs.imageUrl,
+                cityId: schema_1.clubs.cityId,
                 countryId: schema_1.clubs.countryId,
+                city: {
+                    id: schema_1.cities.id,
+                    name: schema_1.cities.name,
+                },
                 country: {
                     id: schema_1.countries.id,
                     name: schema_1.countries.name,
                 },
             })
                 .from(schema_1.clubs)
+                .leftJoin(schema_1.cities, (0, drizzle_orm_1.eq)(schema_1.clubs.cityId, schema_1.cities.id))
                 .leftJoin(schema_1.countries, (0, drizzle_orm_1.eq)(schema_1.clubs.countryId, schema_1.countries.id))
-                .orderBy(schema_1.clubs.name)
+                .orderBy(order(sortColumn))
                 .limit(limit)
                 .offset(offset);
             const totalResult = await this.db

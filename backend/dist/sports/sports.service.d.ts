@@ -1,25 +1,29 @@
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
-import { CreateSportDto, PaginationDto, UpdateSportDto } from '../common/dtos';
+import { CreateSportDto, PaginationDto, UpdateSportDto, FilteringDto } from '../common/dtos';
 export declare class SportsService {
     private db;
     constructor(db: NodePgDatabase<typeof schema>);
-    findAll(paginationDto: PaginationDto): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto?: FilteringDto): Promise<{
         data: {
             id: number;
             name: string;
             reducedName: string;
             type: string;
             divisionType: string;
-            divisionsNumber: number;
+            minMatchDivisionNumber: number;
+            maxMatchDivisionNumber: number;
             divisionTime: number;
             scoreType: string;
             hasOvertime: boolean;
             hasPenalties: boolean;
+            flgDefault: boolean;
             imageUrl: string;
             createdAt: Date;
         }[];
         total: number;
+        page: number;
+        limit: number;
     }>;
     findOne(id: number): Promise<{
         id: number;
@@ -27,11 +31,13 @@ export declare class SportsService {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -41,11 +47,13 @@ export declare class SportsService {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }[]>;
@@ -55,11 +63,13 @@ export declare class SportsService {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -69,11 +79,13 @@ export declare class SportsService {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -83,11 +95,13 @@ export declare class SportsService {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;

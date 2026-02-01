@@ -1,10 +1,10 @@
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
-import { CreateCityDto, PaginationDto, UpdateCityDto } from '../common/dtos';
+import { CreateCityDto, PaginationDto, UpdateCityDto, FilteringDto } from '../common/dtos';
 export declare class CitiesService {
     private db;
     constructor(db: NodePgDatabase<typeof schema>);
-    findAll(paginationDto: PaginationDto): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto?: FilteringDto): Promise<{
         data: {
             id: number;
             name: string;

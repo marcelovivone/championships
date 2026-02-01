@@ -10,6 +10,7 @@ exports.ClubsModule = void 0;
 const common_1 = require("@nestjs/common");
 const clubs_service_1 = require("./clubs.service");
 const clubs_controller_1 = require("./clubs.controller");
+const clubs_images_controller_1 = require("./clubs-images.controller");
 const db_module_1 = require("../db/db.module");
 let ClubsModule = class ClubsModule {
 };
@@ -17,7 +18,7 @@ exports.ClubsModule = ClubsModule;
 exports.ClubsModule = ClubsModule = __decorate([
     (0, common_1.Module)({
         imports: [db_module_1.DbModule],
-        controllers: [clubs_controller_1.ClubsController],
+        controllers: [clubs_controller_1.ClubsController, clubs_images_controller_1.ClubsImagesController],
         providers: [clubs_service_1.ClubsService],
     })
 ], ClubsModule);

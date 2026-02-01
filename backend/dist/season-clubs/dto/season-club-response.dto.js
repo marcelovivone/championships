@@ -19,6 +19,14 @@ __decorate([
     __metadata("design:type", Number)
 ], SeasonClubResponseDto.prototype, "id", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The ID of the sport', example: 1 }),
+    __metadata("design:type", Number)
+], SeasonClubResponseDto.prototype, "sportId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The ID of the league', example: 1 }),
+    __metadata("design:type", Number)
+], SeasonClubResponseDto.prototype, "leagueId", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'The ID of the season', example: 1 }),
     __metadata("design:type", Number)
 ], SeasonClubResponseDto.prototype, "seasonId", void 0);
@@ -27,23 +35,35 @@ __decorate([
     __metadata("design:type", Number)
 ], SeasonClubResponseDto.prototype, "clubId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Date when the club joined the season', example: '2025-08-01T00:00:00Z' }),
-    __metadata("design:type", Date)
-], SeasonClubResponseDto.prototype, "joinDate", void 0);
-__decorate([
     (0, swagger_1.ApiProperty)({
-        description: 'Date when the club left the season (NULL = still active)',
-        example: null,
+        description: 'The ID of the group (optional)',
+        example: 1,
         required: false,
     }),
-    __metadata("design:type", Date)
-], SeasonClubResponseDto.prototype, "leaveDate", void 0);
+    __metadata("design:type", Number)
+], SeasonClubResponseDto.prototype, "groupId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ description: 'When the association was created', example: '2025-08-01T00:00:00Z' }),
     __metadata("design:type", Date)
 ], SeasonClubResponseDto.prototype, "createdAt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ description: 'When the association was last updated', example: '2025-08-01T00:00:00Z' }),
-    __metadata("design:type", Date)
-], SeasonClubResponseDto.prototype, "updatedAt", void 0);
+    (0, swagger_1.ApiProperty)({ description: 'Sport information', required: false }),
+    __metadata("design:type", Object)
+], SeasonClubResponseDto.prototype, "sport", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'League information', required: false }),
+    __metadata("design:type", Object)
+], SeasonClubResponseDto.prototype, "league", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Season information', required: false }),
+    __metadata("design:type", Object)
+], SeasonClubResponseDto.prototype, "season", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Club information', required: false }),
+    __metadata("design:type", Object)
+], SeasonClubResponseDto.prototype, "club", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ description: 'Group information', required: false }),
+    __metadata("design:type", Object)
+], SeasonClubResponseDto.prototype, "group", void 0);
 //# sourceMappingURL=season-club-response.dto.js.map

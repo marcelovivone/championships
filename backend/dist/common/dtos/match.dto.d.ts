@@ -1,8 +1,8 @@
 export declare class CreateMatchDto {
+    sportId: number;
     leagueId: number;
     seasonId: number;
-    phaseId: number;
-    roundId: number;
+    roundId?: number;
     groupId?: number;
     leagueDivisionId?: number;
     turn: number;
@@ -22,7 +22,6 @@ export declare class MatchResponseDto {
     id: number;
     leagueId: number;
     seasonId: number;
-    phaseId: number;
     roundId: number;
     groupId?: number;
     leagueDivisionId?: number;

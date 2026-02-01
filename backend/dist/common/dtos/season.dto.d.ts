@@ -1,7 +1,11 @@
 export declare class CreateSeasonDto {
+    sportId: number;
     leagueId: number;
-    year: number;
-    status: 'planned' | 'ongoing' | 'finished';
+    startYear: number;
+    endYear: number;
+    status: 'planned' | 'active' | 'finished';
+    flgDefault?: boolean;
+    numberOfGroups?: number;
 }
 declare const UpdateSeasonDto_base: import("@nestjs/mapped-types").MappedType<Partial<CreateSeasonDto>>;
 export declare class UpdateSeasonDto extends UpdateSeasonDto_base {

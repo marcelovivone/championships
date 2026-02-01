@@ -21,6 +21,9 @@ let UsersController = class UsersController {
     constructor(usersService) {
         this.usersService = usersService;
     }
+    async findAll() {
+        return this.usersService.findAll();
+    }
     async create(createUserDto) {
         return this.usersService.create(createUserDto);
     }
@@ -29,6 +32,14 @@ let UsersController = class UsersController {
     }
 };
 exports.UsersController = UsersController;
+__decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Get all users' }),
+    (0, swagger_1.ApiResponse)({ status: 200, description: 'List of users' }),
+    (0, common_1.Get)(),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], UsersController.prototype, "findAll", null);
 __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Register a new user' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'User created successfully', type: dtos_1.UserResponseDto }),
@@ -50,7 +61,7 @@ __decorate([
 ], UsersController.prototype, "findOne", null);
 exports.UsersController = UsersController = __decorate([
     (0, swagger_1.ApiTags)('users'),
-    (0, common_1.Controller)('users'),
+    (0, common_1.Controller)({ path: 'users', version: '1' }),
     __metadata("design:paramtypes", [users_service_1.UsersService])
 ], UsersController);
 //# sourceMappingURL=users.controller.js.map

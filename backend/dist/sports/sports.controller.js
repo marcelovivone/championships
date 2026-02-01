@@ -21,8 +21,8 @@ let SportsController = class SportsController {
     constructor(sportsService) {
         this.sportsService = sportsService;
     }
-    async findAll(paginationDto) {
-        return this.sportsService.findAll(paginationDto);
+    async findAll(paginationDto, filteringDto) {
+        return this.sportsService.findAll(paginationDto, filteringDto);
     }
     async findOne(id) {
         return this.sportsService.findOne(+id);
@@ -56,8 +56,9 @@ __decorate([
     }),
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
+    __param(1, (0, common_1.Query)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.PaginationDto]),
+    __metadata("design:paramtypes", [dtos_1.PaginationDto, dtos_1.FilteringDto]),
     __metadata("design:returntype", Promise)
 ], SportsController.prototype, "findAll", null);
 __decorate([
@@ -114,7 +115,7 @@ __decorate([
 ], SportsController.prototype, "remove", null);
 exports.SportsController = SportsController = __decorate([
     (0, swagger_1.ApiTags)('sports'),
-    (0, common_1.Controller)('sports'),
+    (0, common_1.Controller)({ path: 'sports', version: '1' }),
     __metadata("design:paramtypes", [sports_service_1.SportsService])
 ], SportsController);
 //# sourceMappingURL=sports.controller.js.map

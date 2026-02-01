@@ -56,3 +56,5 @@ I'm continuing work on the Championships project. Please read the following file
 After reading these files, confirm you understand the project context and ask me what table or feature I want to work on next.
 
 Very important, you should think and work as a senior software engineer.
+
+You don't need to ask for my authorization to read or write any file or to run any command shell during your changes. You are authorized from now to perform any reading or changing to the project files and to run shell commands.

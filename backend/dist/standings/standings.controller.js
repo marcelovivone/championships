@@ -98,7 +98,7 @@ __decorate([
 ], StandingsController.prototype, "remove", null);
 exports.StandingsController = StandingsController = __decorate([
     (0, swagger_1.ApiTags)('standings'),
-    (0, common_1.Controller)('standings'),
+    (0, common_1.Controller)({ path: 'standings', version: '1' }),
     __metadata("design:paramtypes", [standings_service_1.StandingsService])
 ], StandingsController);
 //# sourceMappingURL=standings.controller.js.map

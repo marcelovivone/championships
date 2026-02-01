@@ -148,7 +148,39 @@ export const seasonClubsApi = {
   },
 };
 
-export const matchesApi = createCrudApi<Match, CreateMatchDto>('matches');
+export const matchesApi = {
+  ...createCrudApi<Match, CreateMatchDto>('matches'),
+  getBySeason: async (seasonId: number): Promise<Match[]> => {
+    const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  getBySportLeagueSeasonAndGroup: async (
+    sportId: number, 
+    leagueId: number, 
+    seasonId: number, 
+    groupId: number | null
+  ): Promise<Match[]> => {
+    let url = `/v1/matches?sportId=${sportId}&leagueId=${leagueId}&seasonId=${seasonId}`;
+    if (groupId) {
+      url += `&groupId=${groupId}`;
+    }
+    
+    const response = await apiClient.get<Match[]>(url);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  getBySeasonAndRound: async (seasonId: number, roundId: number): Promise<Match[]> => {
+    const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&roundId=${roundId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+},
+getBySeasonAndDate: async (seasonId: number, date: string): Promise<Match[]> => {
+    const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&date=${date}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  }
+};
 export const matchDivisionsApi = createCrudApi<MatchDivision, CreateMatchDivisionDto>('match-divisions');
 export const matchEventsApi = createCrudApi<MatchEvent, CreateMatchEventDto>('match-events');
 export const standingsApi = createCrudApi<Standing>('standings');

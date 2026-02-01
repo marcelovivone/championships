@@ -8,7 +8,6 @@ export * from './league.dto';
 export * from './league-division.dto';
 export * from './league-link.dto';
 export * from './season.dto';
-export * from './phase.dto';
 export * from './round.dto';
 export * from './group.dto';
 export * from './match.dto';

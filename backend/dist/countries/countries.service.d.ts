@@ -4,7 +4,7 @@ import { CreateCountryDto, PaginationDto, UpdateCountryDto, FilteringDto } from 
 export declare class CountriesService {
     private db;
     constructor(db: NodePgDatabase<typeof schema>);
-    findAll(paginationDto: PaginationDto, filteringDto: FilteringDto): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto?: FilteringDto): Promise<{
         data: {
             id: number;
             name: string;

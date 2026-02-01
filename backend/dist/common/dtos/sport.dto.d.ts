@@ -3,11 +3,13 @@ export declare class CreateSportDto {
     reducedName: string;
     type: string;
     divisionType: string;
-    divisionsNumber: number;
+    minMatchDivisionNumber: number;
+    maxMatchDivisionNumber: number;
     divisionTime: number;
     scoreType: string;
     hasOvertime: boolean;
     hasPenalties: boolean;
+    flgDefault: boolean;
     imageUrl: string;
 }
 declare const UpdateSportDto_base: import("@nestjs/common").Type<Partial<CreateSportDto>>;

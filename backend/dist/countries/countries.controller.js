@@ -115,7 +115,7 @@ __decorate([
 ], CountriesController.prototype, "remove", null);
 exports.CountriesController = CountriesController = __decorate([
     (0, swagger_1.ApiTags)('countries'),
-    (0, common_1.Controller)('countries'),
+    (0, common_1.Controller)({ path: 'countries', version: '1' }),
     __metadata("design:paramtypes", [countries_service_1.CountriesService])
 ], CountriesController);
 //# sourceMappingURL=countries.controller.js.map

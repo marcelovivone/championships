@@ -36,6 +36,10 @@ let UsersService = class UsersService {
         const { password, ...user } = result[0];
         return user;
     }
+    async findAll() {
+        const allUsers = await this.db.select().from(schema_1.users);
+        return allUsers.map(({ password, ...user }) => user);
+    }
     async findOne(id) {
         const user = await this.db.select().from(schema_1.users).where((0, drizzle_orm_1.eq)(schema_1.users.id, id)).limit(1);
         if (!user.length)

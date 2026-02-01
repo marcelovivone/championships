@@ -36,13 +36,13 @@ __decorate([
     (0, swagger_1.ApiPropertyOptional)({
         description: 'Number of results per page',
         default: 10,
-        maximum: 100,
+        maximum: 1000,
         type: Number,
     }),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.Min)(1),
-    (0, class_validator_1.Max)(100),
+    (0, class_validator_1.Max)(1000),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)
 ], PaginationDto.prototype, "limit", void 0);

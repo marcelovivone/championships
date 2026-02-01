@@ -22,24 +22,34 @@ let SportsService = class SportsService {
     constructor(db) {
         this.db = db;
     }
-    async findAll(paginationDto) {
+    async findAll(paginationDto, filteringDto = {}) {
         const { page = 1, limit = 10 } = paginationDto;
+        const { sortBy, sortOrder, search } = filteringDto;
         const offset = (page - 1) * limit;
+        const sortableColumns = ['name', 'reducedName', 'type', 'divisionType', 'minMatchDivisionNumber', 'maxMatchDivisionNumber', 'divisionTime', 'scoreType', 'hasOvertime', 'hasPenalties', 'flgDefault'];
+        const orderBy = sortableColumns.includes(sortBy) ? sortBy : 'name';
+        const order = sortOrder === 'desc' ? drizzle_orm_1.desc : drizzle_orm_1.asc;
+        const whereConditions = [];
+        if (search) {
+            whereConditions.push((0, drizzle_orm_1.or)((0, drizzle_orm_1.ilike)(schema_1.sports.name, `%${search}%`), (0, drizzle_orm_1.ilike)(schema_1.sports.reducedName, `%${search}%`), (0, drizzle_orm_1.ilike)(schema_1.sports.type, `%${search}%`)));
+        }
+        const finalWhere = (0, drizzle_orm_1.and)(...whereConditions);
         try {
-            const data = await this.db
-                .select()
-                .from(schema_1.sports)
-                .orderBy(schema_1.sports.name)
-                .limit(limit)
-                .offset(offset);
+            const query = this.db.select().from(schema_1.sports).where(finalWhere);
             const totalResult = await this.db
                 .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
-                .from(schema_1.sports);
+                .from(schema_1.sports)
+                .where(finalWhere);
             const total = Number(totalResult[0].count);
-            return { data, total };
+            const data = await query
+                .orderBy(order(schema_1.sports[orderBy]))
+                .limit(limit)
+                .offset(offset);
+            return { data, total, page, limit };
         }
         catch (error) {
-            throw new common_1.BadRequestException('Failed to fetch paginated sports');
+            console.error('Error fetching sports:', error);
+            throw new common_1.BadRequestException('Failed to fetch paginated and filtered sports');
         }
     }
     async findOne(id) {
@@ -81,6 +91,12 @@ let SportsService = class SportsService {
             if (existing && existing.length > 0) {
                 throw new common_1.BadRequestException(`Sport "${createSportDto.name}" already exists`);
             }
+            if (createSportDto.flgDefault) {
+                await this.db
+                    .update(schema_1.sports)
+                    .set({ flgDefault: false })
+                    .where((0, drizzle_orm_1.eq)(schema_1.sports.flgDefault, true));
+            }
             const result = await this.db
                 .insert(schema_1.sports)
                 .values(createSportDto)
@@ -105,6 +121,12 @@ let SportsService = class SportsService {
                 if (existing && existing.length > 0 && existing[0].id !== id) {
                     throw new common_1.BadRequestException(`Sport "${updateSportDto.name}" already exists`);
                 }
+            }
+            if (updateSportDto.flgDefault === true) {
+                await this.db
+                    .update(schema_1.sports)
+                    .set({ flgDefault: false })
+                    .where((0, drizzle_orm_1.eq)(schema_1.sports.flgDefault, true));
             }
             const result = await this.db
                 .update(schema_1.sports)

@@ -12,31 +12,43 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RoundResponseDto = exports.UpdateRoundDto = exports.CreateRoundDto = void 0;
 const class_validator_1 = require("class-validator");
 const mapped_types_1 = require("@nestjs/mapped-types");
+const swagger_1 = require("@nestjs/swagger");
 class CreateRoundDto {
 }
 exports.CreateRoundDto = CreateRoundDto;
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 1, description: 'ID of the season' }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateRoundDto.prototype, "seasonId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1, description: 'ID of the league' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateRoundDto.prototype, "leagueId", void 0);
 __decorate([
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateRoundDto.prototype, "phaseId", void 0);
-__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1, description: 'Round number' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateRoundDto.prototype, "roundNumber", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-01-20T00:00:00Z', description: 'Start date', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], CreateRoundDto.prototype, "startDate", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: '2026-01-27T00:00:00Z', description: 'End date', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsDateString)(),
     __metadata("design:type", String)
 ], CreateRoundDto.prototype, "endDate", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false, description: 'Is this the current round?', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateRoundDto.prototype, "flgCurrent", void 0);
 class UpdateRoundDto extends (0, mapped_types_1.PartialType)(CreateRoundDto) {
 }
 exports.UpdateRoundDto = UpdateRoundDto;

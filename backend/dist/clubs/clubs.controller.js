@@ -21,12 +21,12 @@ let ClubsController = class ClubsController {
     constructor(clubsService) {
         this.clubsService = clubsService;
     }
-    async findAll(paginationDto, countryId) {
+    async findAll(paginationDto, filteringDto, countryId) {
         const { page, limit } = paginationDto;
         if (countryId) {
             return this.clubsService.findByCountry(parseInt(countryId, 10), { page, limit });
         }
-        return this.clubsService.findAll({ page, limit });
+        return this.clubsService.findAll({ page, limit }, filteringDto);
     }
     async findOne(id) {
         return this.clubsService.findOne(id);
@@ -57,9 +57,10 @@ __decorate([
     }),
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)()),
-    __param(1, (0, common_1.Query)('countryId')),
+    __param(1, (0, common_1.Query)()),
+    __param(2, (0, common_1.Query)('countryId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.PaginationDto, String]),
+    __metadata("design:paramtypes", [dtos_1.PaginationDto, dtos_1.FilteringDto, String]),
     __metadata("design:returntype", Promise)
 ], ClubsController.prototype, "findAll", null);
 __decorate([
@@ -106,7 +107,7 @@ __decorate([
 ], ClubsController.prototype, "remove", null);
 exports.ClubsController = ClubsController = __decorate([
     (0, swagger_1.ApiTags)('clubs'),
-    (0, common_1.Controller)('clubs'),
+    (0, common_1.Controller)({ path: 'clubs', version: '1' }),
     __metadata("design:paramtypes", [clubs_service_1.ClubsService])
 ], ClubsController);
 //# sourceMappingURL=clubs.controller.js.map

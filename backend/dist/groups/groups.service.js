@@ -24,7 +24,22 @@ let GroupsService = class GroupsService {
     }
     async findAll() {
         try {
-            return await this.db.select().from(schema_1.groups);
+            return await this.db
+                .select({
+                id: schema_1.groups.id,
+                name: schema_1.groups.name,
+                seasonId: schema_1.groups.seasonId,
+                sportId: schema_1.groups.sportId,
+                leagueId: schema_1.groups.leagueId,
+                createdAt: schema_1.groups.createdAt,
+                season: schema_1.seasons,
+                sport: schema_1.sports,
+                league: schema_1.leagues,
+            })
+                .from(schema_1.groups)
+                .leftJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema_1.groups.seasonId, schema_1.seasons.id))
+                .leftJoin(schema_1.sports, (0, drizzle_orm_1.eq)(schema_1.groups.sportId, schema_1.sports.id))
+                .leftJoin(schema_1.leagues, (0, drizzle_orm_1.eq)(schema_1.groups.leagueId, schema_1.leagues.id));
         }
         catch (error) {
             throw new common_1.BadRequestException('Failed to fetch groups');
@@ -48,36 +63,52 @@ let GroupsService = class GroupsService {
             throw new common_1.BadRequestException('Failed to fetch group');
         }
     }
-    async findByPhase(phaseId) {
+    async findBySeason(seasonId) {
         try {
-            const phase = await this.db
+            const season = await this.db
                 .select()
-                .from(schema_1.phases)
-                .where((0, drizzle_orm_1.eq)(schema_1.phases.id, phaseId))
+                .from(schema_1.seasons)
+                .where((0, drizzle_orm_1.eq)(schema_1.seasons.id, seasonId))
                 .limit(1);
-            if (!phase || phase.length === 0) {
-                throw new common_1.NotFoundException(`Phase with ID ${phaseId} not found`);
+            if (!season || season.length === 0) {
+                throw new common_1.NotFoundException(`Season with ID ${seasonId} not found`);
             }
             return await this.db
                 .select()
                 .from(schema_1.groups)
-                .where((0, drizzle_orm_1.eq)(schema_1.groups.phaseId, phaseId));
+                .where((0, drizzle_orm_1.eq)(schema_1.groups.seasonId, seasonId));
         }
         catch (error) {
             if (error instanceof common_1.NotFoundException)
                 throw error;
-            throw new common_1.BadRequestException('Failed to fetch groups by phase');
+            throw new common_1.BadRequestException('Failed to fetch groups by season');
         }
     }
     async create(createGroupDto) {
         try {
-            const phase = await this.db
+            const sport = await this.db
                 .select()
-                .from(schema_1.phases)
-                .where((0, drizzle_orm_1.eq)(schema_1.phases.id, createGroupDto.phaseId))
+                .from(schema_1.sports)
+                .where((0, drizzle_orm_1.eq)(schema_1.sports.id, createGroupDto.sportId))
                 .limit(1);
-            if (!phase || phase.length === 0) {
-                throw new common_1.BadRequestException(`Phase with ID ${createGroupDto.phaseId} not found`);
+            if (!sport || sport.length === 0) {
+                throw new common_1.BadRequestException(`Sport with ID ${createGroupDto.sportId} not found`);
+            }
+            const league = await this.db
+                .select()
+                .from(schema_1.leagues)
+                .where((0, drizzle_orm_1.eq)(schema_1.leagues.id, createGroupDto.leagueId))
+                .limit(1);
+            if (!league || league.length === 0) {
+                throw new common_1.BadRequestException(`League with ID ${createGroupDto.leagueId} not found`);
+            }
+            const season = await this.db
+                .select()
+                .from(schema_1.seasons)
+                .where((0, drizzle_orm_1.eq)(schema_1.seasons.id, createGroupDto.seasonId))
+                .limit(1);
+            if (!season || season.length === 0) {
+                throw new common_1.BadRequestException(`Season with ID ${createGroupDto.seasonId} not found`);
             }
             const result = await this.db
                 .insert(schema_1.groups)
@@ -94,14 +125,34 @@ let GroupsService = class GroupsService {
     async update(id, updateGroupDto) {
         try {
             await this.findOne(id);
-            if (updateGroupDto.phaseId) {
-                const phase = await this.db
+            if (updateGroupDto.sportId) {
+                const sport = await this.db
                     .select()
-                    .from(schema_1.phases)
-                    .where((0, drizzle_orm_1.eq)(schema_1.phases.id, updateGroupDto.phaseId))
+                    .from(schema_1.sports)
+                    .where((0, drizzle_orm_1.eq)(schema_1.sports.id, updateGroupDto.sportId))
                     .limit(1);
-                if (!phase || phase.length === 0) {
-                    throw new common_1.BadRequestException(`Phase with ID ${updateGroupDto.phaseId} not found`);
+                if (!sport || sport.length === 0) {
+                    throw new common_1.BadRequestException(`Sport with ID ${updateGroupDto.sportId} not found`);
+                }
+            }
+            if (updateGroupDto.leagueId) {
+                const league = await this.db
+                    .select()
+                    .from(schema_1.leagues)
+                    .where((0, drizzle_orm_1.eq)(schema_1.leagues.id, updateGroupDto.leagueId))
+                    .limit(1);
+                if (!league || league.length === 0) {
+                    throw new common_1.BadRequestException(`League with ID ${updateGroupDto.leagueId} not found`);
+                }
+            }
+            if (updateGroupDto.seasonId) {
+                const season = await this.db
+                    .select()
+                    .from(schema_1.seasons)
+                    .where((0, drizzle_orm_1.eq)(schema_1.seasons.id, updateGroupDto.seasonId))
+                    .limit(1);
+                if (!season || season.length === 0) {
+                    throw new common_1.BadRequestException(`Season with ID ${updateGroupDto.seasonId} not found`);
                 }
             }
             const result = await this.db
@@ -127,14 +178,6 @@ let GroupsService = class GroupsService {
                 .limit(1);
             if (matches && matches.length > 0) {
                 throw new common_1.BadRequestException('Cannot delete group. Matches are associated with this group.');
-            }
-            const groupClubs = await this.db
-                .select()
-                .from(schema.groupClubs)
-                .where((0, drizzle_orm_1.eq)(schema.groupClubs.groupId, id))
-                .limit(1);
-            if (groupClubs && groupClubs.length > 0) {
-                throw new common_1.BadRequestException('Cannot delete group. Clubs are assigned to this group.');
             }
             const result = await this.db
                 .delete(schema_1.groups)

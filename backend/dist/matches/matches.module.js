@@ -10,19 +10,14 @@ exports.MatchesModule = void 0;
 const common_1 = require("@nestjs/common");
 const matches_service_1 = require("./matches.service");
 const matches_controller_1 = require("./matches.controller");
-const db_module_1 = require("../db/db.module");
-const standings_module_1 = require("../standings/standings.module");
 let MatchesModule = class MatchesModule {
 };
 exports.MatchesModule = MatchesModule;
 exports.MatchesModule = MatchesModule = __decorate([
     (0, common_1.Module)({
-        imports: [
-            db_module_1.DbModule,
-            standings_module_1.StandingsModule
-        ],
         controllers: [matches_controller_1.MatchesController],
         providers: [matches_service_1.MatchesService],
+        exports: [matches_service_1.MatchesService],
     })
 ], MatchesModule);
 //# sourceMappingURL=matches.module.js.map

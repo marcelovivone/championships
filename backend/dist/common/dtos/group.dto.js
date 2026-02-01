@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GroupClubResponseDto = exports.CreateGroupClubDto = exports.GroupResponseDto = exports.UpdateGroupDto = exports.CreateGroupDto = void 0;
+exports.GroupResponseDto = exports.UpdateGroupDto = exports.CreateGroupDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 const swagger_2 = require("@nestjs/swagger");
@@ -17,10 +17,10 @@ class CreateGroupDto {
 }
 exports.CreateGroupDto = CreateGroupDto;
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Phase ID' }),
+    (0, swagger_2.ApiProperty)({ example: 1, description: 'Season ID' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateGroupDto.prototype, "phaseId", void 0);
+], CreateGroupDto.prototype, "seasonId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 'Group A', description: 'Name of the group' }),
     (0, class_validator_1.IsString)(),
@@ -42,30 +42,4 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Date)
 ], GroupResponseDto.prototype, "createdAt", void 0);
-class CreateGroupClubDto {
-}
-exports.CreateGroupClubDto = CreateGroupClubDto;
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Group ID' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateGroupClubDto.prototype, "groupId", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Club ID' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateGroupClubDto.prototype, "clubId", void 0);
-class GroupClubResponseDto extends CreateGroupClubDto {
-}
-exports.GroupClubResponseDto = GroupClubResponseDto;
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1 }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], GroupClubResponseDto.prototype, "id", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)(),
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", Date)
-], GroupClubResponseDto.prototype, "createdAt", void 0);
 //# sourceMappingURL=group.dto.js.map

@@ -37,10 +37,15 @@ __decorate([
     __metadata("design:type", String)
 ], CreateSportDto.prototype, "divisionType", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 2, description: 'Number of divisions (e.g. 2 halves, 4 quarters)' }),
+    (0, swagger_2.ApiProperty)({ example: 2, description: 'Minimum number of match divisions (e.g. 2 halves minimum)' }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateSportDto.prototype, "divisionsNumber", void 0);
+], CreateSportDto.prototype, "minMatchDivisionNumber", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 2, description: 'Maximum number of match divisions (e.g. 2 halves, 4 quarters max)' }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateSportDto.prototype, "maxMatchDivisionNumber", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 45, description: 'Time per division in minutes' }),
     (0, class_validator_1.IsInt)(),
@@ -61,6 +66,11 @@ __decorate([
     (0, class_validator_1.IsBoolean)(),
     __metadata("design:type", Boolean)
 ], CreateSportDto.prototype, "hasPenalties", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: false, description: 'Is this the default sport?' }),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateSportDto.prototype, "flgDefault", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 'https://example.com/football.png', description: 'URL to sport icon' }),
     (0, class_validator_1.IsUrl)(),

@@ -20,23 +20,29 @@ __decorate([
     __metadata("design:type", String)
 ], CreateClubDto.prototype, "name", void 0);
 __decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", String)
+], CreateClubDto.prototype, "shortName", void 0);
+__decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.ValidateIf)((object) => object.foundationYear !== 0 && object.foundationYear !== null && object.foundationYear !== undefined),
     __metadata("design:type", Number)
 ], CreateClubDto.prototype, "foundationYear", void 0);
 __decorate([
     (0, class_validator_1.IsInt)(),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", Number)
-], CreateClubDto.prototype, "cityId", void 0);
+], CreateClubDto.prototype, "countryId", void 0);
 __decorate([
     (0, class_validator_1.IsInt)(),
-    (0, class_validator_1.IsNotEmpty)(),
+    (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)
-], CreateClubDto.prototype, "countryId", void 0);
+], CreateClubDto.prototype, "cityId", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", String)
-], CreateClubDto.prototype, "shieldUrl", void 0);
+], CreateClubDto.prototype, "imageUrl", void 0);
 //# sourceMappingURL=create-club.dto.js.map

@@ -1,9 +1,9 @@
 import { ClubsService } from './clubs.service';
-import { CreateClubDto, PaginationDto, UpdateClubDto } from '../common/dtos';
+import { CreateClubDto, PaginationDto, UpdateClubDto, FilteringDto } from '../common/dtos';
 export declare class ClubsController {
     private readonly clubsService;
     constructor(clubsService: ClubsService);
-    findAll(paginationDto: PaginationDto, countryId?: string): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto: FilteringDto, countryId?: string): Promise<{
         data: {
             id: number;
             name: string;

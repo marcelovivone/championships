@@ -13,17 +13,22 @@ const countries_module_1 = require("./countries/countries.module");
 const sports_module_1 = require("./sports/sports.module");
 const cities_module_1 = require("./cities/cities.module");
 const clubs_module_1 = require("./clubs/clubs.module");
+const club_stadiums_module_1 = require("./club-stadiums/club-stadiums.module");
 const stadiums_module_1 = require("./stadiums/stadiums.module");
 const leagues_module_1 = require("./leagues/leagues.module");
+const seasons_module_1 = require("./seasons/seasons.module");
 const season_clubs_module_1 = require("./season-clubs/season-clubs.module");
-const phases_module_1 = require("./phases/phases.module");
+const sport_clubs_module_1 = require("./sport-clubs/sport-clubs.module");
 const groups_module_1 = require("./groups/groups.module");
+const rounds_module_1 = require("./rounds/rounds.module");
 const matches_module_1 = require("./matches/matches.module");
 const match_divisions_module_1 = require("./match-divisions/match-divisions.module");
 const match_events_module_1 = require("./match-events/match-events.module");
 const standings_module_1 = require("./standings/standings.module");
 const users_module_1 = require("./users/users.module");
 const auth_module_1 = require("./auth/auth.module");
+const menu_items_module_1 = require("./menu-items/menu-items.module");
+const permissions_module_1 = require("./permissions/permissions.module");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
@@ -41,17 +46,22 @@ exports.AppModule = AppModule = __decorate([
             sports_module_1.SportsModule,
             cities_module_1.CitiesModule,
             clubs_module_1.ClubsModule,
+            club_stadiums_module_1.ClubStadiumsModule,
             stadiums_module_1.StadiumsModule,
             leagues_module_1.LeaguesModule,
+            seasons_module_1.SeasonsModule,
             season_clubs_module_1.SeasonClubsModule,
-            phases_module_1.PhasesModule,
+            sport_clubs_module_1.SportClubsModule,
             groups_module_1.GroupsModule,
+            rounds_module_1.RoundsModule,
             matches_module_1.MatchesModule,
             match_divisions_module_1.MatchDivisionsModule,
             match_events_module_1.MatchEventsModule,
             standings_module_1.StandingsModule,
             users_module_1.UsersModule,
             auth_module_1.AuthModule,
+            menu_items_module_1.MenuItemsModule,
+            permissions_module_1.PermissionsModule,
         ],
         providers: [
             {

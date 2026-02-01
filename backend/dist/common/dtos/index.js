@@ -24,7 +24,6 @@ __exportStar(require("./league.dto"), exports);
 __exportStar(require("./league-division.dto"), exports);
 __exportStar(require("./league-link.dto"), exports);
 __exportStar(require("./season.dto"), exports);
-__exportStar(require("./phase.dto"), exports);
 __exportStar(require("./round.dto"), exports);
 __exportStar(require("./group.dto"), exports);
 __exportStar(require("./match.dto"), exports);

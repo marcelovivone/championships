@@ -1,24 +1,28 @@
 import { SportsService } from './sports.service';
-import { CreateSportDto, UpdateSportDto, SportResponseDto, PaginationDto } from '../common/dtos';
+import { CreateSportDto, UpdateSportDto, SportResponseDto, PaginationDto, FilteringDto } from '../common/dtos';
 export declare class SportsController {
     private readonly sportsService;
     constructor(sportsService: SportsService);
-    findAll(paginationDto: PaginationDto): Promise<{
+    findAll(paginationDto: PaginationDto, filteringDto: FilteringDto): Promise<{
         data: {
             id: number;
             name: string;
             reducedName: string;
             type: string;
             divisionType: string;
-            divisionsNumber: number;
+            minMatchDivisionNumber: number;
+            maxMatchDivisionNumber: number;
             divisionTime: number;
             scoreType: string;
             hasOvertime: boolean;
             hasPenalties: boolean;
+            flgDefault: boolean;
             imageUrl: string;
             createdAt: Date;
         }[];
         total: number;
+        page: number;
+        limit: number;
     }>;
     findOne(id: string): Promise<SportResponseDto>;
     findByType(type: 'collective' | 'individual'): Promise<{
@@ -27,11 +31,13 @@ export declare class SportsController {
         reducedName: string;
         type: string;
         divisionType: string;
-        divisionsNumber: number;
+        minMatchDivisionNumber: number;
+        maxMatchDivisionNumber: number;
         divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
     }[]>;

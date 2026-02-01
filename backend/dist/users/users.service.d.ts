@@ -10,13 +10,24 @@ export declare class UsersService {
         createdAt: Date;
         updatedAt: Date;
         email: string;
-        role: string;
+        profile: string;
+        isActive: boolean;
     }>;
+    findAll(): Promise<{
+        id: number;
+        email: string;
+        name: string;
+        profile: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+    }[]>;
     findOne(id: number): Promise<{
         id: number;
         email: string;
         name: string;
-        role: string;
+        profile: string;
+        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
     }>;
@@ -25,7 +36,8 @@ export declare class UsersService {
         email: string;
         password: string;
         name: string;
-        role: string;
+        profile: string;
+        isActive: boolean;
         createdAt: Date;
         updatedAt: Date;
     }>;

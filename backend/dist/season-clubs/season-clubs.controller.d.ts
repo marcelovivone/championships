@@ -3,7 +3,7 @@ import { CreateSeasonClubDto, UpdateSeasonClubDto, SeasonClubResponseDto } from 
 export declare class SeasonClubsController {
     private readonly seasonClubsService;
     constructor(seasonClubsService: SeasonClubsService);
-    findAll(): Promise<SeasonClubResponseDto[]>;
+    findAll(page?: string, limit?: string, sortBy?: string, sortOrder?: string): Promise<any>;
     findOne(id: string): Promise<SeasonClubResponseDto>;
     findBySeason(seasonId: string): Promise<SeasonClubResponseDto[]>;
     findByClub(clubId: string): Promise<SeasonClubResponseDto[]>;

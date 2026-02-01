@@ -25,12 +25,15 @@ let LeaguesController = class LeaguesController {
     constructor(leaguesService) {
         this.leaguesService = leaguesService;
     }
-    async findAll(paginationDto, sportId) {
-        const { page, limit } = paginationDto;
+    async findAll(page, limit, sortBy, sortOrder, sportId) {
         if (sportId) {
-            return this.leaguesService.findBySport(parseInt(sportId, 10), { page, limit });
+            return this.leaguesService.findAllBySport(Number(sportId));
         }
-        return this.leaguesService.findAll({ page, limit });
+        const pageNum = page ? parseInt(page, 10) : 1;
+        const limitNum = limit ? parseInt(limit, 10) : 10;
+        const sort = sortBy || 'originalName';
+        const order = sortOrder === 'desc' ? 'desc' : 'asc';
+        return this.leaguesService.findAllPaginated(pageNum, limitNum, sort, order);
     }
     async findOne(id) {
         return this.leaguesService.findOne(id);
@@ -66,10 +69,13 @@ __decorate([
         },
     }),
     (0, common_1.Get)(),
-    __param(0, (0, common_1.Query)()),
-    __param(1, (0, common_1.Query)('sportId')),
+    __param(0, (0, common_1.Query)('page')),
+    __param(1, (0, common_1.Query)('limit')),
+    __param(2, (0, common_1.Query)('sortBy')),
+    __param(3, (0, common_1.Query)('sortOrder')),
+    __param(4, (0, common_1.Query)('sportId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [dtos_1.PaginationDto, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], LeaguesController.prototype, "findAll", null);
 __decorate([
@@ -85,7 +91,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard, roles_guard_1.RolesGuard),
-    (0, roles_decorator_1.Roles)(user_dto_1.UserRole.ADMIN),
+    (0, roles_decorator_1.Roles)(user_dto_1.UserProfile.ADMIN),
     (0, swagger_1.ApiOperation)({ summary: 'Create a new league' }),
     (0, swagger_1.ApiResponse)({ status: 201, description: 'The league has been successfully created.' }),
     (0, common_1.Post)(),
@@ -141,7 +147,7 @@ __decorate([
 ], LeaguesController.prototype, "removeLink", null);
 exports.LeaguesController = LeaguesController = __decorate([
     (0, swagger_1.ApiTags)('leagues'),
-    (0, common_1.Controller)('leagues'),
+    (0, common_1.Controller)({ path: 'leagues', version: '1' }),
     __metadata("design:paramtypes", [leagues_service_1.LeaguesService])
 ], LeaguesController);
 //# sourceMappingURL=leagues.controller.js.map
