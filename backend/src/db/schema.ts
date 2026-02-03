@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, integer, boolean, timestamp, text, decimal } from 'drizzle-orm/pg-core';
+import { pgEnum, pgTable, serial, varchar, integer, boolean, timestamp, text, decimal } from 'drizzle-orm/pg-core';
 
 /**
  * ============================================================================
@@ -201,6 +201,14 @@ export const groups = pgTable('groups', {
 // ============================================================================
 // 15. MATCHES TABLE - Individual matches
 // ============================================================================
+export const matchStatusEnum = pgEnum('match_status', [
+  'scheduled',
+  'live',
+  'finished',
+  'postponed',
+  'cancelled',
+]);
+
 export const matches = pgTable('matches', {
   id: serial('id').primaryKey(),
   sportId: integer('sport_id').references(() => sports.id).notNull(),
@@ -208,16 +216,13 @@ export const matches = pgTable('matches', {
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
   roundId: integer('round_id').references(() => rounds.id).notNull(),
   groupId: integer('group_id').references(() => groups.id), // NULL if not part of group stage
-  turn: integer('turn').notNull().default(1), // 1 or 2 (for double round-robin leagues)
   homeClubId: integer('home_club_id').references(() => clubs.id).notNull(),
   awayClubId: integer('away_club_id').references(() => clubs.id).notNull(),
   stadiumId: integer('stadium_id').references(() => stadiums.id), // Stadium where match was played
   date: timestamp('date').notNull(),
-  status: varchar('status', { length: 20 }).default('scheduled').notNull(), // 'scheduled', 'live', 'finished', 'postponed', 'cancelled'
+  status: matchStatusEnum('status').default('scheduled').notNull(), // 'scheduled', 'live', 'finished', 'postponed', 'cancelled'
   homeScore: integer('home_score'), // Only set when match is finished
   awayScore: integer('away_score'), // Only set when match is finished
-  hasOvertime: boolean('has_overtime').default(false), // TRUE if match went to overtime
-  hasPenalties: boolean('has_penalties').default(false), // TRUE if decided by penalties
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

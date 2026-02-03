@@ -19,8 +19,6 @@ export declare class MatchesController {
             status: string;
             homeScore: number | null;
             awayScore: number | null;
-            hasOvertime: boolean;
-            hasPenalties: boolean;
             createdAt: Date;
             updatedAt: Date | null;
             sportName: string;

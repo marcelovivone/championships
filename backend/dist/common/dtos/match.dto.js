@@ -52,17 +52,6 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateMatchDto.prototype, "leagueDivisionId", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, description: 'Turn number (1 or 2)' }),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateMatchDto.prototype, "turn", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 10, description: 'Home Club ID' }),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
 ], CreateMatchDto.prototype, "homeClubId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 12, description: 'Away Club ID' }),
@@ -94,18 +83,6 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateMatchDto.prototype, "awayScore", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: false, description: 'Did match go to overtime?', required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
-], CreateMatchDto.prototype, "hasOvertime", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: false, description: 'Did match go to penalties?', required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
-], CreateMatchDto.prototype, "hasPenalties", void 0);
 class UpdateMatchDto extends (0, swagger_1.PartialType)(CreateMatchDto) {
 }
 exports.UpdateMatchDto = UpdateMatchDto;
@@ -136,14 +113,6 @@ __decorate([
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1, required: false }),
     __metadata("design:type", Number)
-], MatchResponseDto.prototype, "leagueDivisionId", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1 }),
-    __metadata("design:type", Number)
-], MatchResponseDto.prototype, "turn", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 10 }),
-    __metadata("design:type", Number)
 ], MatchResponseDto.prototype, "homeClubId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 12 }),
@@ -168,14 +137,6 @@ __decorate([
 __decorate([
     (0, swagger_2.ApiProperty)({ example: false, required: false }),
     __metadata("design:type", Boolean)
-], MatchResponseDto.prototype, "hasOvertime", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: false, required: false }),
-    __metadata("design:type", Boolean)
-], MatchResponseDto.prototype, "hasPenalties", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ enum: ['scheduled', 'live', 'finished', 'postponed', 'cancelled'], example: 'scheduled' }),
-    __metadata("design:type", String)
 ], MatchResponseDto.prototype, "status", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)(),
@@ -202,16 +163,4 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], UpdateMatchScoreDto.prototype, "awayScore", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: false, description: 'Overtime flag', required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
-], UpdateMatchScoreDto.prototype, "hasOvertime", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: false, description: 'Penalties flag', required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_validator_1.IsBoolean)(),
-    __metadata("design:type", Boolean)
-], UpdateMatchScoreDto.prototype, "hasPenalties", void 0);
 //# sourceMappingURL=match.dto.js.map

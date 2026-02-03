@@ -9,6 +9,7 @@ import { Match, CreateMatchDto, Club, Stadium, Group, Round, SeasonClub } from '
 import DataTable from '@/components/ui/data-table';
 import Modal from '@/components/ui/modal';
 import { group } from 'console';
+import { date } from 'zod';
 
 const MatchesPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -204,10 +205,11 @@ const MatchesPage = () => {
         const league = leagues.find(l => l.id === seasonObj.leagueId);
         if (league) {
           setLeagueTypeOfSchedule(league.typeOfSchedule);
-          console.log("League Type of Schedule:", league.typeOfSchedule);
           // For 'Date' type leagues, load matches after selecting a date
           if (league.typeOfSchedule === 'Date' && matchDate) {
-            loadMatchesForDate(selectedSeasonId, matchDate);
+            if (selectedSeasonId !== null) {
+              loadMatchesForDate(selectedSeasonId, matchDate);
+            }
           } 
           // For 'Round' type leagues, only load matches after group selection
           else if (league.typeOfSchedule === 'Round') {
@@ -222,49 +224,6 @@ const MatchesPage = () => {
     //   loadMatchesForGroup(selectedGroupId);
     }
   }, [selectedGroupId, selectedSeasonId, matchDate, leagues, seasons, groups, selectedRoundId]);
-
-//   const loadMatchesForGroup = async (groupId: number) => {
-//     try {
-//       // Get the sportId, leagueId, and seasonId from the selected values
-//       const selectedLeague = leagues.find(l => l.id === selectedLeagueId);
-//       const selectedSeason = seasons.find(s => s.id === selectedSeasonId);
-      
-//       if (!selectedLeague || !selectedSeason) {
-//         console.error("League or Season not found");
-//         setMatchesList([]);
-//         return;
-//       }
-      
-//       // Fetch matches based on sport, league, season, and group IDs using the custom API method
-//       const matchesData = await matchesApi.getBySportLeagueSeasonAndGroup(
-//         selectedSeason.sportId,
-//         selectedLeague.id,
-//         selectedSeason.id,
-//         groupId
-//       );
-//         console.log("Fetched Matches for Group:", matchesData);      
-//       // Format the fetched matches to our local format
-//       const formattedMatches = matchesData.map((match: Match) => ({
-//         id: match.id,
-//         homeClubId: match.homeClubId,
-//         awayClubId: match.awayClubId,
-//         stadiumId: match.stadiumId,
-//         date: match.date,
-//         status: match.status,
-//         homeClubImage: match.homeClub?.imageUrl ? getFullImageUrl(match.homeClub?.imageUrl) : null,
-//         awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
-//         homeScore: match.homeScore || null,
-//         awayScore: match.awayScore || null,
-//         availableStadiums: [] // Will be populated when home club is selected
-//       }));
-      
-//       setMatchesList(formattedMatches);
-//       console.log("Matches:", formattedMatches);
-//     } catch (error) {
-//       console.error("Error loading matches for group:", error);
-//       setMatchesList([]);
-//     }
-//   };
 
   const loadMatchesForRound = async (seasonId: number, roundId: number) => {
     try {
@@ -281,9 +240,8 @@ const MatchesPage = () => {
         status: match.status,
         homeClubImage: match.homeClub?.imageUrl ? getFullImageUrl(match.homeClub?.imageUrl) : null,
         awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
-        // homeScore: match.homeScore || null,
-        homeScore: match.homeScore,
-        awayScore: match.awayScore,
+        homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
+        awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
         availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
       }));
       setMatchesList(formattedMatches);
@@ -308,8 +266,8 @@ const MatchesPage = () => {
         status: match.status,
         homeClubImage: match.homeClub?.imageUrl ? getFullImageUrl(match.homeClub?.imageUrl) : null,
         awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
-        homeScore: match.homeScore || null,
-        awayScore: match.awayScore || null,
+        homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
+        awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
         availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
       }));
       setMatchesList(formattedMatches);
@@ -335,44 +293,14 @@ const MatchesPage = () => {
         status: match.status,
         homeClubImage: match.homeClub?.imageUrl ? getFullImageUrl(match.homeClub?.imageUrl) : null,
         awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
-        homeScore: match.homeScore || null,
-        awayScore: match.awayScore || null,
+        homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
+        awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
         availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
       }));
       
       setMatchesList(formattedMatches);
     } catch (error) {
       console.error("Error loading matches by filters:", error);
-      setMatchesList([]);
-    }
-  };
-
-  // For Date-type leagues, we'll call this when date is selected
-  const loadMatchesForSeason = async (seasonId: number) => {
-    // This function is kept for backward compatibility but will not be used
-    // for Date-type leagues since we filter by date
-    // For Round-type leagues without group, we could potentially load all matches for the season
-    try {
-      const matchesData = await matchesApi.getBySeason(seasonId);
-      
-      // Format the fetched matches to our local format
-      const formattedMatches = matchesData.map((match: Match) => ({
-        id: match.id,
-        homeClubId: match.homeClubId,
-        awayClubId: match.awayClubId,
-        stadiumId: match.stadiumId,
-        date: match.date,
-        status: match.status,
-        homeClubImage: match.homeClub?.imageUrl ? getFullImageUrl(match.homeClub?.imageUrl) : null,
-        awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
-        homeScore: match.homeScore || null,
-        awayScore: match.awayScore || null,
-        availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
-      }));
-      
-      setMatchesList(formattedMatches);
-    } catch (error) {
-      console.error("Error loading matches for season:", error);
       setMatchesList([]);
     }
   };
@@ -455,7 +383,7 @@ const MatchesPage = () => {
       awayClubId: null, 
       stadiumId: null, 
       date: dateValue,
-      status: 'Scheduled',
+      status: 'scheduled',
       homeClubImage: null,
       awayClubImage: null,
       availableStadiums: [] // Initialize with empty array
@@ -463,27 +391,67 @@ const MatchesPage = () => {
   };
 
   const removeMatchRow = (index: number) => {
-    const newList = [...matchesList];
-    newList.splice(index, 1);
-    setMatchesList(newList);
+    const match = matchesList[index];
+    if (match.id) {
+      matchesApi.delete(match.id)
+        .then(() => {
+          const newList = [...matchesList];
+          newList.splice(index, 1);
+          setMatchesList(newList);
+        })
+        .catch((error) => {
+          alert('Failed to delete match from server: ' + error);
+        });
+    } else {
+      const newList = [...matchesList];
+      newList.splice(index, 1);
+      setMatchesList(newList);
+    }
   };
 
   const handleSaveMatches = async () => {
+        // Validation: No club can appear more than once as home or away
+        const usedClubIds = new Set<number>();
+        for (const match of matchesList) {
+          if (match.homeClubId) {
+            if (usedClubIds.has(match.homeClubId)) {
+              alert('A club cannot be selected more than once as home or away.');
+              return;
+            }
+            usedClubIds.add(match.homeClubId);
+          }
+          if (match.awayClubId) {
+            if (usedClubIds.has(match.awayClubId)) {
+              alert('A club cannot be selected more than once as home or away.');
+              return;
+            }
+            usedClubIds.add(match.awayClubId);
+          }
+        }
     // Process matches list and save to backend
     for (const match of matchesList) {
-      if (match.homeClubId && match.awayClubId) { // Only save if both clubs are selected
+      if (match.homeClubId && match.awayClubId && match.stadiumId && match.date && match.date != ':00.000Z') { // Only save if all fields are informed
+        // Ensure date is always a full ISO string with time
+        let dateToSend = match.date;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(match.date)) {
+          // If only date part, add default time (e.g., noon)
+          dateToSend = match.date + 'T12:00:00.000Z';
+        }
         const matchData: CreateMatchDto = {
           sportId: selectedSportId!,
           leagueId: selectedLeagueId!,
           seasonId: selectedSeasonId!,
           groupId: selectedGroupId || undefined,
           roundId: leagueTypeOfSchedule === 'Round' ? (selectedRoundId ?? undefined) : undefined,
-          date: leagueTypeOfSchedule === 'Date' ? matchDate : match.date,
+          date: dateToSend, // Always use the row's date, which includes the correct time
           homeClubId: match.homeClubId,
           awayClubId: match.awayClubId,
           stadiumId: match.stadiumId || undefined,
+          status: match.status,
+          homeScore: match.homeScore === '' || match.homeScore === null || typeof match.homeScore === 'undefined' ? null : Number(match.homeScore),
+          awayScore: match.awayScore === '' || match.awayScore === null || typeof match.awayScore === 'undefined' ? null : Number(match.awayScore),
         };
-        
+
         try {
           if (match.id) {
             // Update existing match
@@ -493,17 +461,40 @@ const MatchesPage = () => {
             await matchesApi.create(matchData);
           }
         } catch (error) {
-          console.error("Error saving match:", error);
           alert(`Error saving match: ${error}`);
           return;
         }
       }
+      else  {
+        alert("Please select both Home and Away clubs, stadium, and date for all matches before saving.");
+        return; 
+      }
     }
     
     alert("Matches saved successfully!");
-    // Optionally reload the matches list
-    // loadMatchesForSelections();
-  };
+    
+    // Find the league associated with the selected season to get typeOfSchedule
+    const seasonObj = seasons.find(s => s.id === selectedSeasonId);
+    if (seasonObj) {
+      const league = leagues.find(l => l.id === seasonObj.leagueId);
+      if (league) {
+        setLeagueTypeOfSchedule(league.typeOfSchedule);
+        if (league.typeOfSchedule === 'Date' && matchDate) {
+            if (selectedSeasonId !== null) {
+                loadMatchesForDate(selectedSeasonId, matchDate);
+            }
+        } 
+        // For 'Round' type leagues, only load matches after group selection
+        else if (league.typeOfSchedule === 'Round') {
+          if (selectedRoundId !== null && selectedRoundId !== undefined) {
+            if (selectedSeasonId !== null) {
+                loadMatchesForRound(selectedSeasonId, selectedRoundId);
+            }
+          }
+        }
+      }
+    }
+};
 
   const { data, isLoading } = useQuery({
     queryKey: ['matches', page, limit, sortBy, sortOrder],
@@ -513,32 +504,6 @@ const MatchesPage = () => {
   const matches = data?.data || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
-
-//   const queryClient = useQueryClient();
-
-//   const createMutation = useMutation({
-//     mutationFn: matchesApi.create,
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['matches'] });
-//       handleCloseModal();
-//     },
-//   });
-
-//   const updateMutation = useMutation({
-//     mutationFn: ({ id, data }: { id: number; data: Partial<CreateMatchDto> }) =>
-//       matchesApi.update(id, data),
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['matches'] });
-//       handleCloseModal();
-//     },
-//   });
-
-//   const deleteMutation = useMutation({
-//     mutationFn: matchesApi.delete,
-//     onSuccess: () => {
-//       queryClient.invalidateQueries({ queryKey: ['matches'] });
-//     },
-//   });
 
   const handleSort = (columnKey: string) => {
     if (sortBy === columnKey) {
@@ -551,59 +516,6 @@ const MatchesPage = () => {
   };
 
   const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<CreateMatchDto>();
-
-  //   const handleCloseModal = () => {
-  //     setIsModalOpen(false);
-  //     setEditingMatch(null);
-  //     reset({
-  //       sportId: 0,
-  //       leagueId: 0,
-  //       seasonId: 0,
-  //       roundId: undefined,
-  //       groupId: undefined,
-  //       homeClubId: 0,
-  //       awayClubId: 0,
-  //       date: new Date().toISOString(),
-  //       stadiumId: undefined,
-  //     });
-  //   };
-
-  //   const handleAdd = () => {
-  //     reset({
-  //       sportId: 0,
-  //       leagueId: 0,
-  //       seasonId: 0,
-  //       roundId: undefined,
-  //       groupId: undefined,
-  //       homeClubId: 0,
-  //       awayClubId: 0,
-  //       date: new Date().toISOString(),
-  //       stadiumId: undefined,
-  //     });
-  //     setIsModalOpen(true);
-  //   };
-
-  //   const handleEdit = (match: Match) => {
-  //     setEditingMatch(match);
-  //     reset({
-  //       sportId: match.sportId,
-  //       leagueId: match.leagueId,
-  //       seasonId: match.seasonId,
-  //       roundId: match.roundId || undefined,
-  //       groupId: match.groupId || undefined,
-  //       homeClubId: match.homeClubId,
-  //       awayClubId: match.awayClubId,
-  //       date: match.date,
-  //       stadiumId: match.stadiumId || undefined,
-  //     });
-  //     setIsModalOpen(true);
-  //   };
-
-  //   const handleDelete = (match: Match) => {
-  //     if (window.confirm(`Are you sure you want to delete this match?`)) {
-  //       deleteMutation.mutate(match.id);
-  //     }
-  //   };
 
   const columns = [
     {
@@ -696,13 +608,6 @@ const MatchesPage = () => {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Matches</h1>
-        {/* <button
-          onClick={handleAdd}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
-          Add Match
-        </button> */}
       </div>
 
       {/* Upper Section - Filters */}
@@ -766,7 +671,7 @@ const MatchesPage = () => {
             </select>
           </div>
 
-          {showGroupDropdown && (
+          {selectedLeagueId && selectedSeasonId && showGroupDropdown && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Group *
@@ -826,25 +731,197 @@ const MatchesPage = () => {
         </div>
       </div>
 
-      {/* Lower Section - Matches Table */}
-      {/* <div className="bg-white p-6 rounded-lg shadow">
-        <div className="flex justify-between items-center">
-          <h3 className="text-lg font-medium">Matches</h3>
-          <button
-            onClick={handleSaveMatches}
-            disabled={!canEnableButton}
-            className={`px-4 py-2 rounded-md ${
-              canEnableButton
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            Create/Update Matches
-          </button>
-        </div> */}
+        {/* Lower Section - Matches Table */}
+        <div className="space-y-4 pt-4">
+            {matchesList.map((match, index) => (
+                <div key={index} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+
+                        {/* Home Club */}
+                        <div className="md:col-span-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Home Club *
+                            </label>
+                            <select
+                                value={match.homeClubId || ''}
+                                onChange={(e) =>
+                                updateMatchField(index, 'homeClubId', Number(e.target.value))
+                                }
+                                className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                                disabled={seasonClubsLoading}
+                            >
+                                <option value="">Select home club</option>
+                                {filteredClubs.map((club) => (
+                                <option key={club.id} value={club.id}>
+                                    {club.shortName}
+                                </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Home Image */}
+                        <div className="md:col-span-1 flex justify-center">
+                        {match.homeClubImage ? (
+                            <img
+                            src={match.homeClubImage}
+                            alt="Home club"
+                            className="mt-5 h-8 w-8 object-contain"
+                            />
+                        ) : (
+                            <span className="text-gray-400">---</span>
+                        )}
+                        </div>
+
+                        {/* Home Score */}
+                        <div className="md:col-span-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Home Score
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="999"
+                                value={typeof match.homeScore === 'number' ? match.homeScore : ''}
+                                onChange={(e) =>
+                                updateMatchField(
+                                    index,
+                                    'homeScore',
+                                    e.target.value === '' ? null : Number(e.target.value)
+                                )
+                                }
+                                className="w-full px-2 py-1 border rounded text-center"
+                                placeholder="-"
+                            />
+                        </div>
+
+                        {/* VS */}
+                        <div className="mt-5 md:col-span-1 text-center font-semibold text-gray-500">
+                        VS
+                        </div>
+
+                        {/* Away Score */}
+                        <div className="md:col-span-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Away Score
+                            </label>
+                            <input
+                                type="number"
+                                min="0"
+                                max="999"
+                                value={typeof match.awayScore === 'number' ? match.awayScore : ''}
+                                onChange={(e) =>
+                                updateMatchField(
+                                    index,
+                                    'awayScore',
+                                    e.target.value === '' ? null : Number(e.target.value)
+                                )
+                                }
+                                className="w-full px-2 py-1 border rounded text-center"
+                                placeholder="-"
+                            />
+                        </div>
+
+                        {/* Away Image */}
+                        <div className="md:col-span-1 flex justify-center">
+                        {match.awayClubImage ? (
+                            <img
+                            src={match.awayClubImage}
+                            alt="Away club"
+                            className="mt-5 h-8 w-8 object-contain"
+                            />
+                        ) : (
+                            <span className="text-gray-400">---</span>
+                        )}
+                        </div>
+
+                        {/* Away Club */}
+                        <div className="md:col-span-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Away Club *
+                            </label>
+                            <select
+                                value={match.awayClubId || ''}
+                                onChange={(e) =>
+                                updateMatchField(index, 'awayClubId', Number(e.target.value))
+                                }
+                                className="w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500"
+                                disabled={seasonClubsLoading}
+                            >
+                                <option value="">Select away club</option>
+                                {filteredClubs.map((club) => (
+                                <option key={club.id} value={club.id}>
+                                    {club.shortName}
+                                </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="md:col-span-1 flex justify-end mt-6">
+                           <button
+                                onClick={() => removeMatchRow(index)}
+                                className="text-red-600 hover:text-red-900"
+                                >
+                                <Trash2 size={18} />
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 mt-4 md:grid-cols-18 gap-4 items-center">
+                        <div className="md:col-span-4 md:col-start-4">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Date/Time
+                            </label>
+                            <select
+                                value={match.stadiumId || ''}
+                                onChange={(e) => updateMatchField(index, 'stadiumId', Number(e.target.value))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                disabled={!match.homeClubId}  // Disabled if no home club is selected
+                                >
+                                <option value="">Select stadium</option>
+                                {match.homeClubId && match.availableStadiums
+                                    ? match.availableStadiums.map((stadium: Stadium) => (
+                                        <option key={stadium.id} value={stadium.id}>
+                                        {stadium.name}
+                                        </option>
+                                    ))
+                                    : null}
+                            </select>
+                        </div>
+
+                        <div className="md:col-span-4 md:col-start-11">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Date/Time
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={match.date ? match.date.substring(0, 16) : ''}
+                                onChange={(e) => {
+                                    // Always use the full value from the input (YYYY-MM-DDTHH:mm)
+                                    const inputValue = e.target.value; // e.g. '2026-01-27T03:04'
+                                    let isoString = '';
+                                    if (inputValue) {
+                                    // Append seconds and milliseconds if not present
+                                    isoString = inputValue.length === 16
+                                        ? inputValue + ':00.000Z'
+                                        : inputValue;
+                                    }
+                                    updateMatchField(index, 'date', isoString);
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                disabled={leagueTypeOfSchedule === 'Date' && !!matchDate && matchDate.includes('T')}
+                            />
+                        </div>
+
+                        <div className="md:col-span-2 md:col-start-17 flex justify-end mt-6">
+                            <span className="text-blue-700 text-lg font-bold">Match {index + 1}</span>
+                        </div>
+                    </div>
+                </div>
+           ))}
+        </div>
 
         <div className="overflow-x-auto pt-4">
-          <table className="min-w-full divide-y divide-gray-200">
+          {/* <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Home Club</th>
@@ -890,8 +967,8 @@ const MatchesPage = () => {
                       type="number"
                       min="0"
                       max="999"
-                      value={match.homeScore ?? ''}
-                      onChange={(e) => updateMatchField(index, 'homeScore', e.target.value ? Number(e.target.value) : null)}
+                      value={typeof match.homeScore === 'number' ? match.homeScore : ''}
+                      onChange={(e) => updateMatchField(index, 'homeScore', e.target.value === '' ? null : Number(e.target.value))}
                       className="w-full px-2 py-1 border border-gray-300 rounded text-center"
                       placeholder="-"
                     />
@@ -902,8 +979,8 @@ const MatchesPage = () => {
                       type="number"
                       min="0"
                       max="999"
-                      value={match.awayScore ?? ''}
-                      onChange={(e) => updateMatchField(index, 'awayScore', e.target.value ? Number(e.target.value) : null)}
+                      value={typeof match.awayScore === 'number' ? match.awayScore : ''}
+                      onChange={(e) => updateMatchField(index, 'awayScore', e.target.value === '' ? null : Number(e.target.value))}
                       className="w-full px-2 py-1 border border-gray-300 rounded text-center"
                       placeholder="-"
                     />
@@ -929,11 +1006,6 @@ const MatchesPage = () => {
                         </option>
                        ))}
                     </select>
-                    {/* <input
-                      type="text"
-                      value={match.awayClubId ?? 'nada'}
-                      className="w-full px-2 py-1 border border-gray-300 rounded text-center"
-                    /> */}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <select
@@ -957,16 +1029,16 @@ const MatchesPage = () => {
                       type="datetime-local"
                       value={match.date ? match.date.substring(0, 16) : ''}
                       onChange={(e) => {
-                        if (leagueTypeOfSchedule === 'Date' && matchDate) {
-                          // If using upper section date, preserve the date part and only change the time
-                          const newTime = e.target.value.substring(11); // Extract HH:mm part
-                          const datePart = matchDate.substring(0, 10); // YYYY-MM-DD from upper section
-                          const newDateTime = `${datePart}T${newTime}:00.000Z`;
-                          updateMatchField(index, 'date', newDateTime);
-                        } else {
-                          // If not using upper section date, allow full editing
-                          updateMatchField(index, 'date', e.target.value + ':00.000Z');
+                        // Always use the full value from the input (YYYY-MM-DDTHH:mm)
+                        const inputValue = e.target.value; // e.g. '2026-01-27T03:04'
+                        let isoString = '';
+                        if (inputValue) {
+                          // Append seconds and milliseconds if not present
+                          isoString = inputValue.length === 16
+                            ? inputValue + ':00.000Z'
+                            : inputValue;
                         }
+                        updateMatchField(index, 'date', isoString);
                       }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                       disabled={leagueTypeOfSchedule === 'Date' && !!matchDate && matchDate.includes('T')}
@@ -974,14 +1046,15 @@ const MatchesPage = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <select
-                      value={match.status || 'Scheduled'}
+                      value={match.status || 'scheduled'}
                       onChange={(e) => updateMatchField(index, 'status', e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="Scheduled">Scheduled</option>
-                      <option value="Finished">Finished</option>
-                      <option value="Cancelled">Cancelled</option>
-                      <option value="Postponed">Postponed</option>
+                      <option value="scheduled">Scheduled</option>
+                      <option value="finished">Finished</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="postponed">Postponed</option>
+                      <option value="live">Live</option>
                     </select>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -995,7 +1068,7 @@ const MatchesPage = () => {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table> */}
 
         <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex justify-between items-center">
@@ -1041,7 +1114,7 @@ const MatchesPage = () => {
       </div>
 
       {/* Pagination Controls */}
-      <div className="flex items-center justify-between border-t border-gray-200 px-6 py-3">
+      {/* <div className="flex items-center justify-between border-t border-gray-200 px-6 py-3">
         <div className="text-sm text-gray-700">
           Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to{' '}
           <span className="font-medium">
@@ -1109,7 +1182,7 @@ const MatchesPage = () => {
             Next
           </button>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 };

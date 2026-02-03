@@ -26,11 +26,6 @@ export class CreateStandingDto {
   @IsInt()
   groupId?: number;
 
-  @ApiProperty({ example: 1, required: false })
-  @IsOptional()
-  @IsInt()
-  leagueDivisionId?: number;
-
   @ApiProperty({ example: 1 })
   @IsInt()
   clubId: number;

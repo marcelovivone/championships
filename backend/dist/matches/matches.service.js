@@ -72,8 +72,6 @@ let MatchesService = class MatchesService {
             status: schema_1.matches.status,
             homeScore: schema_1.matches.homeScore,
             awayScore: schema_1.matches.awayScore,
-            hasOvertime: schema_1.matches.hasOvertime,
-            hasPenalties: schema_1.matches.hasPenalties,
             createdAt: schema_1.matches.createdAt,
             updatedAt: schema_1.matches.updatedAt,
             sportName: (0, drizzle_orm_1.sql) `sports.name`,

@@ -1,8 +1,10 @@
 import {
   Controller,
+  Version,
   Get,
   Post,
   Body,
+  Put,
   Patch,
   Param,
   Delete,
@@ -22,7 +24,7 @@ import {
 } from '@nestjs/swagger';
 
 @ApiTags('matches')
-@Controller('matches')
+@Controller({ path: 'matches', version: '1' })
 export class MatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 
@@ -179,26 +181,42 @@ export class MatchesController {
     return this.matchesService.findOne(id);
   }
 
+
+  /**
+   * PUT /matches/:id
+   * Update an existing match
+   */
+  @ApiOperation({ summary: 'Update a match' })
+  @ApiResponse({ status: 200, description: 'The match has been successfully updated.' })
+  @ApiResponse({ status: 404, description: 'Match not found' })
+  @Put(':id')
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() updateMatchDto: UpdateMatchDto,
+  ): Promise<MatchResponseDto> {
+    return this.matchesService.update(id, updateMatchDto);
+  }
+
   /**
    * PATCH /matches/:id
    * Update a specific match by ID
    */
-  @ApiOperation({ summary: 'Update a specific match' })
-  @ApiParam({ name: 'id', description: 'Match ID' })
-  @ApiBody({ type: UpdateMatchDto })
-  @ApiResponse({ status: 200, description: 'Match updated', type: MatchResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid input' })
-  @ApiResponse({ status: 404, description: 'Match not found' })
-  @Patch(':id')
-  async update(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() updateMatchDto: UpdateMatchDto,
-  ) {
-    if (!id || id <= 0) {
-      throw new BadRequestException('id must be a positive integer');
-    }
-    return this.matchesService.update(id, updateMatchDto);
-  }
+//   @ApiOperation({ summary: 'Update a specific match' })
+//   @ApiParam({ name: 'id', description: 'Match ID' })
+//   @ApiBody({ type: UpdateMatchDto })
+//   @ApiResponse({ status: 200, description: 'Match updated', type: MatchResponseDto })
+//   @ApiResponse({ status: 400, description: 'Invalid input' })
+//   @ApiResponse({ status: 404, description: 'Match not found' })
+//   @Patch(':id')
+//   async update(
+//     @Param('id', ParseIntPipe) id: number,
+//     @Body() updateMatchDto: UpdateMatchDto,
+//   ) {
+//     if (!id || id <= 0) {
+//       throw new BadRequestException('id must be a positive integer');
+//     }
+//     return this.matchesService.update(id, updateMatchDto);
+//   }
 
   /**
    * PATCH /matches/:id/score

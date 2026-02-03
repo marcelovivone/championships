@@ -1994,23 +1994,6 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
-        turn: import("drizzle-orm/pg-core").PgColumn<{
-            name: "turn";
-            tableName: "matches";
-            dataType: "number";
-            columnType: "PgInteger";
-            data: number;
-            driverParam: string | number;
-            notNull: true;
-            hasDefault: true;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
         homeClubId: import("drizzle-orm/pg-core").PgColumn<{
             name: "home_club_id";
             tableName: "matches";
@@ -2124,40 +2107,6 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             driverParam: string | number;
             notNull: false;
             hasDefault: false;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        hasOvertime: import("drizzle-orm/pg-core").PgColumn<{
-            name: "has_overtime";
-            tableName: "matches";
-            dataType: "boolean";
-            columnType: "PgBoolean";
-            data: boolean;
-            driverParam: boolean;
-            notNull: false;
-            hasDefault: true;
-            isPrimaryKey: false;
-            isAutoincrement: false;
-            hasRuntimeDefault: false;
-            enumValues: undefined;
-            baseColumn: never;
-            identity: undefined;
-            generated: undefined;
-        }, {}, {}>;
-        hasPenalties: import("drizzle-orm/pg-core").PgColumn<{
-            name: "has_penalties";
-            tableName: "matches";
-            dataType: "boolean";
-            columnType: "PgBoolean";
-            data: boolean;
-            driverParam: boolean;
-            notNull: false;
-            hasDefault: true;
             isPrimaryKey: false;
             isAutoincrement: false;
             hasRuntimeDefault: false;

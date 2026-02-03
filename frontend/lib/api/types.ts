@@ -416,10 +416,11 @@ export interface CreateMatchDto {
   roundId?: number; // Optional - only required for Round-based leagues
   homeClubId: number;
   awayClubId: number;
+  homeScore?: number | null;
+  awayScore?: number | null;
   date: string;
   stadiumId?: number;
   groupId?: number;
-  leagueDivisionId?: number;
   status?: 'scheduled' | 'in_progress' | 'finished' | 'postponed' | 'cancelled';
 }
 

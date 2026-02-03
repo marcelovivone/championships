@@ -3,7 +3,6 @@ export declare class CreateStandingDto {
     seasonId: number;
     roundId: number;
     groupId?: number;
-    leagueDivisionId?: number;
     clubId: number;
     points: number;
     played: number;

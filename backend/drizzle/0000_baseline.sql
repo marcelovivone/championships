@@ -1,0 +1,3 @@
+-- BASELINE MIGRATION
+-- Database already exists and matches schema.ts
+-- No-op migration

@@ -5,155 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1768688871261,
-      "tag": "0000_moaning_black_knight",
+      "when": 1770068138623,
+      "tag": "0000_baseline",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "7",
-      "when": 1768748032250,
-      "tag": "0001_ambitious_wendell_vaughn",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1768748459578,
-      "tag": "0002_dazzling_northstar",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1768841948319,
-      "tag": "0003_skinny_devos",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1768842195269,
-      "tag": "0004_fresh_jubilee",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1768842552191,
-      "tag": "0005_short_korg",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1768914968111,
-      "tag": "0006_quiet_winter_soldier",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1768915796577,
-      "tag": "0007_hard_tempest",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1768934603342,
-      "tag": "0008_majestic_wasp",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1769007496199,
-      "tag": "0009_new_speed",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1769181764948,
-      "tag": "0010_tiny_captain_america",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1769236805113,
-      "tag": "0011_organic_micromacro",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1769245071245,
-      "tag": "0012_opposite_madripoor",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1769260233320,
-      "tag": "0013_pink_warbird",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1769262569415,
-      "tag": "0014_shocking_tigra",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1769274481281,
-      "tag": "0015_orange_whirlwind",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1769294898521,
-      "tag": "0016_damp_kinsey_walden",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1769351755300,
-      "tag": "0017_lush_cerise",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1769353703962,
-      "tag": "0018_tranquil_roxanne_simpson",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1769433496662,
-      "tag": "0019_steady_the_professor",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1769496983123,
-      "tag": "0020_concerned_tiger_shark",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1769610028134,
-      "tag": "0021_add-sport-and-league-id-to-groups",
+      "when": 1770355000000,
+      "tag": "0001_add_match_status_enum",
       "breakpoints": true
     }
   ]

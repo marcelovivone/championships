@@ -145,8 +145,6 @@ exports.matches = (0, pg_core_1.pgTable)('matches', {
     status: (0, pg_core_1.varchar)('status', { length: 20 }).default('scheduled').notNull(),
     homeScore: (0, pg_core_1.integer)('home_score'),
     awayScore: (0, pg_core_1.integer)('away_score'),
-    hasOvertime: (0, pg_core_1.boolean)('has_overtime').default(false),
-    hasPenalties: (0, pg_core_1.boolean)('has_penalties').default(false),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
     updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
 });

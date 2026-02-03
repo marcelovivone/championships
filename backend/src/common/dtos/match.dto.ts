@@ -6,6 +6,7 @@ import { IsString, IsInt, IsOptional, IsBoolean, IsDateString, IsEnum } from 'cl
 import { PartialType } from '@nestjs/swagger';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { MatchStatus } from '../enums/match-status.enum';
 
 export class CreateMatchDto {
   @ApiProperty({ example: 1, description: 'Sport ID' })
@@ -29,16 +30,6 @@ export class CreateMatchDto {
   @IsOptional()
   @IsInt()
   groupId?: number;
-
-  @ApiProperty({ example: 1, description: 'League Division ID (optional)', required: false })
-  @IsOptional()
-  @IsInt()
-  leagueDivisionId?: number;
-
-  @ApiProperty({ example: 1, description: 'Turn number (1 or 2)' })
-  @Type(() => Number)
-  @IsInt()
-  turn: number = 1;
 
   @ApiProperty({ example: 10, description: 'Home Club ID' })
   @IsInt()
@@ -69,23 +60,81 @@ export class CreateMatchDto {
   @IsInt()
   awayScore?: number;
 
-  @ApiProperty({ example: false, description: 'Did match go to overtime?', required: false })
+  @ApiProperty({
+  enum: MatchStatus,
+  example: MatchStatus.SCHEDULED,
+  })
   @IsOptional()
-  @IsBoolean()
-  hasOvertime?: boolean;
+  @IsEnum(MatchStatus)
+  status?: MatchStatus;
 
-  @ApiProperty({ example: false, description: 'Did match go to penalties?', required: false })
+  @ApiProperty()
   @IsOptional()
-  @IsBoolean()
-  hasPenalties?: boolean;
+  createdAt?: Date;
+
+  @ApiProperty()
+  @IsOptional()
+  updatedAt?: Date;
 }
 
-export class UpdateMatchDto extends PartialType(CreateMatchDto) {}
+export class UpdateMatchDto {
+  @IsOptional()
+  @IsInt()
+  sportId?: number;
+
+  @IsOptional()
+  @IsInt()
+  leagueId?: number;
+
+  @IsOptional()
+  @IsInt()
+  seasonId?: number;
+
+  @IsOptional()
+  @IsInt()
+  roundId?: number;
+
+  @IsOptional()
+  @IsInt()
+  groupId?: number;
+
+  @IsOptional()
+  @IsInt()
+  homeClubId?: number;
+
+  @IsOptional()
+  @IsInt()
+  awayClubId?: number;
+
+  @IsOptional()
+  @IsInt()
+  stadiumId?: number;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
+  @IsOptional()
+  @IsInt()
+  homeScore?: number;
+
+  @IsOptional()
+  @IsInt()
+  awayScore?: number;
+
+  @IsOptional()
+  @IsEnum(MatchStatus)
+  status?: MatchStatus;
+}
 
 export class MatchResponseDto {
   @ApiProperty({ example: 1 })
   @IsInt()
   id: number;
+
+  @ApiProperty({ example: 1 })
+  @IsInt()
+  sportId: number;
 
   @ApiProperty({ example: 1 })
   leagueId: number;
@@ -98,12 +147,6 @@ export class MatchResponseDto {
 
   @ApiProperty({ example: 1, required: false })
   groupId?: number;
-
-  @ApiProperty({ example: 1, required: false })
-  leagueDivisionId?: number;
-
-  @ApiProperty({ example: 1 })
-  turn: number;
 
   @ApiProperty({ example: 10 })
   homeClubId: number;
@@ -129,8 +172,13 @@ export class MatchResponseDto {
   @ApiProperty({ example: false, required: false })
   hasPenalties?: boolean;
 
-  @ApiProperty({ enum: ['scheduled', 'live', 'finished', 'postponed', 'cancelled'], example: 'scheduled' })
-  status: string;
+  @ApiProperty({
+  enum: MatchStatus,
+  example: MatchStatus.SCHEDULED,
+  })
+  @IsOptional()
+  @IsEnum(MatchStatus)
+  status?: MatchStatus;
 
   @ApiProperty()
   @IsOptional()
@@ -155,14 +203,4 @@ export class UpdateMatchScoreDto {
   @Type(() => Number)
   @IsInt()
   awayScore: number;
-
-  @ApiProperty({ example: false, description: 'Overtime flag', required: false })
-  @IsOptional()
-  @IsBoolean()
-  hasOvertime?: boolean;
-
-  @ApiProperty({ example: false, description: 'Penalties flag', required: false })
-  @IsOptional()
-  @IsBoolean()
-  hasPenalties?: boolean;
 }

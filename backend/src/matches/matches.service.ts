@@ -6,6 +6,7 @@ import { matches, groups, rounds, leagues, sports, seasons, clubs as schemaClubs
 import { CreateMatchDto, UpdateMatchDto, UpdateMatchScoreDto } from '../common/dtos';
 import { StandingsService } from '../standings/standings.service';
 import { StandingsCalculatorService } from '../standings/standings-calculator.service';
+import { MatchStatus } from '../common/enums/match-status.enum';
 
 @Injectable()
 export class MatchesService {
@@ -65,6 +66,7 @@ export class MatchesService {
 
         return {
           ...match,
+          status: match.status as MatchStatus,
           availableStadiums: associatedStadiums
         };
       }));
@@ -156,7 +158,6 @@ export class MatchesService {
           seasonId: matches.seasonId,
           roundId: matches.roundId,
           groupId: matches.groupId,
-          turn: matches.turn,
           homeClubId: matches.homeClubId,
           awayClubId: matches.awayClubId,
           stadiumId: matches.stadiumId,
@@ -164,8 +165,6 @@ export class MatchesService {
           status: matches.status,
           homeScore: matches.homeScore,
           awayScore: matches.awayScore,
-          hasOvertime: matches.hasOvertime,
-          hasPenalties: matches.hasPenalties,
           createdAt: matches.createdAt,
           updatedAt: matches.updatedAt,
           sport: {
@@ -243,6 +242,7 @@ export class MatchesService {
 
         return {
           ...match,
+          status: match.status as MatchStatus,
           availableStadiums: associatedStadiums
         };
       }));
@@ -277,7 +277,7 @@ export class MatchesService {
     try {
       const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
       const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
-       
+      
       const matchResults = await this.db
         .select({
           id: matches.id,
@@ -286,7 +286,6 @@ export class MatchesService {
           seasonId: matches.seasonId,
           roundId: matches.roundId,
           groupId: matches.groupId,
-          turn: matches.turn,
           homeClubId: matches.homeClubId,
           awayClubId: matches.awayClubId,
           stadiumId: matches.stadiumId,
@@ -294,8 +293,6 @@ export class MatchesService {
           status: matches.status,
           homeScore: matches.homeScore,
           awayScore: matches.awayScore,
-          hasOvertime: matches.hasOvertime,
-          hasPenalties: matches.hasPenalties,
           createdAt: matches.createdAt,
           updatedAt: matches.updatedAt,
           sport: {
@@ -371,7 +368,7 @@ export class MatchesService {
         associatedStadiums = await this.db
           .select()
           .from(schemaStadiums)
-          .where(sql`${schemaStadiums.id} = ANY(${stadiumIds})`);
+          .where(inArray(schemaStadiums.id, stadiumIds));
       }
 
       return {
@@ -383,6 +380,19 @@ export class MatchesService {
       throw new BadRequestException('Failed to fetch match');
     }
   }
+
+  async ensureExists(id: number) {
+    const result = await this.db
+        .select({ id: matches.id })
+        .from(matches)
+        .where(eq(matches.id, id))
+        .limit(1);
+
+        if (!result.length) {
+            throw new NotFoundException(`Match with ID ${id} not found`);
+        }
+    }
+
 
   /**
    * Create new match
@@ -432,16 +442,13 @@ export class MatchesService {
           seasonId: createMatchDto.seasonId,
           roundId: createMatchDto.roundId, // This is required according to the schema
           groupId: createMatchDto.groupId || null,
-          turn: createMatchDto.turn ?? 1,
           homeClubId: createMatchDto.homeClubId,
           awayClubId: createMatchDto.awayClubId,
           stadiumId: createMatchDto.stadiumId || null,
           date: new Date(createMatchDto.date),
-          status: 'scheduled', // Default status
+            status: createMatchDto.status || 'scheduled', // Use provided status or default
           homeScore: createMatchDto.homeScore || null,
           awayScore: createMatchDto.awayScore || null,
-          hasOvertime: createMatchDto.hasOvertime || false,
-          hasPenalties: createMatchDto.hasPenalties || false,
         })
         .returning();
 
@@ -458,7 +465,7 @@ export class MatchesService {
   async update(id: number, updateMatchDto: UpdateMatchDto) {
     try {
       // Verify match exists
-      await this.findOne(id);
+      await this.ensureExists(id);
 
       // If updating group, verify it exists
       if (updateMatchDto.groupId) {
@@ -503,6 +510,13 @@ export class MatchesService {
       if (updateData.date) {
         updateData.date = new Date(updateData.date);
       }
+      // Properly handle score updates - ensure scores are set to null when explicitly sent as null
+      if ('homeScore' in updateData) {
+        updateData.homeScore = updateData.homeScore === null || updateData.homeScore === undefined ? null : updateData.homeScore;
+      }
+      if ('awayScore' in updateData) {
+        updateData.awayScore = updateData.awayScore === null || updateData.awayScore === undefined ? null : updateData.awayScore;
+      }
 
       const result = await this.db
         .update(matches)
@@ -510,13 +524,21 @@ export class MatchesService {
         .where(eq(matches.id, id))
         .returning();
 
-      return result[0];
+      const updatedMatch = result[0];
+
+      return {
+        ...updatedMatch,
+        status: updatedMatch.status as MatchStatus,
+      };
+
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof NotFoundException)
+    //   if (error instanceof BadRequestException || error instanceof NotFoundException)
+    //     throw error;
+    //   throw new BadRequestException('Failed to update match');
+        console.error('findOne error:', error);
         throw error;
-      throw new BadRequestException('Failed to update match');
     }
-  }
+ }
 
   /**
    * Get matches by group
@@ -537,7 +559,7 @@ export class MatchesService {
       const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
       const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
       
-      return await this.db
+      const results = await this.db
         .select({
           id: matches.id,
           sportId: matches.sportId,
@@ -545,7 +567,6 @@ export class MatchesService {
           seasonId: matches.seasonId,
           roundId: matches.roundId,
           groupId: matches.groupId,
-          turn: matches.turn,
           homeClubId: matches.homeClubId,
           awayClubId: matches.awayClubId,
           stadiumId: matches.stadiumId,
@@ -553,8 +574,6 @@ export class MatchesService {
           status: matches.status,
           homeScore: matches.homeScore,
           awayScore: matches.awayScore,
-          hasOvertime: matches.hasOvertime,
-          hasPenalties: matches.hasPenalties,
           createdAt: matches.createdAt,
           updatedAt: matches.updatedAt,
           sport: {
@@ -605,6 +624,7 @@ export class MatchesService {
         .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
         .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
         .where(eq(matches.groupId, groupId));
+      return results.map(match => ({ ...match, status: match.status as MatchStatus }));
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Failed to fetch matches by group');
@@ -635,7 +655,7 @@ export class MatchesService {
         );
       }
 
-      return await this.db
+      const results = await this.db
         .select({
           id: matches.id,
           sportId: matches.sportId,
@@ -643,7 +663,6 @@ export class MatchesService {
           seasonId: matches.seasonId,
           roundId: matches.roundId,
           groupId: matches.groupId,
-          turn: matches.turn,
           homeClubId: matches.homeClubId,
           awayClubId: matches.awayClubId,
           stadiumId: matches.stadiumId,
@@ -651,8 +670,6 @@ export class MatchesService {
           status: matches.status,
           homeScore: matches.homeScore,
           awayScore: matches.awayScore,
-          hasOvertime: matches.hasOvertime,
-          hasPenalties: matches.hasPenalties,
           createdAt: matches.createdAt,
           updatedAt: matches.updatedAt,
           sport: {
@@ -703,6 +720,7 @@ export class MatchesService {
         .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
         .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
         .where(whereCondition);
+      return results.map(match => ({ ...match, status: match.status as MatchStatus }));
     } catch (error) {
       throw new BadRequestException('Failed to fetch matches by sport, league, season and group');
     }
@@ -725,7 +743,6 @@ export class MatchesService {
                 seasonId: matches.seasonId,
                 roundId: matches.roundId,
                 groupId: matches.groupId,
-                turn: matches.turn,
                 homeClubId: matches.homeClubId,
                 awayClubId: matches.awayClubId,
                 stadiumId: matches.stadiumId,
@@ -733,8 +750,6 @@ export class MatchesService {
                 status: matches.status,
                 homeScore: matches.homeScore,
                 awayScore: matches.awayScore,
-                hasOvertime: matches.hasOvertime,
-                hasPenalties: matches.hasPenalties,
                 createdAt: matches.createdAt,
                 updatedAt: matches.updatedAt,
                 sport: {
@@ -827,7 +842,6 @@ export class MatchesService {
                 seasonId: matches.seasonId,
                 roundId: matches.roundId,
                 groupId: matches.groupId,
-                turn: matches.turn,
                 homeClubId: matches.homeClubId,
                 awayClubId: matches.awayClubId,
                 stadiumId: matches.stadiumId,
@@ -835,8 +849,6 @@ export class MatchesService {
                 status: matches.status,
                 homeScore: matches.homeScore,
                 awayScore: matches.awayScore,
-                hasOvertime: matches.hasOvertime,
-                hasPenalties: matches.hasPenalties,
                 createdAt: matches.createdAt,
                 updatedAt: matches.updatedAt,
                 sport: {
@@ -913,7 +925,6 @@ export class MatchesService {
     try {
       // Verify match exists
       const match = await this.findOne(id);
-
       // Update match with score
       const result = await this.db
         .update(matches)
@@ -921,8 +932,6 @@ export class MatchesService {
           homeScore: updateScoreDto.homeScore,
           awayScore: updateScoreDto.awayScore,
           status: 'finished',
-          hasOvertime: updateScoreDto.hasOvertime || false,
-          hasPenalties: updateScoreDto.hasPenalties || false,
           updatedAt: new Date(),
         })
         .where(eq(matches.id, id))
