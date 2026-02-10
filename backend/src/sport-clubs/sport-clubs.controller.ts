@@ -63,9 +63,9 @@ export class SportClubsController {
   @Put('sport/:sportId/clubs')
   async bulkUpdateForSport(
     @Param('sportId') sportId: string,
-    @Body() body: { clubIds: number[] },
+    @Body() body: { sportClubData: { id: number; clubId: number; name: string }[] },
   ) {
-    await this.sportClubsService.bulkUpdateForSport(+sportId, body.clubIds);
+    await this.sportClubsService.bulkUpdateForSportWithNames(+sportId, body.sportClubData);
     return { message: 'Sport-club associations updated successfully' };
   }
 

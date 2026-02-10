@@ -10,6 +10,10 @@ export class CreateStadiumDto {
   cityId: number;
 
   @IsInt()
+  @IsNotEmpty()
+  sportId: number;
+
+  @IsInt()
   @IsOptional()
   capacity?: number;
 

@@ -2,7 +2,7 @@ import { Injectable, Inject, NotFoundException, BadRequestException } from '@nes
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq, sql, asc, desc } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { stadiums, cities } from '../db/schema';
+import { stadiums, cities, sports } from '../db/schema';
 import { CreateStadiumDto, PaginationDto, UpdateStadiumDto, FilteringDto } from '../common/dtos';
 
 @Injectable()
@@ -13,23 +13,37 @@ export class StadiumsService {
   ) {}
 
   /**
-   * Get all stadiums with city information
+   * Get all stadiums with city and sport information
    */
   async findAll(paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
     const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
     const offset = (page - 1) * limit;
 
-    const sortableColumns = ['name', 'type', 'capacity', 'cityId'];
+    const sortableColumns = ['name', 'type', 'capacity', 'cityId', 'sportId'];
     const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
     const order = sortOrder === 'desc' ? desc : asc;
 
     // Determine the sort column
-    let sortColumn = stadiums.name;
-    if (orderByField === 'type') sortColumn = stadiums.type;
-    else if (orderByField === 'capacity') sortColumn = stadiums.capacity;
-    else if (orderByField === 'cityId') sortColumn = stadiums.cityId;
-
+    let orderByClause: any;
+    switch (orderByField) {
+      case 'type':
+        orderByClause = order(stadiums.type);
+        break;
+      case 'capacity':
+        orderByClause = order(stadiums.capacity);
+        break;
+      case 'cityId':
+        orderByClause = order(stadiums.cityId);
+        break;
+      case 'sportId':
+        orderByClause = order(stadiums.sportId);
+        break;
+      case 'name':
+      default:
+        orderByClause = order(stadiums.name);
+        break;
+    }
     try {
       const data = await this.db
         .select({
@@ -43,10 +57,16 @@ export class StadiumsService {
             id: cities.id,
             name: cities.name,
           },
+          sportId: stadiums.sportId,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
         })
         .from(stadiums)
         .leftJoin(cities, eq(stadiums.cityId, cities.id))
-        .orderBy(order(sortColumn))
+        .leftJoin(sports, eq(stadiums.sportId, sports.id))
+        .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
@@ -63,7 +83,7 @@ export class StadiumsService {
   }
 
   /**
-   * Get stadium by ID with city information
+   * Get stadium by ID with city and sport information
    */
   async findOne(id: number) {
     try {
@@ -79,9 +99,15 @@ export class StadiumsService {
             id: cities.id,
             name: cities.name,
           },
+          sportId: stadiums.sportId,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
         })
         .from(stadiums)
         .leftJoin(cities, eq(stadiums.cityId, cities.id))
+        .leftJoin(sports, eq(stadiums.sportId, sports.id))
         .where(eq(stadiums.id, id))
         .limit(1);
 
@@ -99,9 +125,37 @@ export class StadiumsService {
   /**
    * Get stadiums by city ID
    */
-  async findByCity(cityId: number, paginationDto: PaginationDto) {
+  async findByCity(cityId: number, paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
     const { page = 1, limit = 10 } = paginationDto;
     const offset = (page - 1) * limit;
+
+    // Get sortBy and sortOrder from paginationDto
+    const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    const sortableColumns = ['name', 'type', 'capacity', 'cityId', 'sportId'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+
+    // Determine the sort column
+    let orderByClause: any;
+    switch (orderByField) {
+      case 'type':
+        orderByClause = order(stadiums.type);
+        break;
+      case 'capacity':
+        orderByClause = order(stadiums.capacity);
+        break;
+      case 'cityId':
+        orderByClause = order(stadiums.cityId);
+        break;
+      case 'sportId':
+        orderByClause = order(stadiums.sportId);
+        break;
+      case 'name':
+      default:
+        orderByClause = order(stadiums.name);
+        break;
+    }
 
     try {
       // Verify city exists
@@ -127,11 +181,17 @@ export class StadiumsService {
             id: cities.id,
             name: cities.name,
           },
+          sportId: stadiums.sportId,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
         })
-        .from(stadiums)
+          .from(stadiums)
         .leftJoin(cities, eq(stadiums.cityId, cities.id))
+        .leftJoin(sports, eq(stadiums.sportId, sports.id))
         .where(eq(stadiums.cityId, cityId))
-        .orderBy(stadiums.name)
+        .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
@@ -146,6 +206,93 @@ export class StadiumsService {
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Failed to fetch paginated stadiums by city');
+    }
+  }
+
+    /**
+   * Get stadiums by sport ID
+   */
+  async findBySport(sportId: number, paginationDto: PaginationDto, filteringDto: FilteringDto = {}) {
+    const { page = 1, limit = 10 } = paginationDto;
+    const offset = (page - 1) * limit;
+
+    // Get sortBy and sortOrder from paginationDto
+    const { sortBy = 'name', sortOrder = 'asc' } = filteringDto;
+    const order = sortOrder === 'desc' ? desc : asc;
+
+    const sortableColumns = ['name', 'type', 'capacity', 'cityId', 'sportId'];
+    const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
+
+    // Determine the sort column
+    let orderByClause: any;
+    switch (orderByField) {
+      case 'type':
+        orderByClause = order(stadiums.type);
+        break;
+      case 'capacity':
+        orderByClause = order(stadiums.capacity);
+        break;
+      case 'cityId':
+        orderByClause = order(stadiums.cityId);
+        break;
+      case 'sportId':
+        orderByClause = order(stadiums.sportId);
+        break;
+      case 'name':
+      default:
+        orderByClause = order(stadiums.name);
+        break;
+    }
+
+    try {
+      // Verify sport exists
+      const sport = await this.db
+        .select()
+        .from(sports)
+        .where(eq(sports.id, sportId))
+        .limit(1);
+
+      if (!sport || sport.length === 0) {
+        throw new NotFoundException(`Sport with ID ${sportId} not found`);
+      }
+
+      const data = await this.db
+        .select({
+          id: stadiums.id,
+          name: stadiums.name,
+          type: stadiums.type,
+          capacity: stadiums.capacity,
+          imageUrl: stadiums.imageUrl,
+          cityId: stadiums.cityId,
+          city: {
+            id: cities.id,
+            name: cities.name,
+          },
+          sportId: stadiums.sportId,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
+        })
+          .from(stadiums)
+        .leftJoin(cities, eq(stadiums.cityId, cities.id))
+        .leftJoin(sports, eq(stadiums.sportId, sports.id))
+        .where(eq(stadiums.sportId, sportId))
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
+
+      const totalResult = await this.db
+        .select({ count: sql<number>`count(*)` })
+        .from(stadiums)
+        .where(eq(stadiums.sportId, sportId));
+
+      const total = Number(totalResult[0].count);
+
+      return { data, total };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException('Failed to fetch paginated stadiums by sport');
     }
   }
 
@@ -166,10 +313,17 @@ export class StadiumsService {
             id: cities.id,
             name: cities.name,
           },
+          sportId: stadiums.sportId,
+          sport: {
+            id: sports.id,
+            name: sports.name,
+          },
         })
         .from(stadiums)
         .leftJoin(cities, eq(stadiums.cityId, cities.id))
-        .where(eq(stadiums.type, type));
+        .leftJoin(sports, eq(stadiums.sportId, sports.id))
+        .where(eq(stadiums.type, type))
+        .orderBy(stadiums.name);
     } catch (error) {
       throw new BadRequestException('Failed to fetch stadiums by type');
     }
@@ -189,6 +343,17 @@ export class StadiumsService {
 
       if (!city || city.length === 0) {
         throw new BadRequestException(`City with ID ${createStadiumDto.cityId} not found`);
+      }
+
+      // Verify sport exists
+      const sport = await this.db
+        .select()
+        .from(sports)
+        .where(eq(sports.id, createStadiumDto.sportId))
+        .limit(1);
+
+      if (!sport || sport.length === 0) {
+        throw new BadRequestException(`Sport with ID ${createStadiumDto.sportId} not found`);
       }
 
       // Validate stadium name is unique
@@ -236,6 +401,18 @@ export class StadiumsService {
 
         if (!city || city.length === 0) {
           throw new BadRequestException(`City with ID ${updateStadiumDto.cityId} not found`);
+        }
+      }
+      // If updating sport, verify it exists
+      if (updateStadiumDto.sportId) {
+        const sport = await this.db
+          .select()
+          .from(sports)
+          .where(eq(sports.id, updateStadiumDto.sportId))
+          .limit(1);
+
+        if (!sport || sport.length === 0) {
+          throw new BadRequestException(`Sport with ID ${updateStadiumDto.sportId} not found`);
         }
       }
 

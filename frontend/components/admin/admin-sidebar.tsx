@@ -30,19 +30,19 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard size={20} />, href: '/admin' },
-  { label: 'Sports', icon: <Trophy size={20} />, href: '/admin/sports' },
-  { label: 'Countries', icon: <Globe size={20} />, href: '/admin/countries' },
   { label: 'Cities', icon: <MapPin size={20} />, href: '/admin/cities' },
-  { label: 'Stadiums', icon: <Building2 size={20} />, href: '/admin/stadiums' },
+  { label: 'Countries', icon: <Globe size={20} />, href: '/admin/countries' },
   { label: 'Clubs', icon: <Shield size={20} />, href: '/admin/clubs' },
   { label: 'Club Stadiums', icon: <Link2 size={20} />, href: '/admin/club-stadiums' },
-  { label: 'Sport Clubs', icon: <Users size={20} />, href: '/admin/sport-clubs' },
-  { label: 'Leagues', icon: <Flag size={20} />, href: '/admin/leagues' },
-  { label: 'Seasons', icon: <Calendar size={20} />, href: '/admin/seasons' },
-  { label: 'Rounds', icon: <Target size={20} />, href: '/admin/rounds' },
   { label: 'Groups', icon: <GitBranch size={20} />, href: '/admin/groups' },
-  { label: 'Season Clubs', icon: <ClipboardList size={20} />, href: '/admin/season-clubs' },
+  { label: 'Leagues', icon: <Flag size={20} />, href: '/admin/leagues' },
   { label: 'Matches', icon: <Table size={20} />, href: '/admin/matches' },
+  { label: 'Rounds', icon: <Target size={20} />, href: '/admin/rounds' },
+  { label: 'Seasons', icon: <Calendar size={20} />, href: '/admin/seasons' },
+  { label: 'Season Clubs', icon: <ClipboardList size={20} />, href: '/admin/season-clubs' },
+  { label: 'Sports', icon: <Trophy size={20} />, href: '/admin/sports' },
+  { label: 'Sport Clubs', icon: <Users size={20} />, href: '/admin/sport-clubs' },
+  { label: 'Stadiums', icon: <Building2 size={20} />, href: '/admin/stadiums' },
   { label: 'Users', icon: <UserCog size={20} />, href: '/admin/users' },
 ];
 

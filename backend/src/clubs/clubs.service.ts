@@ -24,12 +24,17 @@ export class ClubsService {
     const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
     const order = sortOrder === 'desc' ? desc : asc;
 
-    // Determine the sort column
-    let sortColumn = clubs.name;
-    if (orderByField === 'shortName') sortColumn = clubs.shortName;
-    else if (orderByField === 'foundationYear') sortColumn = clubs.foundationYear;
-    else if (orderByField === 'cityId') sortColumn = clubs.cityId;
-    else if (orderByField === 'countryId') sortColumn = clubs.countryId;
+    // Determine the sort column using a helper function to handle different column types
+    const getSortColumn = () => {
+      switch (orderByField) {
+        case 'name': return clubs.name;
+        case 'shortName': return clubs.shortName;
+        case 'foundationYear': return clubs.foundationYear;
+        case 'cityId': return clubs.cityId;
+        case 'countryId': return clubs.countryId;
+        default: return clubs.name;
+      }
+    };
 
     try {
       const data = await this.db
@@ -53,7 +58,7 @@ export class ClubsService {
         .from(clubs)
         .leftJoin(cities, eq(clubs.cityId, cities.id))
         .leftJoin(countries, eq(clubs.countryId, countries.id))
-        .orderBy(order(sortColumn))
+        .orderBy(order(getSortColumn()))
         .limit(limit)
         .offset(offset);
 

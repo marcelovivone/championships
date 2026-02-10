@@ -11,7 +11,7 @@ export default function SportClubsPage() {
   
   const [selectedSportId, setSelectedSportId] = useState<number | null>(null);
   const [availableClubs, setAvailableClubs] = useState<Club[]>([]);
-  const [assignedClubs, setAssignedClubs] = useState<Club[]>([]);
+  const [assignedSportClubs, setAssignedSportClubs] = useState<SportClub[]>([]);
   const [selectedAvailable, setSelectedAvailable] = useState<number[]>([]);
   const [selectedAssigned, setSelectedAssigned] = useState<number[]>([]);
   const [hasChanges, setHasChanges] = useState(false);
@@ -45,8 +45,8 @@ export default function SportClubsPage() {
 
   // Bulk update mutation
   const bulkUpdateMutation = useMutation({
-    mutationFn: ({ sportId, clubIds }: { sportId: number; clubIds: number[] }) =>
-      sportClubsApi.bulkUpdateForSport(sportId, { clubIds }),
+    mutationFn: ({ sportId, sportClubData }: { sportId: number; sportClubData: { id: number; clubId: number; name: string }[] }) =>
+      sportClubsApi.bulkUpdateForSport(sportId, { sportClubData }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sport-clubs'] });
       alert('Sport clubs updated successfully');
@@ -60,18 +60,26 @@ export default function SportClubsPage() {
 
   // Update available and assigned clubs when sport or data changes
   useEffect(() => {
-    if (!selectedSportId || !clubsData?.data) {
+    if (!selectedSportId || !clubsData?.data || !sportClubs) {
       setAvailableClubs([]);
-      setAssignedClubs([]);
+      setAssignedSportClubs([]);
       return;
     }
 
-    const assignedClubIds = new Set(sportClubs?.map(sc => sc.clubId) || []);
+    const assignedClubIds = new Set(sportClubs.map(sc => sc.clubId));
     const available = clubsData.data.filter(club => !assignedClubIds.has(club.id));
-    const assigned = clubsData.data.filter(club => assignedClubIds.has(club.id));
+
+    // Map sportClubs to include club data
+    const assignedWithClubData = sportClubs.map(sportClub => {
+      const club = clubsData.data.find(c => c.id === sportClub.clubId);
+      return {
+        ...sportClub,
+        club: club || undefined
+      };
+    });
 
     setAvailableClubs(available);
-    setAssignedClubs(assigned);
+    setAssignedSportClubs(assignedWithClubData);
   }, [selectedSportId, clubsData, sportClubs]);
 
   const handleSportChange = (sportId: string) => {
@@ -90,9 +98,22 @@ export default function SportClubsPage() {
   const moveToAssigned = () => {
     if (selectedAvailable.length === 0) return;
 
-    const clubsToMove = availableClubs.filter(club => selectedAvailable.includes(club.id));
+    // Create new SportClub entries for the selected clubs
+    const newSportClubs: SportClub[] = selectedAvailable.map(clubId => {
+      const club = clubsData?.data.find(c => c.id === clubId);
+      return {
+        id: Date.now() + Math.random(), // Temporary ID
+        sportId: selectedSportId!,
+        clubId: clubId,
+        name: club?.name || '', // Default to club name initially
+        flgActive: true,
+        createdAt: new Date().toISOString(),
+        club: club
+      };
+    });
+
     setAvailableClubs(prev => prev.filter(club => !selectedAvailable.includes(club.id)));
-    setAssignedClubs(prev => [...prev, ...clubsToMove].sort((a, b) => a.name.localeCompare(b.name)));
+    setAssignedSportClubs(prev => [...prev, ...newSportClubs].sort((a, b) => a.club!.name.localeCompare(b.club!.name)));
     setSelectedAvailable([]);
     setHasChanges(true);
   };
@@ -100,9 +121,9 @@ export default function SportClubsPage() {
   const moveToAvailable = () => {
     if (selectedAssigned.length === 0) return;
 
-    const clubsToMove = assignedClubs.filter(club => selectedAssigned.includes(club.id));
-    setAssignedClubs(prev => prev.filter(club => !selectedAssigned.includes(club.id)));
-    setAvailableClubs(prev => [...prev, ...clubsToMove].sort((a, b) => a.name.localeCompare(b.name)));
+    const clubsToRemove = assignedSportClubs.filter(sportClub => selectedAssigned.includes(sportClub.id));
+    setAssignedSportClubs(prev => prev.filter(sportClub => !selectedAssigned.includes(sportClub.id)));
+    setAvailableClubs(prev => [...prev, ...clubsToRemove.map(sc => sc.club!)].sort((a, b) => a.name.localeCompare(b.name)));
     setSelectedAssigned([]);
     setHasChanges(true);
   };
@@ -110,20 +131,37 @@ export default function SportClubsPage() {
   const handleSave = () => {
     if (!selectedSportId) return;
 
-    const clubIds = assignedClubs.map(club => club.id);
-    bulkUpdateMutation.mutate({ sportId: selectedSportId, clubIds });
+    // Prepare the payload with sport club data including names
+    const sportClubData = assignedSportClubs.map(sportClub => ({
+      id: sportClub.id,
+      clubId: sportClub.clubId,
+      name: sportClub.name
+    }));
+    
+    bulkUpdateMutation.mutate({ 
+      sportId: selectedSportId, 
+      sportClubData 
+    });
   };
 
   const handleCancel = () => {
     if (!hasChanges || confirm('Are you sure you want to discard your changes?')) {
       // Recalculate lists from the current server data
-      if (selectedSportId && clubsData?.data) {
-        const assignedClubIds = new Set(sportClubs?.map(sc => sc.clubId) || []);
+      if (selectedSportId && clubsData?.data && sportClubs) {
+        const assignedClubIds = new Set(sportClubs.map(sc => sc.clubId));
         const available = clubsData.data.filter(club => !assignedClubIds.has(club.id));
-        const assigned = clubsData.data.filter(club => assignedClubIds.has(club.id));
-        
+
+        // Map sportClubs to include club data
+        const assignedWithClubData = sportClubs.map(sportClub => {
+          const club = clubsData.data.find(c => c.id === sportClub.clubId);
+          return {
+            ...sportClub,
+            club: club || undefined
+          };
+        });
+
         setAvailableClubs(available);
-        setAssignedClubs(assigned);
+        setAssignedSportClubs(assignedWithClubData);
       }
       setSelectedAvailable([]);
       setSelectedAssigned([]);
@@ -141,10 +179,10 @@ export default function SportClubsPage() {
   const paginatedAvailableClubs = availableClubs.slice(availableStartIndex, availableEndIndex);
 
   // Pagination calculations for assigned clubs
-  const assignedTotalPages = Math.ceil(assignedClubs.length / assignedLimit);
+  const assignedTotalPages = Math.ceil(assignedSportClubs.length / assignedLimit);
   const assignedStartIndex = (assignedPage - 1) * assignedLimit;
   const assignedEndIndex = assignedStartIndex + assignedLimit;
-  const paginatedAssignedClubs = assignedClubs.slice(assignedStartIndex, assignedEndIndex);
+  const paginatedAssignedClubs = assignedSportClubs.slice(assignedStartIndex, assignedEndIndex);
 
   return (
     <div className="container mx-auto p-6">
@@ -298,36 +336,57 @@ export default function SportClubsPage() {
 
                 {/* Assigned Clubs */}
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">Assigned Clubs ({assignedClubs.length})</label>
+                  <label className="block text-sm font-medium text-gray-700">Assigned Clubs ({assignedSportClubs.length})</label>
                   <div className="border rounded-md h-96 overflow-y-auto bg-gray-50">
-                    {assignedClubs.length === 0 ? (
+                    {assignedSportClubs.length === 0 ? (
                       <div className="flex items-center justify-center h-full text-sm text-gray-500">
                         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'No assigned clubs'}
                       </div>
                     ) : (
-                      <div className="p-2 space-y-1">
-                        {paginatedAssignedClubs.map((club) => (
-                          <div
-                            key={club.id}
-                            onClick={() => {
-                              setSelectedAssigned(prev =>
-                                prev.includes(club.id)
-                                  ? prev.filter(id => id !== club.id)
-                                  : [...prev, club.id]
-                              );
-                            }}
-                            className={`p-2 rounded cursor-pointer hover:bg-gray-200 transition-colors ${
-                              selectedAssigned.includes(club.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
-                            }`}
-                          >
-                            {club.name}
-                          </div>
-                        ))}
+                      <div className="divide-y divide-gray-200">
+                        <div className="grid grid-cols-2 p-2 bg-gray-100 font-semibold text-sm text-gray-700 sticky top-0 z-10">
+                          <div>Original Name</div>
+                          <div>Sport Name</div>
+                        </div>
+                        <div className="overflow-y-auto max-h-[calc(24rem-2.5rem)]">
+                          {paginatedAssignedClubs.map((sportClub) => (
+                            <div
+                              key={sportClub.id}
+                              onClick={() => {
+                                setSelectedAssigned(prev =>
+                                  prev.includes(sportClub.id)
+                                    ? prev.filter(id => id !== sportClub.id)
+                                    : [...prev, sportClub.id]
+                                );
+                              }}
+                              className={`grid grid-cols-2 p-2 rounded cursor-pointer hover:bg-gray-200 transition-colors ${
+                                selectedAssigned.includes(sportClub.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
+                              }`}
+                            >
+                              <div>{sportClub.club?.name || 'N/A'}</div>
+                              <div>
+                                <input
+                                  type="text"
+                                  value={sportClub.name}
+                                  onChange={(e) => {
+                                    // Update the sportClub name when user modifies it
+                                    setAssignedSportClubs(prev =>
+                                      prev.map(sc => sc.id === sportClub.id ? {...sc, name: e.target.value} : sc)
+                                    );
+                                    setHasChanges(true);
+                                  }}
+                                  className={`w-full ${selectedAssigned.includes(sportClub.id) ? 'bg-blue-700 text-white placeholder:text-blue-200' : 'bg-white'} border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500`}
+                                  placeholder="Enter sport name..."
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                   {/* Pagination controls for assigned clubs */}
-                  {assignedClubs.length > assignedLimit && (
+                  {assignedSportClubs.length > assignedLimit && (
                     <div className="flex items-center justify-between gap-2 px-2 py-2 border-t text-sm">
                       <div className="flex items-center gap-1">
                         <button

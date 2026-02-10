@@ -67,6 +67,7 @@ export class MatchDivisionsController {
   async create(
     @Body() createMatchDivisionDto: CreateMatchDivisionDto,
   ): Promise<MatchDivisionResponseDto> {
+    console.log('createMatchDivisionDto', createMatchDivisionDto);
     return this.matchDivisionsService.create(createMatchDivisionDto);
   }
 

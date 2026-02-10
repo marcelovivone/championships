@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { Plus } from 'lucide-react';
-import { stadiumsApi, citiesApi } from '@/lib/api/entities';
+import { stadiumsApi, citiesApi, sportsApi } from '@/lib/api/entities';
 import { Stadium, CreateStadiumDto } from '@/lib/api/types';
 import DataTable from '@/components/ui/data-table';
 import Modal from '@/components/ui/modal';
@@ -40,6 +40,13 @@ export default function StadiumsPage() {
 
   const cities = citiesData?.data || [];
 
+  const { data: sportsData } = useQuery({
+    queryKey: ['sports'],
+    queryFn: () => sportsApi.getAll({ page: 1, limit: 100 }),
+  });
+
+  const sports = sportsData?.data || [];
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateStadiumDto>();
 
   const createMutation = useMutation({
@@ -50,8 +57,8 @@ export default function StadiumsPage() {
     },
     onError: (error) => {
       console.error('Create stadium error:', error);
-      console.error('Error response:', error.response?.data);
-      alert(`Failed to create stadium: ${JSON.stringify(error.response?.data || error.message)}`);
+      console.error('Error response:', (error as any).response?.data);
+      alert(`Failed to create stadium: ${JSON.stringify((error as any).response?.data || error.message)}`);
     },
   });
 
@@ -94,6 +101,7 @@ export default function StadiumsPage() {
       cityId: stadium.cityId,
       capacity: stadium.capacity || undefined,
       type: stadium.type || 'stadium',
+      sportId: stadium.sportId,
       yearConstructed: stadium.yearConstructed || undefined,
       imageUrl: stadium.imageUrl || '',
     });
@@ -117,24 +125,45 @@ export default function StadiumsPage() {
   };
 
   const onSubmit = (data: CreateStadiumDto) => {
-    const payload = {
-      name: data.name,
-      cityId: data.cityId ? Number(data.cityId) : undefined,
-      capacity: data.capacity ? Number(data.capacity) : undefined,
-      yearConstructed: data.yearConstructed ? Number(data.yearConstructed) : undefined,
-      type: data.type,
-      imageUrl: data.imageUrl && data.imageUrl.trim() !== '' ? data.imageUrl : undefined,
-    };
-    
     // Ensure cityId is valid
-    if (!payload.cityId) {
+    if (!data.cityId) {
       return;
     }
     
     if (editingStadium) {
-      updateMutation.mutate({ id: editingStadium.id, data: payload });
+      // For updates, use partial update with proper handling of optional fields
+      const updatePayload: Partial<CreateStadiumDto> = {
+        name: data.name,
+        cityId: Number(data.cityId),
+        sportId: Number(data.sportId),
+        type: data.type,
+        capacity: data.capacity ? Number(data.capacity) : undefined,
+        yearConstructed: data.yearConstructed ? Number(data.yearConstructed) : undefined,
+        imageUrl: data.imageUrl && data.imageUrl.trim() !== '' ? data.imageUrl : undefined,
+      };
+      
+      // Only add sportId to payload if it's provided
+      if (data.sportId) {
+        updatePayload.sportId = Number(data.sportId);
+      }
+
+      updateMutation.mutate({ id: editingStadium.id, data: updatePayload });
     } else {
-      createMutation.mutate(payload);
+      // For creation, handle optional fields properly
+      const createPayload: CreateStadiumDto = {
+        name: data.name,
+        cityId: Number(data.cityId),
+        sportId: Number(data.sportId),
+        type: data.type,
+      };
+      
+      // Only add optional fields if they have valid values
+      if (data.capacity) createPayload.capacity = Number(data.capacity);
+      if (data.yearConstructed) createPayload.yearConstructed = Number(data.yearConstructed);
+      if (data.imageUrl && data.imageUrl.trim() !== '') createPayload.imageUrl = data.imageUrl;
+      if (data.sportId) createPayload.sportId = Number(data.sportId);
+      
+      createMutation.mutate(createPayload);
     }
   };
 
@@ -144,6 +173,13 @@ export default function StadiumsPage() {
       header: 'City',
       accessor: (stadium: Stadium) => stadium.city?.name || '-',
       sortKey: 'cityId',
+      sortable: true,
+      width: '200px',
+    },
+    {
+      header: 'Sport',
+      accessor: (stadium: Stadium) => stadium.sport?.name || '-',
+      sortKey: 'sportId',
       sortable: true,
       width: '200px',
     },
@@ -169,7 +205,7 @@ export default function StadiumsPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Stadiums</h1>
+        <h1 className="text-3xl font-bold">Stadiums/Gymnasiums</h1>
         <button
           onClick={handleAdd}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -301,6 +337,26 @@ export default function StadiumsPage() {
             </select>
             {errors.cityId && (
               <p className="mt-1 text-sm text-red-600">{errors.cityId.message}</p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sport *
+            </label>
+            <select
+              {...register('sportId', { required: 'Sport is required' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Select a sport</option>
+              {sports.map((sport) => (
+                <option key={sport.id} value={sport.id}>
+                  {sport.name}
+                </option>
+              ))}
+            </select>
+            {errors.sportId && (
+              <p className="mt-1 text-sm text-red-600">{errors.sportId.message}</p>
             )}
           </div>
 

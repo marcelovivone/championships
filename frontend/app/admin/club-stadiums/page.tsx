@@ -99,7 +99,7 @@ export default function ClubStadiumsPage() {
   const handleDelete = (clubStadium: ClubStadium) => {
     const club = clubs.find((c) => c.id === clubStadium.clubId);
     const stadium = stadiums.find((s) => s.id === clubStadium.stadiumId);
-    if (window.confirm(`Are you sure you want to delete the relationship between ${club?.name} and ${stadium?.name}?`)) {
+    if (window.confirm(`Are you sure you want to remove the stadium ${stadium?.name} from the club ${club?.shortName}?`)) {
       deleteMutation.mutate(clubStadium.id);
     }
   };
@@ -131,7 +131,7 @@ export default function ClubStadiumsPage() {
   const columns = [
     {
       header: 'Club',
-      accessor: (cs: ClubStadium) => cs.club?.name || '-',
+      accessor: (cs: ClubStadium) => cs.club?.shortName || '-',
       sortKey: 'clubId',
       sortable: true,
       width: '200px',
@@ -286,7 +286,7 @@ export default function ClubStadiumsPage() {
               <option value="">Select a club</option>
               {clubs.map((club) => (
                 <option key={club.id} value={club.id}>
-                  {club.name}
+                  {club.shortName}
                 </option>
               ))}
             </select>

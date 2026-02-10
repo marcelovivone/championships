@@ -37,6 +37,7 @@ export class MatchesController {
   @ApiResponse({ status: 201, description: 'Match created', type: MatchResponseDto })
   @Post()
   async create(@Body() createMatchDto: CreateMatchDto) {
+    console.log('createMatchDto', createMatchDto);
     return this.matchesService.create(createMatchDto);
   }
 

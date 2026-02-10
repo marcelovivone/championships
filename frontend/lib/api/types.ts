@@ -90,9 +90,11 @@ export interface Stadium {
   cityId: number;
   capacity: number | null;
   type: string;
+  sportId: number;
   yearConstructed: number | null;
   imageUrl: string | null;
   city?: City;
+  sport?: Sport;
   createdAt: string;
 }
 
@@ -230,6 +232,7 @@ export interface SportClub {
   id: number;
   sportId: number;
   clubId: number;
+  name: string;
   flgActive: boolean;
   sport?: Sport;
   club?: Club;
@@ -262,12 +265,22 @@ export interface Match {
   availableStadiums?: Stadium[]; // Stadiums available for the home club
 }
 
+// export interface MatchDivision {
+//   id: number;
+//   matchId: number;
+//   divisionName: string;
+//   order: number;
+//   match?: Match;
+//   createdAt: string;
+//   updatedAt: string;
+// }
 export interface MatchDivision {
   id: number;
   matchId: number;
-  divisionName: string;
-  order: number;
-  match?: Match;
+  divisionNumber: number;
+  homeScore: number | null;
+  awayScore: number | null;
+  divisionType: 'REGULAR' | 'OVERTIME' | 'PENALTIES';
   createdAt: string;
   updatedAt: string;
 }
@@ -343,6 +356,7 @@ export interface CreateStadiumDto {
   cityId: number;
   capacity?: number;
   type: string;
+  sportId: number;
   yearConstructed?: number;
   imageUrl?: string;
 }
@@ -427,17 +441,20 @@ export interface CreateMatchDto {
 export interface CreateSportClubDto {
   sportId: number;
   clubId: number;
+  name: string;
   flgActive?: boolean;
 }
 
 export interface BulkUpdateSportClubsDto {
-  clubIds: number[];
+  sportClubData: { id: number; clubId: number; name: string }[];
 }
 
 export interface CreateMatchDivisionDto {
   matchId: number;
-  divisionName: string;
-  order: number;
+  divisionNumber: number;
+  homeScore: number | null;
+  awayScore: number | null;
+  divisionType: 'REGULAR' | 'OVERTIME' | 'PENALTIES'
 }
 
 export interface CreateMatchEventDto {

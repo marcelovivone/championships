@@ -39,6 +39,8 @@ import {
   CreateUserPermissionDto,
 } from './types';
 
+// import MatchDetailsEditor, { MatchDivision } from '../../app/admin/matches/MatchDetailsEditor';
+
 // Generic CRUD factory
 const createCrudApi = <T, CreateDto = Partial<T>, UpdateDto = Partial<T>>(endpoint: string) => ({
   getAll: async (params?: { 
@@ -174,14 +176,36 @@ export const matchesApi = {
     const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&roundId=${roundId}`);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
-},
-getBySeasonAndDate: async (seasonId: number, date: string): Promise<Match[]> => {
+  },
+  getBySeasonAndDate: async (seasonId: number, date: string): Promise<Match[]> => {
     const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&date=${date}`);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
   }
 };
-export const matchDivisionsApi = createCrudApi<MatchDivision, CreateMatchDivisionDto>('match-divisions');
+
+type GetAllParams<TFilters = {}> = {
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+} & TFilters;
+
+// export const matchDivisionsApi = createCrudApi<MatchDivision, CreateMatchDivisionDto>('match-divisions');
+const baseMatchDivisionsApi =
+  createCrudApi<MatchDivision, CreateMatchDivisionDto>('match-divisions');
+
+export const matchDivisionsApi = {
+  ...baseMatchDivisionsApi,
+
+  // Custom method to get match divisions by match ID
+  getByMatchId: async (matchId: number): Promise<MatchDivision[]> => {
+    const response = await apiClient.get<MatchDivision[]>(`/v1/match-divisions?matchId=${matchId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+};
+
 export const matchEventsApi = createCrudApi<MatchEvent, CreateMatchEventDto>('match-events');
 export const standingsApi = createCrudApi<Standing>('standings');
 
@@ -289,7 +313,7 @@ export const sportClubsApi = {
     await apiClient.delete(`/v1/sport-clubs/${id}`);
   },
 
-  bulkUpdateForSport: async (sportId: number, data: BulkUpdateSportClubsDto): Promise<SportClub[]> => {
+  bulkUpdateForSport: async (sportId: number, data: { sportClubData: { id: number; clubId: number; name: string }[] }): Promise<SportClub[]> => {
     const response = await apiClient.put<SportClub[]>(`/v1/sport-clubs/sport/${sportId}/clubs`, data);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);

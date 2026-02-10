@@ -15,6 +15,20 @@
       "when": 1770355000000,
       "tag": "0001_add_match_status_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770600000000,
+      "tag": "0002_add_sportid_to_stadium_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1770675149578,
+      "tag": "0003_add_name_to_sport_clubs_table",
+      "breakpoints": true
     }
   ]
 }

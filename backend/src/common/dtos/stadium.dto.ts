@@ -15,6 +15,10 @@ export class CreateStadiumDto {
   @IsInt()
   cityId: number;
 
+  @ApiProperty({ example: 1, description: 'ID of the sport' })
+  @IsInt()
+  sportId: number;
+
   @ApiProperty({ example: 99354, description: 'Capacity of the stadium', required: false })
   @IsOptional()
   @IsInt()

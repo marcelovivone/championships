@@ -63,6 +63,7 @@ export const stadiums = pgTable('stadiums', {
   capacity: integer('capacity'), // Public capacity
   yearConstructed: integer('year_constructed'), // Year of construction
   type: varchar('type', { length: 50 }).notNull(), // 'stadium' or 'gymnasium'
+  sportId: integer('sport_id').references(() => sports.id).default(36).notNull(),
   imageUrl: text('image_url'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -371,6 +372,7 @@ export const sportClubs = pgTable('sport_clubs', {
   id: serial('id').primaryKey(),
   sportId: integer('sport_id').references(() => sports.id).notNull(),
   clubId: integer('club_id').references(() => clubs.id).notNull(),
+  name: varchar('name', { length: 100 }).default("").notNull(),
   flgActive: boolean('flg_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
