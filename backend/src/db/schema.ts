@@ -203,11 +203,10 @@ export const groups = pgTable('groups', {
 // 15. MATCHES TABLE - Individual matches
 // ============================================================================
 export const matchStatusEnum = pgEnum('match_status', [
-  'scheduled',
-  'live',
-  'finished',
-  'postponed',
-  'cancelled',
+  'Scheduled',
+  'Finished',
+  'Postponed',
+  'Cancelled',
 ]);
 
 export const matches = pgTable('matches', {
@@ -221,7 +220,7 @@ export const matches = pgTable('matches', {
   awayClubId: integer('away_club_id').references(() => clubs.id).notNull(),
   stadiumId: integer('stadium_id').references(() => stadiums.id), // Stadium where match was played
   date: timestamp('date').notNull(),
-  status: matchStatusEnum('status').default('scheduled').notNull(), // 'scheduled', 'live', 'finished', 'postponed', 'cancelled'
+  status: matchStatusEnum('status').default('Scheduled').notNull(), // 'Scheduled', 'Finished', 'Postponed', 'Cancelled'
   homeScore: integer('home_score'), // Only set when match is finished
   awayScore: integer('away_score'), // Only set when match is finished
   createdAt: timestamp('created_at').defaultNow().notNull(),

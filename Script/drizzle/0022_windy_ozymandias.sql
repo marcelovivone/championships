@@ -1,4 +1,4 @@
-CREATE TYPE "public"."match_status" AS ENUM('scheduled', 'live', 'finished', 'postponed', 'cancelled');--> statement-breakpoint
+CREATE TYPE "public"."match_status" AS ENUM('Scheduled', 'Finished', 'Postponed', 'Cancelled');--> statement-breakpoint
 CREATE TABLE "menu_items" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"code" varchar(50) NOT NULL,

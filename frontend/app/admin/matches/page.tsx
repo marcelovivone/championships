@@ -75,7 +75,6 @@ const MatchesPage = () => {
         queryFn: () => stadiumsApi.getAll({ page: 1, limit: 1000 }),
     });
 
-
     const { data: groupsData } = useQuery({
         queryKey: ['groups'],
         queryFn: () => groupsApi.getAll({ page: 1, limit: 1000 }),
@@ -138,6 +137,10 @@ const MatchesPage = () => {
     // Get selected sport
     const selectedSport = sports.find(s => s.id === selectedSportId);
 
+    // Get club name by ID
+    const getClubShortName = (clubId: number) => {
+        return clubs.find(c => c.id === clubId)?.shortName || "Unknown Club";
+    };
     // Convert it to SportConfig type
     const sportConfig: SportConfig | undefined = selectedSport
     ? {
@@ -259,10 +262,11 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
-                availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
+                availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
+                matchDivisions: match.matchDivisions || [] // Use matchDivisions from the backend
             }));
             setMatchesList(formattedMatches);
-            setOriginalMatches(formattedMatches); // Store a deep copy for cancel functionality
+            setOriginalMatches(structuredClone(formattedMatches)); // Store a deep copy for cancel functionality
             
             // Reset visibility states for the new matches
             const newVisibilityState: Record<number, boolean> = {};
@@ -297,10 +301,11 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
-                availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
+                availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
+                matchDivisions: match.matchDivisions || []
             }));
             setMatchesList(formattedMatches);
-            setOriginalMatches(formattedMatches); // Store a deep copy for cancel functionality
+            setOriginalMatches(structuredClone(formattedMatches)); // Store a deep copy for cancel functionality
         } catch (error) {
             console.error("Error loading matches for date:", error);
             setMatchesList([]);
@@ -326,11 +331,12 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
-                availableStadiums: match.availableStadiums || [] // Use availableStadiums from the backend
+                availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
+                matchDivisions: match.matchDivisions || []
             }));
 
             setMatchesList(formattedMatches);
-            setOriginalMatches(formattedMatches); // Store a deep copy for cancel functionality
+            setOriginalMatches(structuredClone(formattedMatches)); // Store a deep copy for cancel functionality
             
             // Reset visibility states for the new matches
             const newVisibilityState: Record<number, boolean> = {};
@@ -345,21 +351,6 @@ const MatchesPage = () => {
             
             // Reset visibility states when clearing matches
             setMatchDetailsVisibility({});
-        }
-    };
-
-    const openMatchDetails = async (index: number,) => {
-        setMatchDetails(prevMatchDetails => !prevMatchDetails);
-
-
-        try {
-            // // Fetch matches for the specific date using the new API method
-            // const matchesData = await matchesApi.getBySeasonAndDate(seasonId, date);
-
-        } catch (error) {
-            // console.error("Error loading matches for date:", error);
-            // setMatchesList([]);
-            // setOriginalMatches([]);
         }
     };
 
@@ -381,7 +372,8 @@ const MatchesPage = () => {
                         // Extract stadium IDs from the relationship data
                         const stadiumIds = clubStadiums.map((cs: any) => cs.stadiumId);
                         // Get actual stadium objects from the global stadiums array
-                        const filteredStadiums = stadiums.filter((stadium: Stadium) => stadiumIds.includes(stadium.id));
+                        const filteredStadiums = stadiums.filter((stadium: Stadium) => 
+                            stadiumIds.includes(stadium.id) && stadium.sportId === selectedSportId);
 
                         // Update the available stadiums for this match - can be an empty array if no stadiums are associated
                         newList[index].availableStadiums = filteredStadiums;
@@ -457,7 +449,6 @@ const MatchesPage = () => {
         // Check if there are unsaved changes by comparing the current matches list with the original
         const hasChanges = JSON.stringify(matchesList) !== JSON.stringify(originalMatches);
         if (hasChanges) {
-
             // Validation: No club can appear more than once as home or away
             const usedClubIds = new Set<number>();
             for (const match of matchesList) {
@@ -475,11 +466,60 @@ const MatchesPage = () => {
                     }
                     usedClubIds.add(match.awayClubId);
                 }
+
+                // if the user informed at least one division score
+                const hasAnyDetailScore = match.matchDivisions?.some(
+                    (division: MatchDivision) =>
+                        (division.homeScore !== null && division.homeScore !== undefined) ||
+                        (division.awayScore !== null && division.awayScore !== undefined)
+                );
+                // the total score for home and away must equal the sum of the division scores if divisions are present
+                if (hasAnyDetailScore) {
+                    if (match.matchDivisions?.some(
+                            (division: MatchDivision) =>
+                                division.homeScore === null || division.homeScore === undefined ||
+                                division.awayScore === null || division.awayScore === undefined
+                            )
+                    ) {
+                        alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
+                        return;
+                    }
+                    const totalHomeScoreDetail = match.matchDivisions?.reduce(
+                    (sum: number, division: MatchDivision) =>
+                        sum + (division.homeScore || 0),
+                    0
+                    );
+                    if(match.homeScore !== null && totalHomeScoreDetail !== match.homeScore) {
+                        alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the home score must equal the sum of the division home scores.`);
+                        return;
+                    }
+                    const totalAwayScoreDetail = match.matchDivisions?.reduce(
+                    (sum: number, division: MatchDivision) =>
+                        sum + (division.awayScore || 0),
+                    0
+                    );
+                    if(match.awayScore !== null && totalAwayScoreDetail !== match.awayScore) {
+                        alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the away score must equal the sum of the division away scores.`);
+                        return;
+                    }
+                } else {
+                    if(match.matchDivisions && match.matchDivisions.length > 0) {
+                        if (match.matchDivisions?.every(
+                            (division: MatchDivision) =>
+                                division.homeScore === null || division.homeScore === undefined ||
+                            division.awayScore === null || division.awayScore === undefined
+                        )
+                        ) {
+                            alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
+                            return;
+                        }
+                    }
+                }
             }
 
             // Process matches list and save to backend
             for (const match of matchesList) {
-                if (match.homeClubId && match.awayClubId && match.stadiumId && match.date && match.date != ':00.000Z') { // Only save if all fields are informed
+                if (match.homeClubId && match.awayClubId && match.homeScore && match.awayScore && match.stadiumId && match.date && match.date != ':00.000Z') { // Only save if all fields are informed
                     // Ensure date is always a full ISO string with time
                     let dateToSend = match.date;
                     if (/^\d{4}-\d{2}-\d{2}$/.test(match.date)) {
@@ -520,8 +560,11 @@ const MatchesPage = () => {
                     }
                 }
                 else {
-                    alert("Please select both Home and Away clubs, stadium, and date for all matches before saving.");
-                    return;
+                    // console.log("Skipping match save due to incomplete data:", match);
+                    if (match.status === 'Finished') {
+                        alert("Please inform both Home and Away clubs, stadium, date, and scores for all matches before saving.");
+                        return;
+                    }
                 }
             }
 
@@ -1064,9 +1107,9 @@ const MatchesPage = () => {
                                 Match {index + 1}
                                 </span>
                             </div>
-                            <div className="md:col-span-4 md:col-start-4">
+                            <div className="md:col-span-3 md:col-start-3">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Date/Time
+                                    Stadium/Gymnasium
                                 </label>
                                 <select
                                     value={match.stadiumId || ''}
@@ -1085,7 +1128,7 @@ const MatchesPage = () => {
                                 </select>
                             </div>
 
-                            <div className="md:col-span-4 md:col-start-11">
+                            <div className="md:col-span-3 md:col-start-8">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Date/Time
                                 </label>
@@ -1109,6 +1152,22 @@ const MatchesPage = () => {
                                 />
                             </div>
 
+                            <div className="md:col-span-3 md:col-start-13">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Date/Time
+                                </label>
+                                <select
+                                    value={match.status || 'Scheduled'}
+                                    onChange={(e) => updateMatchField(index, 'status', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                    <option value="Scheduled">Scheduled</option>
+                                    <option value="Finished">Finished</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                    <option value="Postponed">Postponed</option>
+                                </select>
+                            </div>
+                            
                             <div className="md:col-span-2 md:col-start-17 flex justify-end mt-6">
                                 <button
                                     type="button"
@@ -1119,7 +1178,21 @@ const MatchesPage = () => {
                                             [index]: !currentVisibility
                                         }));
                                     }}
-                                    className="text-blue-900 text-lg bg-transparent p-0 cursor-pointer hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                                    disabled={!match.homeClubId || !match.awayClubId || (match.homeScore === null && match.awayScore === null)}
+                                    className="
+                                        text-gray-800
+                                        text-lg
+                                        bg-transparent
+                                        p-0
+                                        cursor-pointer
+                                        hover:underline
+                                        disabled:text-gray-400
+                                        disabled:cursor-not-allowed
+                                        disabled:hover:no-underline
+                                        focus-visible:outline
+                                        focus-visible:outline-2
+                                        focus-visible:outline-blue-500
+                                    "
                                 >
                                     Match Details {(matchDetailsVisibility[index] || false) ? '▲' : '▼'}
                                 </button>

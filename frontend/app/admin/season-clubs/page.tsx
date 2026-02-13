@@ -213,7 +213,7 @@ export default function SeasonClubsPage() {
     if (selectedAvailable.length === 0) return;
 
     // Use the selectedGroupFilterId if groups are required, otherwise undefined
-    const assignedGroupId = groupsRequired ? selectedGroupFilterId : undefined;
+    const assignedGroupId = groupsRequired ? (selectedGroupFilterId ?? undefined) : undefined;
 
     const clubsToMove = availableClubs
       .filter(club => selectedAvailable.includes(club.id))

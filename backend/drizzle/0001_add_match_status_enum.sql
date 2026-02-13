@@ -1,9 +1,8 @@
 CREATE TYPE match_status AS ENUM (
-  'scheduled',
-  'live',
-  'finished',
-  'postponed',
-  'cancelled'
+  'Scheduled',
+  'Finished',
+  'Postponed',
+  'Cancelled'
 );
 
 ALTER TABLE matches

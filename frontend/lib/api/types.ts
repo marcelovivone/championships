@@ -250,7 +250,7 @@ export interface Match {
   date: string;
   stadiumId: number | null;
   groupId: number | null;
-  status: 'scheduled' | 'in_progress' | 'finished' | 'postponed' | 'cancelled';
+  status: 'Scheduled' | 'Finished' | 'Postponed' | 'Cancelled';
   homeScore: number | null;
   awayScore: number | null;
   sport?: Sport;
@@ -263,6 +263,7 @@ export interface Match {
   createdAt: string;
   updatedAt: string;
   availableStadiums?: Stadium[]; // Stadiums available for the home club
+  matchDivisions?: MatchDivision[]; // Divisions of the match
 }
 
 // export interface MatchDivision {
@@ -435,7 +436,7 @@ export interface CreateMatchDto {
   date: string;
   stadiumId?: number;
   groupId?: number;
-  status?: 'scheduled' | 'in_progress' | 'finished' | 'postponed' | 'cancelled';
+  status?: 'Scheduled' | 'Finished' | 'Postponed' | 'Cancelled';
 }
 
 export interface CreateSportClubDto {
