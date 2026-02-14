@@ -1,25 +1,18 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
-import { AlignHorizontalDistributeCenter, AlignHorizontalDistributeCenterIcon, Plus, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { matchesApi, sportsApi, leaguesApi, seasonsApi, clubsApi, stadiumsApi, groupsApi, roundsApi, seasonClubsApi, clubStadiumsApi, matchDivisionsApi } from '@/lib/api/entities';
-import { Match, CreateMatchDto, Club, Stadium, Group, Round, SeasonClub, MatchDivision } from '@/lib/api/types';
-import DataTable from '@/components/ui/data-table';
-import Modal from '@/components/ui/modal';
-import { group } from 'console';
-import { date } from 'zod';
+import { Match, CreateMatchDto, Club, Stadium, MatchDivision } from '@/lib/api/types';
 import MatchDetailsEditor, { SportConfig } from './MatchDetailsEditor';
 const MatchesPage = () => {
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingMatch, setEditingMatch,] = useState<Match | null>(null);
     const [page, setPage] = useState(1);
     const [limit] = useState(10);
     const [pageInput, setPageInput] = useState('1');
     const [sortBy, setSortBy] = useState('date');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-    const [matchDetails, setMatchDetails] = useState(false);
     const [matchDetailsVisibility, setMatchDetailsVisibility] = useState<Record<number, boolean>>({});
 
     // State for the upper section form
@@ -239,9 +232,6 @@ const MatchesPage = () => {
                     }
                 }
             }
-            // } else if (selectedGroupId) {
-            //   // Load matches for this group (only for Round-based leagues when group is selected)
-            //   loadMatchesForGroup(selectedGroupId);
         }
     }, [selectedGroupId, selectedSeasonId, matchDate, leagues, seasons, groups, selectedRoundId]);
 
@@ -430,17 +420,24 @@ const MatchesPage = () => {
         await Promise.all(
             existing.map(d => matchDivisionsApi.delete(d.id))
         );
-
+        
         // 3. Create new divisions
         await Promise.all(
-            divisions.map(d =>
-            matchDivisionsApi.create({
-                matchId,
-                divisionNumber: d.divisionNumber,
-                homeScore: d.homeScore,
-                awayScore: d.awayScore,
-                divisionType: d.divisionType,  // Changed from 'type' to 'divisionType' to match backend DTO
-            })
+            divisions
+            .filter(d =>
+                d.homeScore != null &&
+                d.awayScore != null &&
+                d.homeScore >= 0 &&
+                d.awayScore >= 0
+            )
+            .map(d =>
+                matchDivisionsApi.create({
+                    matchId,
+                    divisionNumber: d.divisionNumber,
+                    homeScore: d.homeScore,
+                    awayScore: d.awayScore,
+                    divisionType: d.divisionType,
+                })
             )
         );
     };
@@ -466,55 +463,70 @@ const MatchesPage = () => {
                     }
                     usedClubIds.add(match.awayClubId);
                 }
+                // MJV TODO Note: 
+                // Code to be used 
+                // This should be implemented in the future.
+//                 if (match.matchDivisions && match.matchDivisions.length > 0) {
+//                     // if the user informed at least one division score
+//                     const hasAnyDetailScore = match.matchDivisions?.some(
+//                         (division: MatchDivision) =>
+//                             (division.homeScore !== null && division.homeScore !== undefined) ||
+//                             (division.awayScore !== null && division.awayScore !== undefined)
+//                     );
+//                     // the total score for home and away must equal the sum of the division scores if divisions are present
+//                     if (hasAnyDetailScore) {
+//                         // if (match.matchDivisions?.some(
+//                         //         (division: MatchDivision) =>
+//                         //             division.homeScore === null || division.homeScore === undefined ||
+//                         //             division.awayScore === null || division.awayScore === undefined
+//                         //         )
+//                         // ) {
+//                         //     alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
+//                         //     return;
+//                         // }
 
-                // if the user informed at least one division score
-                const hasAnyDetailScore = match.matchDivisions?.some(
-                    (division: MatchDivision) =>
-                        (division.homeScore !== null && division.homeScore !== undefined) ||
-                        (division.awayScore !== null && division.awayScore !== undefined)
-                );
-                // the total score for home and away must equal the sum of the division scores if divisions are present
-                if (hasAnyDetailScore) {
-                    if (match.matchDivisions?.some(
-                            (division: MatchDivision) =>
-                                division.homeScore === null || division.homeScore === undefined ||
-                                division.awayScore === null || division.awayScore === undefined
-                            )
-                    ) {
-                        alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
-                        return;
-                    }
-                    const totalHomeScoreDetail = match.matchDivisions?.reduce(
-                    (sum: number, division: MatchDivision) =>
-                        sum + (division.homeScore || 0),
-                    0
-                    );
-                    if(match.homeScore !== null && totalHomeScoreDetail !== match.homeScore) {
-                        alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the home score must equal the sum of the division home scores.`);
-                        return;
-                    }
-                    const totalAwayScoreDetail = match.matchDivisions?.reduce(
-                    (sum: number, division: MatchDivision) =>
-                        sum + (division.awayScore || 0),
-                    0
-                    );
-                    if(match.awayScore !== null && totalAwayScoreDetail !== match.awayScore) {
-                        alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the away score must equal the sum of the division away scores.`);
-                        return;
-                    }
-                } else {
-                    if(match.matchDivisions && match.matchDivisions.length > 0) {
-                        if (match.matchDivisions?.every(
-                            (division: MatchDivision) =>
-                                division.homeScore === null || division.homeScore === undefined ||
-                            division.awayScore === null || division.awayScore === undefined
-                        )
-                        ) {
-                            alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
-                            return;
-                        }
-                    }
-                }
+//                         // MJV TODO Note
+//                         // The validation for all sports is about the total home and away scores equaling the sum of the division scores, but for sports with fixed number of divisions (like basketball with 4 quarters), we can allow the total score to be null and just validate that all division scores are filled if any division score is filled. This is because in some sports, the total score might be calculated automatically by the system based on the division scores, so we don't want to force the user to fill it in if they are filling in the division scores.
+//                         // This should be refactored in the future to allow different validation rules for sports with fixed number of divisions vs sports with variable number of divisions, instead of using the min and max number of divisions as a proxy for this. For now, we will assume that if a sport has a fixed number of divisions (min and max are the same), then we will allow total scores to be null and just validate that all division scores are filled if any division score is filled. If a sport has variable number of divisions, we will validate that the total scores equal the sum of the division scores if any division score is filled.
+//                         if(sportConfig?.minMatchDivisionsNumber !== 3 || sportConfig?.maxMatchDivisionsNumber !== 5) {
+//                             const totalHomeScoreDetail = match.matchDivisions?.reduce(
+//                             (sum: number, division: MatchDivision) =>
+//                                 sum + (division.homeScore || 0),
+//                             0
+//                             );
+//                             if(match.homeScore !== null && totalHomeScoreDetail !== match.homeScore) {
+//                                 alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the home score must equal the sum of the division home scores.`);
+//                                 return;
+//                             }
+//                             const totalAwayScoreDetail = match.matchDivisions?.reduce(
+//                             (sum: number, division: MatchDivision) =>
+//                                 sum + (division.awayScore || 0),
+//                             0
+//                             );
+//                             if(match.awayScore !== null && totalAwayScoreDetail !== match.awayScore) {
+//                                 alert(`in Match '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}', the away score must equal the sum of the division away scores.`);
+//                                 return;
+//                             }
+//                         // The validation of volleyball should be based on the number of sets won by each team, not the total points, so we will just validate that all division scores are filled if any division score is filled, and not validate the total home and away scores for volleyball. This is because in volleyball, the total points can be less relevant than the number of sets won, and the system might calculate the total points automatically based on the division scores.
+//                         } else {
+//                             // MJV TODO Note
+//                             // The number of sets completed should fit the sum of set informed in the match results
+//                             // The validation should be implemented in the future
+//                         }
+//                     } else {
+//                         if(match.matchDivisions && match.matchDivisions.length > 0) {
+//                             if (match.matchDivisions?.every(
+//                                 (division: MatchDivision) =>
+//                                     division.homeScore === null || division.homeScore === undefined ||
+//                                 division.awayScore === null || division.awayScore === undefined
+//                             )
+//                             ) {
+//                                 // alert(`All the scores in match details of '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' must be filled.`);
+//                                 return;
+//                             }
+//                         }
+//                     }
+//                 }
             }
 
             // Process matches list and save to backend
@@ -552,7 +564,6 @@ const MatchesPage = () => {
                             const createdMatch = await matchesApi.create(matchData);
                             savedMatchId = createdMatch.id;
                         }
-
                         await replaceMatchDivisions(savedMatchId, match.matchDivisions);
                     } catch (error) {
                         alert(`Error saving match: ${error}`);
@@ -560,7 +571,6 @@ const MatchesPage = () => {
                     }
                 }
                 else {
-                    // console.log("Skipping match save due to incomplete data:", match);
                     if (match.status === 'Finished') {
                         alert("Please inform both Home and Away clubs, stadium, date, and scores for all matches before saving.");
                         return;
@@ -604,10 +614,8 @@ const MatchesPage = () => {
                 // Restore original matches data
                 setMatchesList(JSON.parse(JSON.stringify(originalMatches)));
                 if (leagueTypeOfSchedule === 'Round') {
-                    console.log('Restored matches for Round schedule.');
                     loadMatchesForRound(selectedSeasonId!, selectedRoundId!);
                 } else {
-                    console.log('Restored matches for Date schedule.');
                     loadMatchesForDate(selectedSeasonId!, matchDate);
                 }
             }
@@ -808,8 +816,6 @@ const MatchesPage = () => {
 
             {/* Upper Section - Filters */}
             <div className="bg-white p-6 rounded-lg shadow mb-6">
-                {/* <h2 className="text-xl font-semibold mb-4">Matches</h2> */}
-
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">

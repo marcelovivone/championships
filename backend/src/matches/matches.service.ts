@@ -925,8 +925,10 @@ async findOne(id: number) {
             const matchesWithStadiums =
                 await this.attachAvailableStadiums(matchesData);
 
-            // 3️⃣ Return enriched matches
-            return matchesWithStadiums;
+            const matchesWithDivisions =
+                await this.attachMatchDivisions(matchesWithStadiums);
+
+            return matchesWithDivisions;
 
         } catch (error) {
             throw new BadRequestException('Failed to fetch matches by season and date');
