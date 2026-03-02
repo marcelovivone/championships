@@ -1,7 +1,9 @@
 export declare class CreateStandingDto {
+    sportId: number;
     leagueId: number;
     seasonId: number;
     roundId: number;
+    matchDate: string;
     groupId?: number;
     clubId: number;
     points: number;

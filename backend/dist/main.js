@@ -12,7 +12,7 @@ async function bootstrap() {
         logger: nest_winston_1.WinstonModule.createLogger(winston_config_1.winstonConfig),
     });
     app.enableCors({
-        origin: ['http://localhost:3001', 'http://localhost:3000'],
+        origin: ['http://localhost:3001', 'http://localhost:3002', 'http://localhost:3000'],
         credentials: true,
     });
     app.enableVersioning({

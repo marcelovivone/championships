@@ -4,9 +4,11 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { Trash2 } from 'lucide-react';
-import { matchesApi, sportsApi, leaguesApi, seasonsApi, clubsApi, stadiumsApi, groupsApi, roundsApi, seasonClubsApi, clubStadiumsApi, matchDivisionsApi } from '@/lib/api/entities';
+import { matchesApi, sportsApi, leaguesApi, seasonsApi, clubsApi, stadiumsApi, groupsApi, roundsApi, 
+         seasonClubsApi, clubStadiumsApi, matchDivisionsApi, standingsApi } from '@/lib/api/entities';
 import { Match, CreateMatchDto, Club, Stadium, MatchDivision } from '@/lib/api/types';
 import MatchDetailsEditor, { SportConfig } from './MatchDetailsEditor';
+import { SupportedTestRunners } from 'next/dist/cli/next-test';
 const MatchesPage = () => {
     const [page, setPage] = useState(1);
     const [limit] = useState(10);
@@ -442,6 +444,195 @@ const MatchesPage = () => {
         );
     };
 
+    const updateStandings = async (
+        sportId: number | null,
+        leagues: any[],
+        leagueId: number | null,
+        seasonId: number | null,
+        roundId: number | null,
+        matchDate: string,
+        groupId: number | null,
+        homeClubId: number,
+        awayClubId: number,
+        matchId: number
+        ) => {
+            // Get the type of league schedule to determine how to update standings
+            const league = leagues.find(l => l.id === leagues.find(s => s.id === leagueId)?.leagueId);
+            if (league?.typeOfSchedule === 'Round') {
+                // For 'Round' type leagues, we will update standings based on the round. We will find all standings for the clubs in the same league and season with the same roundId and update them based on the new match result. This way, we can ensure that standings reflect the correct points and stats for that specific round, regardless of the actual match date.
+                if (leagueId !== null && seasonId !== null) {
+                    // For 'Round' type leagues, read the standings of the greater round of league + season + home club
+                    const existingHome = await standingsApi.getByLeagueIdAndSeasonIdAndRoundIdClubId(leagueId, seasonId, roundId ?? 0, homeClubId);
+                    if (existingHome.length === 0) {
+                        // create a new standing for the home club with leagueId, seasonId and roundId if it doesn't exist, so that we can update it based on the match result
+                        const match = matchesList.find(m => m.homeClubId === homeClubId && m.awayClubId === awayClubId);
+                        await standingsApi.create({
+                            sportId: sportId || 0,
+                            leagueId: leagueId,
+                            seasonId: seasonId,
+                            roundId: roundId ?? null,
+                            matchDate: matchDate || null,
+                            groupId: groupId ?? null,
+                            homeClubId,
+                            awayClubId,
+                            homeScore: match?.homeScore ?? 0,
+                            awayScore: match?.awayScore ?? 0,
+                            matchId: matchId,
+                            matchDivisions: match?.matchDivisions ?? [],
+                        });
+
+                    } else {
+                        // When a match is saved as Finished, the standing is updated and it is not allowed to update a match saved as finished or cancelled
+                        // Thus, the update is not need to be implemented
+                        // console.log("Existing standings found for home club with leagueId, seasonId and matchDate:", existingHome);
+                    }
+
+                    // For 'Date' type leagues, read the standings of the greater round of league + season + away club
+                    const existingAway = await standingsApi.getByLeagueIdAndSeasonIdAndRoundIdClubId(leagueId, seasonId, roundId ?? 0, awayClubId);
+                    if (existingAway.length === 0) {
+                        // create a new standing for the away club with leagueId, seasonId and roundId if it doesn't exist, so that we can update it based on the match result
+                        const match = matchesList.find(m => m.homeClubId === homeClubId && m.awayClubId === awayClubId);
+                        await standingsApi.create({
+                            sportId: sportId || 0,
+                            leagueId: leagueId,
+                            seasonId: seasonId,
+                            roundId: roundId ?? null,
+                            matchDate: matchDate || null,
+                            groupId: groupId ?? null,
+                            homeClubId,
+                            awayClubId,
+                            homeScore: match?.homeScore ?? 0,
+                            awayScore: match?.awayScore ?? 0,
+                            matchId: matchId,
+                            matchDivisions: match?.matchDivisions ?? [],
+                        });
+
+                    } else {
+                        // When a match is saved as Finished, the standing is updated and it is not allowed to update a match saved as finished or cancelled
+                        // Thus, the update is not need to be implemented
+                        // console.log("Existing standings found for away club with leagueId, seasonId and matchDate:", existingAway);
+                    }
+                }
+
+            } else {
+                console.warn("League type of schedule is not 'Round'. Standings update logic for 'Date' type leagues will be executed.");
+                // For 'Date' type leagues, we will update standings based on the match date. We will find all standings for the clubs in the same league and season with a matchDate less than or equal to the current match date and update them based on the new match result. This way, we can handle cases where matches are entered out of order by date, and ensure that standings reflect the correct points and stats based on the actual dates of the matches.
+                if (leagueId !== null && seasonId !== null && matchDate !== null) {
+                    console.warn("Executing standings update logic for 'Date' type league with leagueId:", leagueId, "seasonId:", seasonId, "matchDate:", matchDate, "homeClubId:", homeClubId, "awayClubId:", awayClubId);
+                    // For 'Date' type leagues, read the standings of the greater date of league + season + home club
+                    const existingHome = await standingsApi.getByLeagueIdAndSeasonIdAndMatchDateClubId(leagueId, seasonId, matchDate, homeClubId);
+                    if (existingHome.length === 0) {
+                        console.warn("No existing standings found for home club with leagueId, seasonId and matchDate. Creating new standing.");
+                        // create a new standing for the home club with leagueId, seasonId and matchDate if it doesn't exist, so that we can update it based on the match result
+                        const match = matchesList.find(m => m.homeClubId === homeClubId && m.awayClubId === awayClubId);
+                        await standingsApi.create({
+                            sportId: sportId || 0,
+                            leagueId: leagueId,
+                            seasonId: seasonId,
+                            roundId: roundId ?? null,
+                            matchDate: matchDate || null,
+                            groupId: groupId ?? null,
+                            homeClubId,
+                            awayClubId,
+                            homeScore: match?.homeScore ?? 0,
+                            awayScore: match?.awayScore ?? 0,
+                            matchId: matchId,
+                            matchDivisions: match?.matchDivisions ?? [],
+                        });
+
+                    } else {
+                        // When a match is saved as Finished, the standing is updated and it is not allowed to update a match saved as finished or cancelled
+                        // Thus, the update is not need to be implemented
+                        // console.log("Existing standings found for home club with leagueId, seasonId and matchDate:", existingHome);
+                    }
+
+                    // For 'Date' type leagues, read the standings of the greater round of league + season + away club
+                    const existingAway = await standingsApi.getByLeagueIdAndSeasonIdAndMatchDateClubId(leagueId, seasonId, matchDate, awayClubId);
+                    if (existingAway.length === 0) {
+                        console.warn("No existing standings found for away club with leagueId, seasonId and matchDate. Creating new standing.");
+                        // create a new standing for the away club with leagueId, seasonId and matchDate if it doesn't exist, so that we can update it based on the match result
+                        const match = matchesList.find(m => m.homeClubId === homeClubId && m.awayClubId === awayClubId);
+                        await standingsApi.create({
+                            sportId: sportId || 0,
+                            leagueId: leagueId,
+                            seasonId: seasonId,
+                            roundId: roundId ?? null,
+                            matchDate: matchDate || null,
+                            groupId: groupId ?? null,
+                            homeClubId,
+                            awayClubId,
+                            homeScore: match?.homeScore ?? 0,
+                            awayScore: match?.awayScore ?? 0,
+                            matchId: matchId,
+                            matchDivisions: match?.matchDivisions ?? [],
+                        });
+
+                    } else {
+                        // When a match is saved as Finished, the standing is updated and it is not allowed to update a match saved as finished or cancelled
+                        // Thus, the update is not need to be implemented
+                        // console.log("Existing standings found for away club with leagueId, seasonId and matchDate:", existingAway);
+                    }
+                }
+            }
+
+
+
+        // // 1. Load existing standings for the clubs/league/season in this match and update them based on the new match result
+        // const existingHome = await standingsApi.getByClubId(homeClubId);
+        // const existingAway = await standingsApi.getByClubId(awayClubId);
+
+        // // Find the standings for the home and away clubs in the existing standings
+        // await Promise.all(
+        //     existingHome.map(d => standingsApi.update(d.id, {
+        //         points: 0, // TODO: Calculate based on match/divisions
+        //         played: 1,
+        //         wins: match && match.homeScore > match.awayScore ? 1 : 0,
+        //         draws: match && match.homeScore === match.awayScore ? 1 : 0,
+        //         losses: match && match.homeScore < match.awayScore ? 1 : 0,
+        //         goalsFor: match ? match.homeScore : 0,
+        //         goalsAgainst: match ? match.awayScore : 0,
+        //         goalDifference: match ? match.homeScore - match.awayScore : 0,
+        //         // Add more fields as needed from schema (overtimeWins, setsWon, etc.)
+        //     }))
+        // );
+
+        // // 2. Delete existing divisions
+        // await Promise.all(
+        //     existing.map(d => matchDivisionsApi.delete(d.id))
+        // );
+        
+        // // 3. Create new divisions
+        // await Promise.all(
+        //     divisions
+        //     .filter(d =>
+        //         d.homeScore != null &&
+        //         d.awayScore != null &&
+        //         d.homeScore >= 0 &&
+        //         d.awayScore >= 0
+        //     )
+        //     .map(d =>
+        //         matchDivisionsApi.create({
+        //             matchId,
+        //             divisionNumber: d.divisionNumber,
+        //             homeScore: d.homeScore,
+        //             awayScore: d.awayScore,
+        //             divisionType: d.divisionType,
+        //         })
+        //     )
+        // );
+    };
+
+    const deleteStandings = async (
+        matchId: number
+    ) => {
+        if (!matchId) return;
+        try {
+            await standingsApi.strictDeleteByMatchId(matchId);
+        } catch (error) {
+            console.error('Failed to delete standings for match:', error);
+        }
+    };
+
     const handleSaveMatches = async () => {
         // Check if there are unsaved changes by comparing the current matches list with the original
         const hasChanges = JSON.stringify(matchesList) !== JSON.stringify(originalMatches);
@@ -529,15 +720,24 @@ const MatchesPage = () => {
 //                 }
             }
 
-            // Process matches list and save to backend
+            // Process matches list
+            // 1 - Save each match (create or update)
+            // 2 - For matches with divisions, save divisions and link to match
+            // 3 - Create or update standings based on the match results
+            // console.log("Matches to be saved:", matchesList);
             for (const match of matchesList) {
-                if (match.homeClubId && match.awayClubId && match.homeScore && match.awayScore && match.stadiumId && match.date && match.date != ':00.000Z') { // Only save if all fields are informed
+                // console.log("Processing match:", match);
+                if (match.homeClubId && match.awayClubId && match.homeScore !== undefined && match.homeScore !== null && 
+                    match.awayScore !== undefined && match.awayScore !== null && match.stadiumId && match.date && 
+                    match.date != ':00.000Z') { // Only save if all fields are informed
                     // Ensure date is always a full ISO string with time
                     let dateToSend = match.date;
                     if (/^\d{4}-\d{2}-\d{2}$/.test(match.date)) {
                         // If only date part, add default time (e.g., noon)
                         dateToSend = match.date + 'T12:00:00.000Z';
                     }
+
+                    // 1 - Save match (create or update)
                     const matchData: CreateMatchDto = {
                         sportId: selectedSportId!,
                         leagueId: selectedLeagueId!,
@@ -549,22 +749,42 @@ const MatchesPage = () => {
                         awayClubId: match.awayClubId,
                         stadiumId: match.stadiumId || undefined,
                         status: match.status,
-                        homeScore: match.homeScore === '' || match.homeScore === null || typeof match.homeScore === 'undefined' ? null : Number(match.homeScore),
-                        awayScore: match.awayScore === '' || match.awayScore === null || typeof match.awayScore === 'undefined' ? null : Number(match.awayScore),
+                        homeScore: match.homeScore === null || typeof match.homeScore === 'undefined' ? null : Number(match.homeScore),
+                        awayScore: match.awayScore === null || typeof match.awayScore === 'undefined' ? null : Number(match.awayScore),
                     };
 
                     try {
                         let savedMatchId = match.id;
 
                         if (match.id) {
-                            // Update existing match
+                            // 1 - Update an existing match
                             await matchesApi.update(match.id, matchData);
                         } else {
-                            // Create new match
+                            // 1 - Create a new match
                             const createdMatch = await matchesApi.create(matchData);
                             savedMatchId = createdMatch.id;
                         }
+                        
+                        // 2 - For matches with divisions, save divisions and link to match
                         await replaceMatchDivisions(savedMatchId, match.matchDivisions);
+                        // console.log("Match divisions saved for match ID:", savedMatchId);
+                        // 3 - Update standings based on the match results only if the match is finished. This way, we can allow users to save matches in scheduled or in-progress status without affecting the standings until the match is actually finished. This also allows users to enter match results in any order without worrying about the impact on standings until they mark the match as finished.
+                        if (match.status === 'Finished') {
+                            // console.log("Updating standings for match ID:", savedMatchId);
+                            // 3 - Create or update standings based on the match results
+                            await updateStandings(
+                                selectedSportId,
+                                leagues,
+                                selectedLeagueId,
+                                selectedSeasonId,
+                                selectedRoundId,
+                                matchDate,
+                                selectedGroupId,
+                                match.homeClubId,
+                                match.awayClubId,
+                                savedMatchId
+                            );
+                        }
                     } catch (error) {
                         alert(`Error saving match: ${error}`);
                         return;
@@ -574,11 +794,14 @@ const MatchesPage = () => {
                     if (match.status === 'Finished') {
                         alert("Please inform both Home and Away clubs, stadium, date, and scores for all matches before saving.");
                         return;
+                    } else {
+                        alert("Please inform both Home and Away clubs, stadium, and date for all matches before saving.");
+                        return;
                     }
                 }
             }
 
-            alert("Matches saved successfully!");
+            alert("Matches saved successfully and standings updated!");
 
             // Find the league associated with the selected season to get typeOfSchedule
             const seasonObj = seasons.find(s => s.id === selectedSeasonId);
@@ -653,7 +876,7 @@ const MatchesPage = () => {
             awayClubId: null,
             stadiumId: null,
             date: dateValue,
-            status: 'scheduled',
+            status: 'Scheduled',
             homeClubImage: null,
             awayClubImage: null,
             availableStadiums: [], // Initialize with empty array
@@ -670,12 +893,20 @@ const MatchesPage = () => {
     const removeMatchRow = (index: number) => {
         const match = matchesList[index];
         if (match.id) {
-            matchesApi.delete(match.id)
+            // 1. Delete standings for this match
+            deleteStandings(match.id)
+                .then(() => {
+                    // 2. Delete divisions for this match
+                    return replaceMatchDivisions(match.id, []);
+                })
+                .then(() => {
+                    // 3. Delete the match itself
+                    return matchesApi.delete(match.id);
+                })
                 .then(() => {
                     const newList = [...matchesList];
                     newList.splice(index, 1);
                     setMatchesList(newList);
-                    
                     // Remove the visibility state for the deleted match and re-index
                     const newVisibilityState: Record<number, boolean> = {};
                     newList.forEach((_, idx) => {
@@ -684,13 +915,12 @@ const MatchesPage = () => {
                     setMatchDetailsVisibility(newVisibilityState);
                 })
                 .catch((error) => {
-                    alert('Failed to delete match from server: ' + error);
+                    alert('Failed to delete match or related data: ' + error);
                 });
         } else {
             const newList = [...matchesList];
             newList.splice(index, 1);
             setMatchesList(newList);
-            
             // Remove the visibility state for the deleted match and re-index
             const newVisibilityState: Record<number, boolean> = {};
             newList.forEach((_, idx) => {
@@ -773,6 +1003,14 @@ const MatchesPage = () => {
             width: '200px',
         },
         {
+            header: 'Home Score',
+            accessor: (match: Match) =>
+                match.homeScore !== null && match.homeScore !== undefined ? match.homeScore : '-',
+            sortKey: 'homeScore',
+            sortable: true,
+            width: '100px',
+        },
+        {
             header: 'Away Team',
             accessor: (match: Match) => {
                 const club = clubs.find(c => c.id === match.awayClubId);
@@ -781,6 +1019,14 @@ const MatchesPage = () => {
             sortKey: 'awayClubName',
             sortable: true,
             width: '200px',
+        },
+        {
+            header: 'Away Score',
+            accessor: (match: Match) =>
+                match.awayScore !== null && match.awayScore !== undefined ? match.awayScore : '-',
+            sortKey: 'awayScore',
+            sortable: true,
+            width: '100px',
         },
         {
             header: 'Stadium',
@@ -1160,13 +1406,16 @@ const MatchesPage = () => {
 
                             <div className="md:col-span-3 md:col-start-13">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Date/Time
+                                    Status
                                 </label>
                                 <select
                                     value={match.status || 'Scheduled'}
                                     onChange={(e) => updateMatchField(index, 'status', e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    >
+                                    disabled={
+                                        (match.id && (match.status === 'Finished' || match.status === 'Cancelled'))
+                                    }
+                                >
                                     <option value="Scheduled">Scheduled</option>
                                     <option value="Finished">Finished</option>
                                     <option value="Cancelled">Cancelled</option>
@@ -1184,7 +1433,7 @@ const MatchesPage = () => {
                                             [index]: !currentVisibility
                                         }));
                                     }}
-                                    disabled={!match.homeClubId || !match.awayClubId || (match.homeScore === null && match.awayScore === null)}
+                                    disabled={!match.homeClubId || !match.awayClubId || ((match.homeScore === null || match.homeScore === undefined) || (match.awayScore === null || match.awayScore === undefined))}
                                     className="
                                         text-gray-800
                                         text-lg

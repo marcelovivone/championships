@@ -37,6 +37,7 @@ import {
   CreateMatchEventDto,
   CreateProfilePermissionDto,
   CreateUserPermissionDto,
+  CreateStandingDto,
 } from './types';
 
 // import MatchDetailsEditor, { MatchDivision } from '../../app/admin/matches/MatchDetailsEditor';
@@ -78,6 +79,7 @@ const createCrudApi = <T, CreateDto = Partial<T>, UpdateDto = Partial<T>>(endpoi
 
   create: async (data: CreateDto): Promise<T> => {
     try {
+        console.log(`Creating ${endpoint} with data:`, data);
       const response = await apiClient.post<T>(`/v1/${endpoint}`, data);
       return response.data;
     } catch (error) {
@@ -207,7 +209,6 @@ export const matchDivisionsApi = {
 };
 
 export const matchEventsApi = createCrudApi<MatchEvent, CreateMatchEventDto>('match-events');
-export const standingsApi = createCrudApi<Standing>('standings');
 
 // Menu Items API
 export const menuItemsApi = {
@@ -328,5 +329,43 @@ const leagues = {
     read: 'read_league',
     update: 'update_league',
     delete: 'delete_league',
+  },
+};
+
+export const standingsApi = {
+  ...createCrudApi<Standing, CreateStandingDto>('standings'),
+  // Custom method to get standings by club ID
+  getByClubId: async (clubId: number): Promise<Standing[]> => {
+    const response = await apiClient.get<Standing[]>(`/v1/standings?clubId=${clubId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  getByLeagueIdAndSeasonIdAndClubId: async (leagueId: number, seasonId: number, clubId: number): Promise<Standing[]> => {
+    const response = await apiClient.get<Standing[]>(`/v1/standings?leagueId=${leagueId}&seasonId=${seasonId}&clubId=${clubId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  getByLeagueIdAndSeasonIdAndRoundIdClubId: async (leagueId: number, seasonId: number, roundId: number, clubId: number): Promise<Standing[]> => {
+    const response = await apiClient.get<Standing[]>(`/v1/standings?leagueId=${leagueId}&seasonId=${seasonId}&roundId=${roundId}&clubId=${clubId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  getByLeagueIdAndSeasonIdAndMatchDateClubId: async (leagueId: number, seasonId: number, matchDate: string, clubId: number): Promise<Standing[]> => {
+    const response = await apiClient.get<Standing[]>(`/v1/standings?leagueId=${leagueId}&seasonId=${seasonId}&matchDate=${matchDate}&clubId=${clubId}`);
+    const result = response.data as any;
+    return Array.isArray(result) ? result : (result.data || []);
+  },
+  create: async (data: CreateStandingDto): Promise<Standing> => {
+    const response = await apiClient.post<Standing>('/v1/standings', data);
+    return response.data;
+  },
+
+//   update: async (id: number, data: Partial<CreateStandingDto>): Promise<Standing> => {
+//     const response = await apiClient.put<Standing>(`/v1/standings/${id}`, data);
+//     return response.data;
+//   },
+  // Strict delete method for standings (now by matchId)
+  strictDeleteByMatchId: async (matchId: number): Promise<void> => {
+    await apiClient.delete(`/v1/standings/strict?matchId=${matchId}`);
   },
 };

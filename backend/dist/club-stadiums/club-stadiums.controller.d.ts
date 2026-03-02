@@ -21,6 +21,7 @@ export declare class ClubStadiumsController {
         club: {
             id: number;
             name: string;
+            shortName: string;
         };
         stadium: {
             id: number;

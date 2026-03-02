@@ -27,6 +27,10 @@ __decorate([
     __metadata("design:type", Number)
 ], SportClubResponseDto.prototype, "clubId", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ description: 'The name of the club', example: 'Name of the club in the context of the sport (e.g., Arsenal FC for football, Arsenal Basketball for basketball)' }),
+    __metadata("design:type", String)
+], SportClubResponseDto.prototype, "name", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ description: 'Whether the club is active in this sport', example: true }),
     __metadata("design:type", Boolean)
 ], SportClubResponseDto.prototype, "flgActive", void 0);

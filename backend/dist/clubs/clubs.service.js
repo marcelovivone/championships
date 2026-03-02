@@ -28,15 +28,16 @@ let ClubsService = class ClubsService {
         const sortableColumns = ['name', 'shortName', 'foundationYear', 'cityId', 'countryId'];
         const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'name';
         const order = sortOrder === 'desc' ? drizzle_orm_1.desc : drizzle_orm_1.asc;
-        let sortColumn = schema_1.clubs.name;
-        if (orderByField === 'shortName')
-            sortColumn = schema_1.clubs.shortName;
-        else if (orderByField === 'foundationYear')
-            sortColumn = schema_1.clubs.foundationYear;
-        else if (orderByField === 'cityId')
-            sortColumn = schema_1.clubs.cityId;
-        else if (orderByField === 'countryId')
-            sortColumn = schema_1.clubs.countryId;
+        const getSortColumn = () => {
+            switch (orderByField) {
+                case 'name': return schema_1.clubs.name;
+                case 'shortName': return schema_1.clubs.shortName;
+                case 'foundationYear': return schema_1.clubs.foundationYear;
+                case 'cityId': return schema_1.clubs.cityId;
+                case 'countryId': return schema_1.clubs.countryId;
+                default: return schema_1.clubs.name;
+            }
+        };
         try {
             const data = await this.db
                 .select({
@@ -59,7 +60,7 @@ let ClubsService = class ClubsService {
                 .from(schema_1.clubs)
                 .leftJoin(schema_1.cities, (0, drizzle_orm_1.eq)(schema_1.clubs.cityId, schema_1.cities.id))
                 .leftJoin(schema_1.countries, (0, drizzle_orm_1.eq)(schema_1.clubs.countryId, schema_1.countries.id))
-                .orderBy(order(sortColumn))
+                .orderBy(order(getSortColumn()))
                 .limit(limit)
                 .offset(offset);
             const totalResult = await this.db

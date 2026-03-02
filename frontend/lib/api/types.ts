@@ -515,3 +515,21 @@ export interface CreateUserPermissionDto {
   menuItemId: number;
   isEnabled: boolean;
 }
+
+export interface CreateStandingDto {
+  sportId: number;
+  leagueId: number;
+  seasonId: number;
+  roundId?: number | null; // Optional - only required for Round-based leagues
+  matchDate: string | null;
+  groupId?: number | null;
+  homeClubId: number;
+  awayClubId: number;
+  matchId: number;
+  homeScore?: number;
+  awayScore?: number;
+  // The rest of the stat fields are not required from frontend, backend calculates them
+  matchDivisions?: MatchDivision[];
+}
+
+export interface UpdateStandingDto extends Partial<CreateStandingDto> {}

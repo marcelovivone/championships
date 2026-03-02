@@ -455,18 +455,18 @@ async findOne(id: number) {
                     sportId: createMatchDto.sportId,
                     leagueId: createMatchDto.leagueId,
                     seasonId: createMatchDto.seasonId,
-                    roundId: createMatchDto.roundId, // This is required according to the schema
+                    roundId: createMatchDto.roundId,
                     groupId: createMatchDto.groupId || null,
                     homeClubId: createMatchDto.homeClubId,
                     awayClubId: createMatchDto.awayClubId,
                     stadiumId: createMatchDto.stadiumId || null,
                     date: new Date(createMatchDto.date),
                     status: createMatchDto.status || 'Scheduled', // Use provided status or default
-                    homeScore: createMatchDto.homeScore || null,
-                    awayScore: createMatchDto.awayScore || null,
+                    homeScore: createMatchDto.homeScore === null || typeof createMatchDto.homeScore === 'undefined' ? null : createMatchDto.homeScore,
+                    awayScore: createMatchDto.awayScore === null || typeof createMatchDto.awayScore === 'undefined' ? null : createMatchDto.awayScore,
                 })
                 .returning();
-
+                
             return result[0];
         } catch (error) {
             if (error instanceof BadRequestException) throw error;

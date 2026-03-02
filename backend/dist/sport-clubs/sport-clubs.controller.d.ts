@@ -9,7 +9,11 @@ export declare class SportClubsController {
     findByClub(clubId: string): Promise<SportClubResponseDto[]>;
     create(createDto: CreateSportClubDto): Promise<SportClubResponseDto>;
     bulkUpdateForSport(sportId: string, body: {
-        clubIds: number[];
+        sportClubData: {
+            id: number;
+            clubId: number;
+            name: string;
+        }[];
     }): Promise<{
         message: string;
     }>;

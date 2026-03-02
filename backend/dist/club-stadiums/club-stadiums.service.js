@@ -44,6 +44,7 @@ let ClubStadiumsService = class ClubStadiumsService {
             club: {
                 id: schema.clubs.id,
                 name: schema.clubs.name,
+                shortName: schema.clubs.shortName,
             },
             stadium: {
                 id: schema.stadiums.id,

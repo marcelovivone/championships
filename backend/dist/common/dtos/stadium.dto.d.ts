@@ -1,6 +1,7 @@
 export declare class CreateStadiumDto {
     name: string;
     cityId: number;
+    sportId: number;
     capacity?: number;
     yearConstructed?: number;
     type: string;

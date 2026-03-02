@@ -6,9 +6,11 @@ export declare class StandingsService {
     constructor(db: NodePgDatabase<typeof schema>);
     findAll(): Promise<{
         id: number;
+        sportId: number;
         leagueId: number;
         seasonId: number;
         roundId: number;
+        matchDate: Date;
         groupId: number;
         clubId: number;
         points: number;
@@ -40,9 +42,11 @@ export declare class StandingsService {
     }[]>;
     findOne(id: number): Promise<{
         id: number;
+        sportId: number;
         leagueId: number;
         seasonId: number;
         roundId: number;
+        matchDate: Date;
         groupId: number;
         clubId: number;
         points: number;
@@ -72,45 +76,13 @@ export declare class StandingsService {
         createdAt: Date;
         updatedAt: Date;
     }>;
-    findByLeagueAndRound(leagueId: number, roundId: number): Promise<{
+    findByMatch(matchId: number): Promise<{
         id: number;
+        sportId: number;
         leagueId: number;
         seasonId: number;
         roundId: number;
-        groupId: number;
-        clubId: number;
-        points: number;
-        played: number;
-        wins: number;
-        draws: number;
-        losses: number;
-        goalsFor: number;
-        goalsAgainst: number;
-        goalDifference: number;
-        overtimeWins: number;
-        overtimeLosses: number;
-        penaltyWins: number;
-        penaltyLosses: number;
-        setsWon: number;
-        setsLost: number;
-        divisionsWon: number;
-        divisionsLost: number;
-        homeGamesPlayed: number;
-        awayGamesPlayed: number;
-        homeWins: number;
-        homeLosses: number;
-        homeDraws: number;
-        awayWins: number;
-        awayLosses: number;
-        awayDraws: number;
-        createdAt: Date;
-        updatedAt: Date;
-    }[]>;
-    findByLeague(leagueId: number): Promise<{
-        id: number;
-        leagueId: number;
-        seasonId: number;
-        roundId: number;
+        matchDate: Date;
         groupId: number;
         clubId: number;
         points: number;
@@ -143,12 +115,14 @@ export declare class StandingsService {
     create(createStandingDto: CreateStandingDto): Promise<{
         id: number;
         createdAt: Date;
+        sportId: number;
         clubId: number;
         leagueId: number;
         seasonId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
+        matchDate: Date;
         points: number;
         played: number;
         wins: number;
@@ -176,9 +150,11 @@ export declare class StandingsService {
     }>;
     update(id: number, updateStandingDto: UpdateStandingDto): Promise<{
         id: number;
+        sportId: number;
         leagueId: number;
         seasonId: number;
         roundId: number;
+        matchDate: Date;
         groupId: number;
         clubId: number;
         points: number;
@@ -211,12 +187,14 @@ export declare class StandingsService {
     remove(id: number): Promise<{
         id: number;
         createdAt: Date;
+        sportId: number;
         clubId: number;
         leagueId: number;
         seasonId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
+        matchDate: Date;
         points: number;
         played: number;
         wins: number;

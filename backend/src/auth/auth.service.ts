@@ -31,6 +31,7 @@ export class AuthService {
     }
 
     // Trigger automatic round update for admin users (non-blocking)
+    // if (user.profile === 'admin' || user.profile === 'user') {
     if (user.profile === 'admin') {
       // Run async without waiting for completion (fire and forget)
       this.roundAutoUpdateService.autoUpdateCurrentRounds().catch(error => {

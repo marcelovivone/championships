@@ -105,13 +105,13 @@
 - **User** (`/user/*`): View-only, standings, matches, rounds
 
 ### Implementation Phases
-- **Phase 2a**: User views (standings, rounds, matches) - Priority 1
-- **Phase 2b**: Admin entry (match results, team/division management) - Priority 1
-- **Phase 3**: Additional sports, statistics, advanced features
+- **Phase Admin 1a**: User views (standings, rounds, matches) - Priority 1
+- **Phase Admin 1b**: Admin entry (match results, team/division management) - Priority 1
+- **Phase User 2**: Additional sports, statistics, advanced features
 
 ---
 
-## 📝 Next Steps
+## 📝 Next Steps (this section is not up to date - do not take it in account)
 
 ### Immediate (Today):
 1. Review FRONTEND_ARCHITECTURE.ts Section 20 (Quick Start)
@@ -170,11 +170,11 @@
 
 Refer to the specific section in the appropriate document:
 - **"How do I structure components?"** → FRONTEND_ARCHITECTURE.ts, Section 6
-- **"What should the standings table look like?"** → FOOTBALL_MOCKUP_ANALYSIS.md, Section 2
 - **"How do I handle authentication?"** → FRONTEND_ARCHITECTURE.ts, Section 9
 - **"What's the folder structure?"** → FRONTEND_ARCHITECTURE.ts, Section 5
 - **"How do I manage state?"** → FRONTEND_ARCHITECTURE.ts, Section 7
 - **"What's the responsive design strategy?"** → FRONTEND_ARCHITECTURE.ts, Section 10
+- **"What should the standings table look like?"** → FOOTBALL_MOCKUP_ANALYSIS.md, Section 2
 
 ---
 

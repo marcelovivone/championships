@@ -16,6 +16,14 @@ class UpdateSportClubDto {
 exports.UpdateSportClubDto = UpdateSportClubDto;
 __decorate([
     (0, swagger_1.ApiProperty)({
+        description: 'The name of the club in the context of the sport',
+        example: 'Arsenal FC for football, Arsenal Basketball for basketball',
+        required: false,
+    }),
+    __metadata("design:type", String)
+], UpdateSportClubDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
         description: 'Whether the club is active in this sport',
         example: false,
         required: false,

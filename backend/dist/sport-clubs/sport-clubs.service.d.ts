@@ -11,5 +11,10 @@ export declare class SportClubsService {
     create(dto: CreateSportClubDto): Promise<SportClubResponseDto>;
     update(id: number, dto: UpdateSportClubDto): Promise<SportClubResponseDto>;
     remove(id: number): Promise<void>;
+    bulkUpdateForSportWithNames(sportId: number, sportClubData: {
+        id: number;
+        clubId: number;
+        name: string;
+    }[]): Promise<void>;
     bulkUpdateForSport(sportId: number, clubIds: number[]): Promise<void>;
 }

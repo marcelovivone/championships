@@ -31,6 +31,7 @@ let MatchDivisionsController = class MatchDivisionsController {
         return this.matchDivisionsService.findOne(id);
     }
     async create(createMatchDivisionDto) {
+        console.log('createMatchDivisionDto', createMatchDivisionDto);
         return this.matchDivisionsService.create(createMatchDivisionDto);
     }
     async update(id, updateMatchDivisionDto) {

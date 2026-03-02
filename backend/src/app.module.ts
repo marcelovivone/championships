@@ -1,4 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+// import { LoggerMiddleware } from './logger.middleware';
+// import { RouteDebugMiddleware } from './route-debug.middleware';
 import { DbModule } from './db/db.module';
 import { CountriesModule } from './countries/countries.module';
 import { SportsModule } from './sports/sports.module';
@@ -58,4 +60,8 @@ import { APP_GUARD } from '@nestjs/core';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    // LoggerMiddleware and RouteDebugMiddleware removed
+  }
+}

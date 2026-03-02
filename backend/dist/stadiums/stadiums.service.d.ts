@@ -16,6 +16,11 @@ export declare class StadiumsService {
                 id: number;
                 name: string;
             };
+            sportId: number;
+            sport: {
+                id: number;
+                name: string;
+            };
         }[];
         total: number;
     }>;
@@ -30,8 +35,13 @@ export declare class StadiumsService {
             id: number;
             name: string;
         };
+        sportId: number;
+        sport: {
+            id: number;
+            name: string;
+        };
     }>;
-    findByCity(cityId: number, paginationDto: PaginationDto): Promise<{
+    findByCity(cityId: number, paginationDto: PaginationDto, filteringDto?: FilteringDto): Promise<{
         data: {
             id: number;
             name: string;
@@ -40,6 +50,31 @@ export declare class StadiumsService {
             imageUrl: string;
             cityId: number;
             city: {
+                id: number;
+                name: string;
+            };
+            sportId: number;
+            sport: {
+                id: number;
+                name: string;
+            };
+        }[];
+        total: number;
+    }>;
+    findBySport(sportId: number, paginationDto: PaginationDto, filteringDto?: FilteringDto): Promise<{
+        data: {
+            id: number;
+            name: string;
+            type: string;
+            capacity: number;
+            imageUrl: string;
+            cityId: number;
+            city: {
+                id: number;
+                name: string;
+            };
+            sportId: number;
+            sport: {
                 id: number;
                 name: string;
             };
@@ -57,6 +92,11 @@ export declare class StadiumsService {
             id: number;
             name: string;
         };
+        sportId: number;
+        sport: {
+            id: number;
+            name: string;
+        };
     }[]>;
     create(createStadiumDto: CreateStadiumDto): Promise<{
         id: number;
@@ -69,6 +109,11 @@ export declare class StadiumsService {
             id: number;
             name: string;
         };
+        sportId: number;
+        sport: {
+            id: number;
+            name: string;
+        };
     }>;
     update(id: number, updateStadiumDto: UpdateStadiumDto): Promise<{
         id: number;
@@ -78,6 +123,11 @@ export declare class StadiumsService {
         imageUrl: string;
         cityId: number;
         city: {
+            id: number;
+            name: string;
+        };
+        sportId: number;
+        sport: {
             id: number;
             name: string;
         };

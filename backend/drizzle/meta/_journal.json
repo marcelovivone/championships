@@ -29,6 +29,27 @@
       "when": 1770675149578,
       "tag": "0003_add_name_to_sport_clubs_table",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771178913655,
+      "tag": "0004_add_date_to_standings_table.sql",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1771599850428,
+      "tag": "0005_add_sportid_to_standings_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1771855833713,
+      "tag": "0006_add_matchId_to_standings_table.sql",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,11 @@ export declare class StadiumsController {
                 id: number;
                 name: string;
             };
+            sportId: number;
+            sport: {
+                id: number;
+                name: string;
+            };
         }[];
         total: number;
     }>;

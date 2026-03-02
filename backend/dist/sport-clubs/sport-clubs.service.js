@@ -27,6 +27,7 @@ let SportClubsService = class SportClubsService {
             id: schema.sportClubs.id,
             sportId: schema.sportClubs.sportId,
             clubId: schema.sportClubs.clubId,
+            name: schema.sportClubs.name,
             flgActive: schema.sportClubs.flgActive,
             createdAt: schema.sportClubs.createdAt,
             sport: {
@@ -101,6 +102,7 @@ let SportClubsService = class SportClubsService {
         const result = await this.db
             .update(schema.sportClubs)
             .set({
+            name: dto.name !== undefined ? dto.name : existing.name,
             flgActive: dto.flgActive !== undefined ? dto.flgActive : existing.flgActive,
         })
             .where((0, drizzle_orm_1.eq)(schema.sportClubs.id, id))
@@ -110,6 +112,65 @@ let SportClubsService = class SportClubsService {
     async remove(id) {
         const existing = await this.findOne(id);
         await this.db.delete(schema.sportClubs).where((0, drizzle_orm_1.eq)(schema.sportClubs.id, id));
+    }
+    async bulkUpdateForSportWithNames(sportId, sportClubData) {
+        const sport = await this.db
+            .select()
+            .from(schema.sports)
+            .where((0, drizzle_orm_1.eq)(schema.sports.id, sportId));
+        if (sport.length === 0) {
+            throw new common_1.BadRequestException(`Sport with ID ${sportId} not found`);
+        }
+        const clubIds = sportClubData.map(item => item.clubId);
+        if (clubIds.length > 0) {
+            const existingClubs = await this.db
+                .select({ id: schema.clubs.id })
+                .from(schema.clubs)
+                .where((0, drizzle_orm_1.inArray)(schema.clubs.id, clubIds));
+            const existingClubIds = existingClubs.map(c => c.id);
+            const invalidClubIds = clubIds.filter(id => !existingClubIds.includes(id));
+            if (invalidClubIds.length > 0) {
+                throw new common_1.BadRequestException(`Clubs with IDs ${invalidClubIds.join(', ')} not found`);
+            }
+        }
+        const existing = await this.db
+            .select()
+            .from(schema.sportClubs)
+            .where((0, drizzle_orm_1.eq)(schema.sportClubs.sportId, sportId));
+        const existingClubIds = existing.map(sc => sc.clubId);
+        const clubsToAdd = sportClubData.filter(item => !existingClubIds.includes(item.clubId));
+        const clubsToUpdate = sportClubData.filter(item => existingClubIds.includes(item.clubId));
+        const clubsToRemove = existingClubIds.filter(id => !clubIds.includes(id));
+        for (const item of clubsToAdd) {
+            await this.db.insert(schema.sportClubs).values({
+                sportId,
+                clubId: item.clubId,
+                name: item.name || '',
+                flgActive: true,
+            });
+        }
+        for (const item of clubsToUpdate) {
+            const existingRecord = existing.find(sc => sc.clubId === item.clubId);
+            if (existingRecord) {
+                await this.db
+                    .update(schema.sportClubs)
+                    .set({ name: item.name || '' })
+                    .where((0, drizzle_orm_1.eq)(schema.sportClubs.id, existingRecord.id));
+            }
+            else {
+                await this.db.insert(schema.sportClubs).values({
+                    sportId,
+                    clubId: item.clubId,
+                    name: item.name || '',
+                    flgActive: true,
+                });
+            }
+        }
+        for (const clubId of clubsToRemove) {
+            await this.db
+                .delete(schema.sportClubs)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema.sportClubs.sportId, sportId), (0, drizzle_orm_1.eq)(schema.sportClubs.clubId, clubId)));
+        }
     }
     async bulkUpdateForSport(sportId, clubIds) {
         const sport = await this.db

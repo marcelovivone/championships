@@ -267,11 +267,14 @@ export const matchEvents = pgTable('match_events', {
 // Sport-specific columns accommodate different scoring systems
 export const standings = pgTable('standings', {
   id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
   leagueId: integer('league_id').references(() => leagues.id).notNull(),
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
-  roundId: integer('round_id').references(() => rounds.id).notNull(),
+  roundId: integer('round_id').references(() => rounds.id),
+  matchDate: timestamp('match_date'),
   groupId: integer('group_id').references(() => groups.id), // NULL if no group stage
   clubId: integer('club_id').references(() => clubs.id).notNull(),
+  matchId: integer('match_id').references(() => matches.id), // Link to match
   
   // General statistics
   points: integer('points').default(0).notNull(),

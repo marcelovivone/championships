@@ -22,6 +22,7 @@ export declare class ClubStadiumsService {
         club: {
             id: number;
             name: string;
+            shortName: string;
         };
         stadium: {
             id: number;

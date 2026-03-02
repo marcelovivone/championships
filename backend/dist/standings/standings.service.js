@@ -51,61 +51,28 @@ let StandingsService = class StandingsService {
             throw new common_1.BadRequestException('Failed to fetch standing');
         }
     }
-    async findByLeagueAndRound(leagueId, roundId) {
+    async findByMatch(matchId) {
         try {
-            const league = await this.db
+            const match = await this.db
                 .select()
-                .from(schema_1.leagues)
-                .where((0, drizzle_orm_1.eq)(schema_1.leagues.id, leagueId))
+                .from(schema_1.matches)
+                .where((0, drizzle_orm_1.eq)(schema_1.matches.id, matchId))
                 .limit(1);
-            if (!league || league.length === 0) {
-                throw new common_1.NotFoundException(`League with ID ${leagueId} not found`);
-            }
-            const round = await this.db
-                .select()
-                .from(schema_1.rounds)
-                .where((0, drizzle_orm_1.eq)(schema_1.rounds.id, roundId))
-                .limit(1);
-            if (!round || round.length === 0) {
-                throw new common_1.NotFoundException(`Round with ID ${roundId} not found`);
+            if (!match || match.length === 0) {
+                throw new common_1.NotFoundException(`Match with ID ${matchId} not found`);
             }
             return await this.db
                 .select()
                 .from(schema_1.standings)
-                .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
-                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, schema_1.seasons.id))
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.seasons.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.roundId, roundId)))
+                .innerJoin(schema_1.matches, (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, schema_1.matches.seasonId))
+                .where((0, drizzle_orm_1.eq)(schema_1.matches.id, matchId))
                 .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.points), (0, drizzle_orm_1.asc)(schema_1.standings.goalDifference))
                 .then(results => results.map(r => r.standings));
         }
         catch (error) {
             if (error instanceof common_1.NotFoundException)
                 throw error;
-            throw new common_1.BadRequestException('Failed to fetch standings by league and round');
-        }
-    }
-    async findByLeague(leagueId) {
-        try {
-            const league = await this.db
-                .select()
-                .from(schema_1.leagues)
-                .where((0, drizzle_orm_1.eq)(schema_1.leagues.id, leagueId))
-                .limit(1);
-            if (!league || league.length === 0) {
-                throw new common_1.NotFoundException(`League with ID ${leagueId} not found`);
-            }
-            return await this.db
-                .select()
-                .from(schema_1.standings)
-                .innerJoin(schema_1.seasons, (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, schema_1.seasons.id))
-                .where((0, drizzle_orm_1.eq)(schema_1.seasons.leagueId, leagueId))
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.points), (0, drizzle_orm_1.asc)(schema_1.standings.goalDifference))
-                .then(results => results.map(r => r.standings));
-        }
-        catch (error) {
-            if (error instanceof common_1.NotFoundException)
-                throw error;
-            throw new common_1.BadRequestException('Failed to fetch standings by league');
+            throw new common_1.BadRequestException('Failed to fetch standings by match');
         }
     }
     async create(createStandingDto) {
@@ -146,12 +113,17 @@ let StandingsService = class StandingsService {
                     throw new common_1.BadRequestException(`Round with ID ${createStandingDto.roundId} not found`);
                 }
             }
+            const matchDate = createStandingDto.matchDate
+                ? new Date(createStandingDto.matchDate)
+                : new Date('2000-01-01');
             const result = await this.db
                 .insert(schema_1.standings)
                 .values({
+                sportId: createStandingDto.sportId,
                 leagueId: createStandingDto.leagueId,
                 seasonId: createStandingDto.seasonId,
                 roundId: createStandingDto.roundId || 1,
+                matchDate: matchDate,
                 groupId: createStandingDto.groupId || null,
                 clubId: createStandingDto.clubId,
                 points: createStandingDto.points || 0,
@@ -162,6 +134,22 @@ let StandingsService = class StandingsService {
                 goalsFor: createStandingDto.goalsFor || 0,
                 goalsAgainst: createStandingDto.goalsAgainst || 0,
                 goalDifference: createStandingDto.goalDifference || 0,
+                overtimeWins: createStandingDto.overtimeWins || 0,
+                overtimeLosses: createStandingDto.overtimeLosses || 0,
+                penaltyWins: createStandingDto.penaltyWins || 0,
+                penaltyLosses: createStandingDto.penaltyLosses || 0,
+                setsWon: createStandingDto.setsWon || 0,
+                setsLost: createStandingDto.setsLost || 0,
+                divisionsWon: createStandingDto.divisionsWon || 0,
+                divisionsLost: createStandingDto.divisionsLost || 0,
+                homeGamesPlayed: createStandingDto.homeGamesPlayed || 0,
+                awayGamesPlayed: createStandingDto.awayGamesPlayed || 0,
+                homeWins: createStandingDto.homeWins || 0,
+                homeDraws: createStandingDto.homeDraws || 0,
+                homeLosses: createStandingDto.homeLosses || 0,
+                awayWins: createStandingDto.awayWins || 0,
+                awayDraws: createStandingDto.awayDraws || 0,
+                awayLosses: createStandingDto.awayLosses || 0,
             })
                 .returning();
             return result[0];
@@ -175,9 +163,13 @@ let StandingsService = class StandingsService {
     async update(id, updateStandingDto) {
         try {
             await this.findOne(id);
+            const updateData = {
+                ...updateStandingDto,
+                ...(updateStandingDto.matchDate && { matchDate: new Date(updateStandingDto.matchDate) }),
+            };
             const result = await this.db
                 .update(schema_1.standings)
-                .set(updateStandingDto)
+                .set(updateData)
                 .where((0, drizzle_orm_1.eq)(schema_1.standings.id, id))
                 .returning();
             return result[0];

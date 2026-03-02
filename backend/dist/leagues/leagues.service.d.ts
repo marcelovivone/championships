@@ -157,9 +157,9 @@ export declare class LeaguesService {
         createdAt: Date;
         countryId: number;
         cityId: number;
+        sportId: number;
         originalName: string;
         secondaryName: string;
-        sportId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
@@ -207,9 +207,9 @@ export declare class LeaguesService {
         createdAt: Date;
         countryId: number;
         cityId: number;
+        sportId: number;
         originalName: string;
         secondaryName: string;
-        sportId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;

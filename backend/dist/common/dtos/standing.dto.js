@@ -39,6 +39,11 @@ __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
+], CreateStandingDto.prototype, "sportId", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "leagueId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
@@ -51,14 +56,18 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "roundId", void 0);
 __decorate([
+    (0, swagger_2.ApiProperty)({ example: '2023-01-01' }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", String)
+], CreateStandingDto.prototype, "matchDate", void 0);
+__decorate([
     (0, swagger_2.ApiProperty)({ example: 1, required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "groupId", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 1, required: false }),
-    (0, class_validator_1.IsOptional)(),
+    (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "clubId", void 0);

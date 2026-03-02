@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
+exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
 const pg_core_1 = require("drizzle-orm/pg-core");
 exports.sports = (0, pg_core_1.pgTable)('sports', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
@@ -39,6 +39,7 @@ exports.stadiums = (0, pg_core_1.pgTable)('stadiums', {
     capacity: (0, pg_core_1.integer)('capacity'),
     yearConstructed: (0, pg_core_1.integer)('year_constructed'),
     type: (0, pg_core_1.varchar)('type', { length: 50 }).notNull(),
+    sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).default(36).notNull(),
     imageUrl: (0, pg_core_1.text)('image_url'),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
@@ -130,6 +131,12 @@ exports.groups = (0, pg_core_1.pgTable)('groups', {
     seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
+exports.matchStatusEnum = (0, pg_core_1.pgEnum)('match_status', [
+    'Scheduled',
+    'Finished',
+    'Postponed',
+    'Cancelled',
+]);
 exports.matches = (0, pg_core_1.pgTable)('matches', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
     sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
@@ -137,12 +144,11 @@ exports.matches = (0, pg_core_1.pgTable)('matches', {
     seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id).notNull(),
     roundId: (0, pg_core_1.integer)('round_id').references(() => exports.rounds.id).notNull(),
     groupId: (0, pg_core_1.integer)('group_id').references(() => exports.groups.id),
-    turn: (0, pg_core_1.integer)('turn').notNull().default(1),
     homeClubId: (0, pg_core_1.integer)('home_club_id').references(() => exports.clubs.id).notNull(),
     awayClubId: (0, pg_core_1.integer)('away_club_id').references(() => exports.clubs.id).notNull(),
     stadiumId: (0, pg_core_1.integer)('stadium_id').references(() => exports.stadiums.id),
     date: (0, pg_core_1.timestamp)('date').notNull(),
-    status: (0, pg_core_1.varchar)('status', { length: 20 }).default('scheduled').notNull(),
+    status: (0, exports.matchStatusEnum)('status').default('Scheduled').notNull(),
     homeScore: (0, pg_core_1.integer)('home_score'),
     awayScore: (0, pg_core_1.integer)('away_score'),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
@@ -169,9 +175,11 @@ exports.matchEvents = (0, pg_core_1.pgTable)('match_events', {
 });
 exports.standings = (0, pg_core_1.pgTable)('standings', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
+    sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
     leagueId: (0, pg_core_1.integer)('league_id').references(() => exports.leagues.id).notNull(),
     seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id).notNull(),
     roundId: (0, pg_core_1.integer)('round_id').references(() => exports.rounds.id).notNull(),
+    matchDate: (0, pg_core_1.timestamp)('match_date').notNull(),
     groupId: (0, pg_core_1.integer)('group_id').references(() => exports.groups.id),
     clubId: (0, pg_core_1.integer)('club_id').references(() => exports.clubs.id).notNull(),
     points: (0, pg_core_1.integer)('points').default(0).notNull(),
@@ -242,6 +250,7 @@ exports.sportClubs = (0, pg_core_1.pgTable)('sport_clubs', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
     sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
     clubId: (0, pg_core_1.integer)('club_id').references(() => exports.clubs.id).notNull(),
+    name: (0, pg_core_1.varchar)('name', { length: 100 }).default("").notNull(),
     flgActive: (0, pg_core_1.boolean)('flg_active').default(true).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });

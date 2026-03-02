@@ -37,7 +37,7 @@ let SportClubsController = class SportClubsController {
         return this.sportClubsService.create(createDto);
     }
     async bulkUpdateForSport(sportId, body) {
-        await this.sportClubsService.bulkUpdateForSport(+sportId, body.clubIds);
+        await this.sportClubsService.bulkUpdateForSportWithNames(+sportId, body.sportClubData);
         return { message: 'Sport-club associations updated successfully' };
     }
     async update(id, updateDto) {
