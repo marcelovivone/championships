@@ -26,6 +26,8 @@ const MatchesPage = () => {
     const [matchDate, setMatchDate] = useState<string>('');
     const [matchesList, setMatchesList] = useState<any[]>([]);
     const [originalMatches, setOriginalMatches] = useState<any[]>([]); // Store original matches for cancel functionality
+    // Map of match index -> array of checkbox states per division (true/false for special, null for regular)
+    const [checkboxStatesByMatch, setCheckboxStatesByMatch] = useState<Record<number, (boolean | null)[]>>({});
     const [availableClubs, setAvailableClubs] = useState<Club[]>([]);
     const [availableStadiums, setAvailableStadiums] = useState<Stadium[]>([]);
     const [hasGroups, setHasGroups] = useState<boolean>(false); // Track if the selected season has groups
@@ -254,8 +256,12 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
-                availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
-                matchDivisions: match.matchDivisions || [] // Use matchDivisions from the backend
+                // Use availableStadiums and matchDivisions from the backend
+                availableStadiums: match.availableStadiums || [],
+                matchDivisions: match.matchDivisions || [],
+                // Flags derived from divisions so each match tracks its own overtime/penalties state
+                hasOvertime: (match.matchDivisions || []).some((d: any) => d.divisionType === 'OVERTIME'),
+                hasPenalties: (match.matchDivisions || []).some((d: any) => d.divisionType === 'PENALTIES'),
             }));
             setMatchesList(formattedMatches);
             setOriginalMatches(structuredClone(formattedMatches)); // Store a deep copy for cancel functionality
@@ -293,8 +299,12 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
-                availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
-                matchDivisions: match.matchDivisions || []
+                // Use availableStadiums and matchDivisions from the backend
+                availableStadiums: match.availableStadiums || [],
+                matchDivisions: match.matchDivisions || [],
+                // Flags derived from divisions so each match tracks its own overtime/penalties state
+                hasOvertime: (match.matchDivisions || []).some((d: any) => d.divisionType === 'OVERTIME'),
+                hasPenalties: (match.matchDivisions || []).some((d: any) => d.divisionType === 'PENALTIES'),
             }));
             setMatchesList(formattedMatches);
             setOriginalMatches(structuredClone(formattedMatches)); // Store a deep copy for cancel functionality
@@ -323,8 +333,12 @@ const MatchesPage = () => {
                 awayClubImage: match.awayClub?.imageUrl ? getFullImageUrl(match.awayClub?.imageUrl) : null,
                 homeScore: typeof match.homeScore === 'number' ? match.homeScore : null,
                 awayScore: typeof match.awayScore === 'number' ? match.awayScore : null,
+                // Use availableStadiums and matchDivisions from the backend
                 availableStadiums: match.availableStadiums || [], // Use availableStadiums from the backend
-                matchDivisions: match.matchDivisions || []
+                matchDivisions: match.matchDivisions || [], // Use matchDivisions from the backend
+                // Flags derived from divisions so each match tracks its own overtime/penalties state
+                hasOvertime: (match.matchDivisions || []).some((d: any) => d.divisionType === 'OVERTIME'),
+                hasPenalties: (match.matchDivisions || []).some((d: any) => d.divisionType === 'PENALTIES'),
             }));
 
             setMatchesList(formattedMatches);
@@ -411,7 +425,43 @@ const MatchesPage = () => {
         return `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000'}/v1/clubs/images/${filename}`;
     };
 
-    const replaceMatchDivisions = async (
+    const createMatchDivisions = async (
+        matchId: number,
+        divisions: MatchDivision[]
+        ) => {
+        // Replace existing divisions with the ones provided by the UI, preserving the
+        // exact order the user entered. To ensure divisionNumber matches the UI row
+        // position, we always use the original array index + 1 as divisionNumber.
+
+        // 1. Load existing divisions for this match and delete them so we start fresh
+        const existing = await matchDivisionsApi.getByMatchId(matchId);
+        if (existing && existing.length > 0) {
+            await Promise.all(existing.map(d => matchDivisionsApi.delete(d.id)));
+        }
+
+        // 2. Create new divisions using the original array index as divisionNumber.
+        const promises = divisions.map((d, idx) => {
+            if (
+                d.homeScore != null &&
+                d.awayScore != null &&
+                d.homeScore >= 0 &&
+                d.awayScore >= 0
+            ) {
+                return matchDivisionsApi.create({
+                    matchId,
+                    divisionNumber: idx + 1,
+                    homeScore: d.homeScore,
+                    awayScore: d.awayScore,
+                    divisionType: d.divisionType,
+                });
+            }
+            return null;
+        }).filter(Boolean) as Promise<any>[];
+
+        if (promises.length > 0) await Promise.all(promises);
+    };
+
+    const deleteMatchDivisions = async (
         matchId: number,
         divisions: MatchDivision[]
         ) => {
@@ -421,26 +471,6 @@ const MatchesPage = () => {
         // 2. Delete existing divisions
         await Promise.all(
             existing.map(d => matchDivisionsApi.delete(d.id))
-        );
-        
-        // 3. Create new divisions
-        await Promise.all(
-            divisions
-            .filter(d =>
-                d.homeScore != null &&
-                d.awayScore != null &&
-                d.homeScore >= 0 &&
-                d.awayScore >= 0
-            )
-            .map(d =>
-                matchDivisionsApi.create({
-                    matchId,
-                    divisionNumber: d.divisionNumber,
-                    homeScore: d.homeScore,
-                    awayScore: d.awayScore,
-                    divisionType: d.divisionType,
-                })
-            )
         );
     };
 
@@ -457,7 +487,7 @@ const MatchesPage = () => {
         matchId: number
         ) => {
             // Get the type of league schedule to determine how to update standings
-            const league = leagues.find(l => l.id === leagues.find(s => s.id === leagueId)?.leagueId);
+            const league = leagues.find(l => l.id === leagueId);
             if (league?.typeOfSchedule === 'Round') {
                 // For 'Round' type leagues, we will update standings based on the round. We will find all standings for the clubs in the same league and season with the same roundId and update them based on the new match result. This way, we can ensure that standings reflect the correct points and stats for that specific round, regardless of the actual match date.
                 if (leagueId !== null && seasonId !== null) {
@@ -518,11 +548,9 @@ const MatchesPage = () => {
                 console.warn("League type of schedule is not 'Round'. Standings update logic for 'Date' type leagues will be executed.");
                 // For 'Date' type leagues, we will update standings based on the match date. We will find all standings for the clubs in the same league and season with a matchDate less than or equal to the current match date and update them based on the new match result. This way, we can handle cases where matches are entered out of order by date, and ensure that standings reflect the correct points and stats based on the actual dates of the matches.
                 if (leagueId !== null && seasonId !== null && matchDate !== null) {
-                    console.warn("Executing standings update logic for 'Date' type league with leagueId:", leagueId, "seasonId:", seasonId, "matchDate:", matchDate, "homeClubId:", homeClubId, "awayClubId:", awayClubId);
                     // For 'Date' type leagues, read the standings of the greater date of league + season + home club
                     const existingHome = await standingsApi.getByLeagueIdAndSeasonIdAndMatchDateClubId(leagueId, seasonId, matchDate, homeClubId);
                     if (existingHome.length === 0) {
-                        console.warn("No existing standings found for home club with leagueId, seasonId and matchDate. Creating new standing.");
                         // create a new standing for the home club with leagueId, seasonId and matchDate if it doesn't exist, so that we can update it based on the match result
                         const match = matchesList.find(m => m.homeClubId === homeClubId && m.awayClubId === awayClubId);
                         await standingsApi.create({
@@ -639,7 +667,8 @@ const MatchesPage = () => {
         if (hasChanges) {
             // Validation: No club can appear more than once as home or away
             const usedClubIds = new Set<number>();
-            for (const match of matchesList) {
+            for (let idx = 0; idx < matchesList.length; idx++) {
+                const match = matchesList[idx];
                 if (match.homeClubId) {
                     if (usedClubIds.has(match.homeClubId)) {
                         alert('A club cannot be selected more than once as home or away.');
@@ -653,6 +682,117 @@ const MatchesPage = () => {
                         return;
                     }
                     usedClubIds.add(match.awayClubId);
+                }
+                
+                // Validate division totals: if any division score is provided, require all division scores
+                // and ensure their sums equal the match total scores (home/away).
+                if (match.matchDivisions && match.matchDivisions.length > 0) {
+                    const hasAnyDivisionScore = match.matchDivisions.some((d: any) => d.homeScore !== null && d.homeScore !== undefined || d.awayScore !== null && d.awayScore !== undefined);
+                    if (hasAnyDivisionScore) {
+                        // Require all division scores to be filled — but only for divisions that are active.
+                        // For regular divisions validate always; for OVERTIME/PENALTIES validate only when their checkbox is checked.
+                        console.log("Validating division scores for match:", match);
+                        const states = checkboxStatesByMatch[idx] || [];
+
+                        const anyDivisionHomeNull = match.matchDivisions.some((d: any, di: number) => {
+                            const isOver = d.id === -10 || d.divisionType === 'OVERTIME';
+                            const isPen = d.id === -11 || d.divisionType === 'PENALTIES';
+                            const state = states[di];
+                            const shouldValidate = (isOver || isPen) ? state === true : true;
+                            if (!shouldValidate) return false;
+                            return d.homeScore === null || d.homeScore === undefined;
+                        });
+
+                        const anyDivisionAwayNull = match.matchDivisions.some((d: any, di: number) => {
+                            const isOver = d.id === -10 || d.divisionType === 'OVERTIME';
+                            const isPen = d.id === -11 || d.divisionType === 'PENALTIES';
+                            const state = states[di];
+                            const shouldValidate = (isOver || isPen) ? state === true : true;
+                            if (!shouldValidate) return false;
+                            return d.awayScore === null || d.awayScore === undefined;
+                        });
+
+                        if (anyDivisionHomeNull || anyDivisionAwayNull) {
+                            alert(`All active division scores must be filled for '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}'.`);
+                            return;
+                        }
+
+                        // Compute overtime and penalties win/loss counts from divisions and attach
+                        // to the match object so downstream code can use them when creating/updating standings.
+                        const specialCounts = {
+                            home: { overtimeWins: 0, overtimeLosses: 0, penaltyWins: 0, penaltyLosses: 0 },
+                            away: { overtimeWins: 0, overtimeLosses: 0, penaltyWins: 0, penaltyLosses: 0 },
+                        };
+
+                        (match.matchDivisions || []).forEach((d: any, di: number) => {
+                            const state = (checkboxStatesByMatch[idx] || [])[di];
+                            const shouldCount = (d.id === -10 || d.divisionType === 'OVERTIME') ? state === true : (d.id === -11 || d.divisionType === 'PENALTIES') ? state === true : true;
+                            const h = d.homeScore;
+                            const a = d.awayScore;
+                            if (!shouldCount) return;
+                            // Only count when scores are present (zero counts too)
+                            if (h !== null && h !== undefined && a !== null && a !== undefined) {
+                                // Overtime sentinel id -10
+                                if (d.id === -10) {
+                                    if (Number(h) > Number(a)) {
+                                        specialCounts.home.overtimeWins += 1;
+                                        specialCounts.away.overtimeLosses += 1;
+                                    } else if (Number(h) < Number(a)) {
+                                        specialCounts.home.overtimeLosses += 1;
+                                        specialCounts.away.overtimeWins += 1;
+                                    }
+                                }
+
+                                // Penalties sentinel id -11
+                                if (d.id === -11) {
+                                    if (Number(h) > Number(a)) {
+                                        specialCounts.home.penaltyWins += 1;
+                                        specialCounts.away.penaltyLosses += 1;
+                                    } else if (Number(h) < Number(a)) {
+                                        specialCounts.home.penaltyLosses += 1;
+                                        specialCounts.away.penaltyWins += 1;
+                                    }
+                                }
+                            }
+                        });
+
+                        // Attach counts to match for later consumption
+                        (match as any).specialCounts = specialCounts;
+
+                        // Require match totals to be present
+                        if (match.homeScore === null || match.homeScore === undefined || match.awayScore === null || match.awayScore === undefined) {
+                            alert(`Please inform the match total scores for '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}' when entering division scores.`);
+                            return;
+                        }
+
+                        const totalHome = match.matchDivisions.reduce((sum: number, d: any, di: number) => {
+                            const state = (checkboxStatesByMatch[idx] || [])[di];
+                            const isOver = d.id === -10 || d.divisionType === 'OVERTIME';
+                            const isPen = d.id === -11 || d.divisionType === 'PENALTIES';
+                            const shouldCount = (isOver || isPen) ? state === true : true;
+                            if (!shouldCount) return sum;
+                            return sum + Number(d.homeScore);
+                        }, 0);
+
+                        const totalAway = match.matchDivisions.reduce((sum: number, d: any, di: number) => {
+                            const state = (checkboxStatesByMatch[idx] || [])[di];
+                            const isOver = d.id === -10 || d.divisionType === 'OVERTIME';
+                            const isPen = d.id === -11 || d.divisionType === 'PENALTIES';
+                            const shouldCount = (isOver || isPen) ? state === true : true;
+                            if (!shouldCount) return sum;
+                            return sum + Number(d.awayScore);
+                        }, 0);
+
+                        if (Number(match.homeScore) !== totalHome) {
+                            alert(`Home total of active divisions (${totalHome}) does not match match home score (${match.homeScore}) for '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}'.`);
+                            return;
+                        }
+
+                        if (Number(match.awayScore) !== totalAway) {
+                            alert(`Away total of active divisions (${totalAway}) does not match match away score (${match.awayScore}) for '${getClubShortName(match.homeClubId)} vs ${getClubShortName(match.awayClubId)}'.`);
+                            return;
+                        }
+                    }
                 }
                 // MJV TODO Note: 
                 // Code to be used 
@@ -726,7 +866,6 @@ const MatchesPage = () => {
             // 3 - Create or update standings based on the match results
             // console.log("Matches to be saved:", matchesList);
             for (const match of matchesList) {
-                // console.log("Processing match:", match);
                 if (match.homeClubId && match.awayClubId && match.homeScore !== undefined && match.homeScore !== null && 
                     match.awayScore !== undefined && match.awayScore !== null && match.stadiumId && match.date && 
                     match.date != ':00.000Z') { // Only save if all fields are informed
@@ -763,11 +902,16 @@ const MatchesPage = () => {
                             // 1 - Create a new match
                             const createdMatch = await matchesApi.create(matchData);
                             savedMatchId = createdMatch.id;
+
+                            // In the current logic, we are only creating new divisions for new matches
+                            // 2 - For matches with divisions, save divisions and link to match
+                            await createMatchDivisions(savedMatchId, match.matchDivisions);
                         }
                         
                         // 2 - For matches with divisions, save divisions and link to match
-                        await replaceMatchDivisions(savedMatchId, match.matchDivisions);
+                        // await replaceMatchDivisions(savedMatchId, match.matchDivisions);
                         // console.log("Match divisions saved for match ID:", savedMatchId);
+                        
                         // 3 - Update standings based on the match results only if the match is finished. This way, we can allow users to save matches in scheduled or in-progress status without affecting the standings until the match is actually finished. This also allows users to enter match results in any order without worrying about the impact on standings until they mark the match as finished.
                         if (match.status === 'Finished') {
                             // console.log("Updating standings for match ID:", savedMatchId);
@@ -880,7 +1024,10 @@ const MatchesPage = () => {
             homeClubImage: null,
             awayClubImage: null,
             availableStadiums: [], // Initialize with empty array
-            matchDivisions: initialDivisions, 
+            matchDivisions: initialDivisions,
+            // per-match flags for special divisions
+            hasOvertime: initialDivisions.some(d => d.divisionType === 'OVERTIME'),
+            hasPenalties: initialDivisions.some(d => d.divisionType === 'PENALTIES'),
         }]);
         
         // Initialize visibility for the new match to false
@@ -897,7 +1044,7 @@ const MatchesPage = () => {
             deleteStandings(match.id)
                 .then(() => {
                     // 2. Delete divisions for this match
-                    return replaceMatchDivisions(match.id, []);
+                    return deleteMatchDivisions(match.id, []);
                 })
                 .then(() => {
                     // 3. Delete the match itself
@@ -1464,6 +1611,9 @@ const MatchesPage = () => {
                                     updated[index].matchDivisions = divisions;
                                     setMatchesList(updated);
                                 }}
+                                    onCheckboxStateChange={(states) => {
+                                        setCheckboxStatesByMatch(prev => ({ ...prev, [index]: states }));
+                                    }}
                                 />
                             </div>
                             )}

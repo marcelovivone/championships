@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { matchDivisionsApi } from '@/lib/api/entities';
 import { MatchDivision } from '@/lib/api/types'; // Import MatchDivision from shared types
 
@@ -17,9 +17,13 @@ interface MatchDetailsEditorProps {
     matchId: number;
     value?: MatchDivision[];
     onChange: (divisions: MatchDivision[]) => void;
+    // Optional callback that receives checkbox state per row:
+    // - `true`/`false` for OVERTIME or PENALTIES rows when a checkbox exists
+    // - `null` for regular divisions that don't have a checkbox
+    onCheckboxStateChange?: (states: (boolean | null)[]) => void;
 }
 
-const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetailsEditorProps) => {
+const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxStateChange }: MatchDetailsEditorProps) => {
     const [divisions, setDivisions] = useState<MatchDivision[]>(value);
     const [hasOvertime, setHasOvertime] = useState(
         value.some(d => d.divisionType === 'OVERTIME' || d.id === -10)
@@ -190,7 +194,6 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetai
 
     // If overtime becomes unavailable (a previous score was cleared), clear and disable overtime automatically
     useEffect(() => {
-        console.log('[MatchDetailsEditor] useEffect check', { divisions, hasOvertime, hasPenalties });
         const overtimeIdx = divisions.findIndex(d => d.id === -10 || d.divisionType === 'OVERTIME');
         if (overtimeIdx !== -1) {
             const available = isSpecialDivisionAvailable(-10);
@@ -214,6 +217,36 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetai
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [divisions, hasOvertime, hasPenalties]);
 
+    // Emit checkbox states to parent: true/false for special divisions, null for regular ones
+    const lastEmittedStatesRef = useRef<(boolean | null)[] | null>(null);
+    useEffect(() => {
+        if (typeof onCheckboxStateChange !== 'function') return;
+        const states = divisions.map(d => {
+            if (d.id === -10 || d.divisionType === 'OVERTIME') return hasOvertime;
+            if (d.id === -11 || d.divisionType === 'PENALTIES') return hasPenalties;
+            return null;
+        });
+
+        const last = lastEmittedStatesRef.current;
+        let changed = false;
+        if (!last || last.length !== states.length) changed = true;
+        else {
+            for (let i = 0; i < states.length; i++) {
+                if (last[i] !== states[i]) { changed = true; break; }
+            }
+        }
+
+        if (changed) {
+            try {
+                onCheckboxStateChange(states);
+                lastEmittedStatesRef.current = states;
+            } catch (err) {
+                console.error('onCheckboxStateChange threw', err);
+            }
+        }
+    // only re-run when inputs that affect emitted states change
+    }, [divisions, hasOvertime, hasPenalties, onCheckboxStateChange]);
+
     return (
         <div className="space-y-4 p-4 border rounded bg-gray-50 dark:bg-gray-900 dark:border-gray-800">
             <div className="grid grid-cols-3 gap-6">
@@ -230,6 +263,9 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetai
                                     <input
                                         type="checkbox"
                                         checked={(d.id === -10 || d.divisionType === 'OVERTIME') ? hasOvertime : (d.id === -11 || d.divisionType === 'PENALTIES') ? hasPenalties : false}
+                                        disabled={
+                                            (d.matchId !== 0)
+                                        }
                                         onChange={(e) => {
                                             const checked = e.target.checked;
                                             const isOver = d.id === -10 || d.divisionType === 'OVERTIME';
@@ -259,6 +295,7 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetai
                             className="w-25 px-2 py-1 border rounded text-center bg-white"
                             placeholder="Home"
                             disabled={
+                                (d.matchId !== 0) ||
                                 ((d.id === -10 || d.divisionType === 'OVERTIME') && !hasOvertime) ||
                                 ((d.id === -11 || d.divisionType === 'PENALTIES') && !hasPenalties)
                             }
@@ -272,6 +309,7 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange }: MatchDetai
                             className="w-25 px-2 py-1 border rounded text-center bg-white"
                             placeholder="Away"
                             disabled={
+                                (d.matchId !== 0) ||
                                 ((d.id === -10 || d.divisionType === 'OVERTIME') && !hasOvertime) ||
                                 ((d.id === -11 || d.divisionType === 'PENALTIES') && !hasPenalties)
                             }

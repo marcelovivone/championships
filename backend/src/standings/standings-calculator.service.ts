@@ -134,15 +134,36 @@ export class StandingsCalculatorService {
         // Division-level stats calculation (if matchDivisions are provided)
         const matchDivisions = match.matchDivisions || [];
         if (matchDivisions.length > 0) {
-        console.log("Calculating standings for matchDivisions:", matchDivisions);
             matchDivisions.forEach((division: any) => {
-                // Example: For volleyball, we might want to sum up sets won/lost across divisions
-                if (sport.includes('volleyball')) {
-                    homeStats.setsWon += division.homeSetsWon || 0;
-                    homeStats.setsLost += division.homeSetsLost || 0;
-                    awayStats.setsWon += division.awaySetsWon || 0;
-                    awayStats.setsLost += division.awaySetsLost || 0;
+                // Count overtime results: sentinel id -10 or explicit divisionType 'OVERTIME'
+                if ((division.id === -10 || division.divisionType === 'OVERTIME') && division.homeScore != null) {
+                    if (division.homeScore > division.awayScore) {
+                        homeStats.overtimeWins += 1;
+                        awayStats.overtimeLosses += 1;
+                    } else if (division.homeScore < division.awayScore) {
+                        homeStats.overtimeLosses += 1;
+                        awayStats.overtimeWins += 1;
+                    }
                 }
+
+                // Count penalties results: sentinel id -11 or explicit divisionType 'PENALTIES'
+                if ((division.id === -11 || division.divisionType === 'PENALTIES') && division.homeScore != null) {
+                    if (division.homeScore > division.awayScore) {
+                        homeStats.penaltyWins += 1;
+                        awayStats.penaltyLosses += 1;
+                    } else if (division.homeScore < division.awayScore) {
+                        homeStats.penaltyLosses += 1;
+                        awayStats.penaltyWins += 1;
+                    }
+                }
+
+                // Example: For volleyball, we might want to sum up sets won/lost across divisions
+                // if (sport.includes('volleyball')) {
+                //     homeStats.setsWon += division.homeSetsWon || 0;
+                //     homeStats.setsLost += division.homeSetsLost || 0;
+                //     awayStats.setsWon += division.awaySetsWon || 0;
+                //     awayStats.setsLost += division.awaySetsLost || 0;
+                // }
                 // Add similar logic for other sports and relevant stats
             });
         }

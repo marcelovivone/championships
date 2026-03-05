@@ -54,12 +54,14 @@ export class StandingsController {
       @Query('seasonId') seasonId?: string,
       @Query('roundId') roundId?: string,
       @Query('matchDate') matchDate?: string,
+      @Query('clubId') clubId?: string,
     ): Promise<StandingResponseDto[]> {
       if (leagueId && seasonId && roundId) {
         const standings = await this.standingsService.findByLeagueIdAndSeasonIdAndRoundId(
           parseInt(leagueId, 10),
           parseInt(seasonId, 10),
           parseInt(roundId, 10),
+          clubId ? parseInt(clubId, 10) : undefined,
         );
         return standings.map(this.toStandingResponseDto);
       }
@@ -68,6 +70,7 @@ export class StandingsController {
           parseInt(leagueId, 10),
           parseInt(seasonId, 10),
           matchDate,
+          clubId ? parseInt(clubId, 10) : undefined,
         );
         return standings.map(this.toStandingResponseDto);
       }

@@ -64,7 +64,8 @@ export class MatchDivisionsService {
       return await this.db
         .select()
         .from(matchDivisions)
-        .where(eq(matchDivisions.matchId, matchId));
+        .where(eq(matchDivisions.matchId, matchId))
+        .orderBy(matchDivisions.id);
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Failed to fetch divisions by match');

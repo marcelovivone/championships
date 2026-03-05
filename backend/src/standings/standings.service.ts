@@ -11,7 +11,7 @@ export class StandingsService {
         /**
          * Get standings by leagueId, seasonId, and roundId
          */
-        async findByLeagueIdAndSeasonIdAndRoundId(leagueId: number, seasonId: number, roundId: number) {
+        async findByLeagueIdAndSeasonIdAndRoundId(leagueId: number, seasonId: number, roundId: number, clubId?: number) {
             try {
                 return await this.db
                     .select()
@@ -20,7 +20,8 @@ export class StandingsService {
                         and(
                             eq(standings.leagueId, leagueId),
                             eq(standings.seasonId, seasonId),
-                            eq(standings.roundId, roundId)
+                            eq(standings.roundId, roundId),
+                            clubId ? eq(standings.clubId, clubId) : undefined
                         )
                     )
                     .orderBy(desc(standings.points), asc(standings.goalDifference));
@@ -32,12 +33,13 @@ export class StandingsService {
         /**
          * Get standings by leagueId, seasonId, and matchDate
          */
-        async findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string) {
+        async findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string, clubId?: number) {
             try {
                 const date = new Date(matchDate);
                 if (isNaN(date.getTime())) {
                     throw new BadRequestException('Invalid matchDate format');
                 }
+                console.warn("Service: Fetching standings for leagueId:", leagueId, "seasonId:", seasonId, "matchDate:", date, "clubId:", clubId);
                 return await this.db
                     .select()
                     .from(standings)
@@ -45,7 +47,8 @@ export class StandingsService {
                         and(
                             eq(standings.leagueId, leagueId),
                             eq(standings.seasonId, seasonId),
-                            eq(standings.matchDate, date)
+                            eq(standings.matchDate, date),
+                            clubId ? eq(standings.clubId, clubId) : undefined
                         )
                     )
                     .orderBy(desc(standings.points), asc(standings.goalDifference));

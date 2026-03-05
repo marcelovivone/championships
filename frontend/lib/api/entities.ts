@@ -79,7 +79,6 @@ const createCrudApi = <T, CreateDto = Partial<T>, UpdateDto = Partial<T>>(endpoi
 
   create: async (data: CreateDto): Promise<T> => {
     try {
-        console.log(`Creating ${endpoint} with data:`, data);
       const response = await apiClient.post<T>(`/v1/${endpoint}`, data);
       return response.data;
     } catch (error) {
