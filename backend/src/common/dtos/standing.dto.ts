@@ -92,11 +92,6 @@ export class CreateStandingDto {
     @IsInt()
     goalsAgainst: number = 0;
 
-    @ApiProperty({ example: 1 })
-    @Type(() => Number)
-    @IsInt()
-    goalDifference: number = 0;
-
     // Sport-specific fields
     @ApiProperty({ example: 0, required: false })
     @IsOptional()
@@ -134,18 +129,6 @@ export class CreateStandingDto {
     @IsInt()
     setsLost?: number;
 
-    @ApiProperty({ example: 0, required: false })
-    @IsOptional()
-    @Type(() => Number)
-    @IsInt()
-    divisionsWon?: number;
-
-    @ApiProperty({ example: 0, required: false })
-    @IsOptional()
-    @Type(() => Number)
-    @IsInt()
-    divisionsLost?: number;
-
     // Home/Away tracking
     @ApiProperty({ example: 1 })
     @Type(() => Number)
@@ -156,6 +139,16 @@ export class CreateStandingDto {
     @Type(() => Number)
     @IsInt()
     awayGamesPlayed: number = 0;
+
+    @ApiProperty({ example: 1 })
+    @Type(() => Number)
+    @IsInt()
+    homePoints: number = 0;
+
+    @ApiProperty({ example: 1 })
+    @Type(() => Number)
+    @IsInt()
+    awayPoints: number = 0;
 
     @ApiProperty({ example: 1 })
     @Type(() => Number)
@@ -172,25 +165,45 @@ export class CreateStandingDto {
     @IsInt()
     homeDraws: number = 0;
 
+    @ApiProperty({ example: 2 })
+    @Type(() => Number)
+    @IsInt()
+    homeGoalsFor: number = 0;
+
+    @ApiProperty({ example: 1 })
+    @Type(() => Number)
+    @IsInt()
+    homeGoalsAgainst: number = 0;
+
     @ApiProperty({ example: 0 })
     @Type(() => Number)
     @IsInt()
     awayWins: number = 0;
-
+    
     @ApiProperty({ example: 0 })
     @Type(() => Number)
     @IsInt()
     awayLosses: number = 0;
-
+    
     @ApiProperty({ example: 0 })
     @Type(() => Number)
     @IsInt()
     awayDraws: number = 0;
+    
+    @ApiProperty({ example: 2 })
+    @Type(() => Number)
+    @IsInt()
+    awayGoalsFor: number = 0;
+    
+    @ApiProperty({ example: 1 })
+    @Type(() => Number)
+    @IsInt()
+    awayGoalsAgainst: number = 0;
 
     @ApiProperty({ type: () => [CreateMatchDivisionDto], required: false })
     @IsOptional()
     matchDivisions?: any[];
-}
+}    
 
 export class UpdateStandingDto extends PartialType(CreateStandingDto) { }
 

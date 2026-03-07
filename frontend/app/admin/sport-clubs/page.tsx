@@ -78,6 +78,10 @@ export default function SportClubsPage() {
       };
     });
 
+    // Sort by club shortName for display and ordering
+    available.sort((a, b) => (a.shortName || '').localeCompare(b.shortName || ''));
+    assignedWithClubData.sort((a: any, b: any) => (a.club?.shortName || '').localeCompare(b.club?.shortName || ''));
+
     setAvailableClubs(available);
     setAssignedSportClubs(assignedWithClubData);
   }, [selectedSportId, clubsData, sportClubs]);
@@ -105,7 +109,7 @@ export default function SportClubsPage() {
         id: Date.now() + Math.random(), // Temporary ID
         sportId: selectedSportId!,
         clubId: clubId,
-        name: club?.name || '', // Default to club name initially
+        name: club?.shortName || '', // Default to club shortName initially
         flgActive: true,
         createdAt: new Date().toISOString(),
         club: club
@@ -113,7 +117,7 @@ export default function SportClubsPage() {
     });
 
     setAvailableClubs(prev => prev.filter(club => !selectedAvailable.includes(club.id)));
-    setAssignedSportClubs(prev => [...prev, ...newSportClubs].sort((a, b) => a.club!.name.localeCompare(b.club!.name)));
+    setAssignedSportClubs(prev => [...prev, ...newSportClubs].sort((a: any, b: any) => (a.club?.shortName || '').localeCompare(b.club?.shortName || '')));
     setSelectedAvailable([]);
     setHasChanges(true);
   };
@@ -123,7 +127,7 @@ export default function SportClubsPage() {
 
     const clubsToRemove = assignedSportClubs.filter(sportClub => selectedAssigned.includes(sportClub.id));
     setAssignedSportClubs(prev => prev.filter(sportClub => !selectedAssigned.includes(sportClub.id)));
-    setAvailableClubs(prev => [...prev, ...clubsToRemove.map(sc => sc.club!)].sort((a, b) => a.name.localeCompare(b.name)));
+    setAvailableClubs(prev => [...prev, ...clubsToRemove.map(sc => sc.club!)].sort((a, b) => (a.shortName || '').localeCompare(b.shortName || '')));
     setSelectedAssigned([]);
     setHasChanges(true);
   };
@@ -240,7 +244,7 @@ export default function SportClubsPage() {
                               selectedAvailable.includes(club.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
                             }`}
                           >
-                            {club.name}
+                            {club.shortName}
                           </div>
                         ))}
                       </div>
@@ -363,7 +367,7 @@ export default function SportClubsPage() {
                                 selectedAssigned.includes(sportClub.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
                               }`}
                             >
-                              <div>{sportClub.club?.name || 'N/A'}</div>
+                              <div>{sportClub.club?.shortName || 'N/A'}</div>
                               <div>
                                 <input
                                   type="text"

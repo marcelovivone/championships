@@ -284,7 +284,6 @@ export const standings = pgTable('standings', {
   losses: integer('losses').default(0).notNull(),
   goalsFor: integer('goals_for').default(0).notNull(),
   goalsAgainst: integer('goals_against').default(0).notNull(),
-  goalDifference: integer('goal_difference').default(0).notNull(),
   
   // Ice Hockey specific: overtime/shootout statistics
   overtimeWins: integer('overtime_wins').default(0), // Wins in overtime
@@ -296,20 +295,22 @@ export const standings = pgTable('standings', {
   setsWon: integer('sets_won').default(0), // Total sets won
   setsLost: integer('sets_lost').default(0), // Total sets lost
   
-  // Basketball specific: divisions statistics (if applicable by sport)
-  divisionsWon: integer('divisions_won').default(0), // For sports that use divisions
-  divisionsLost: integer('divisions_lost').default(0),
-  
   // Home/Away filter support
   homeGamesPlayed: integer('home_games_played').default(0),
   awayGamesPlayed: integer('away_games_played').default(0),
+  homePoints: integer('home_points').default(0),
+  awayPoints: integer('away_points').default(0),
   homeWins: integer('home_wins').default(0),
   homeLosses: integer('home_losses').default(0),
   homeDraws: integer('home_draws').default(0),
+  homeGoalsFor: integer('home_goals_for').default(0).notNull(),
+  homeGoalsAgainst: integer('home_goals_against').default(0).notNull(),
   awayWins: integer('away_wins').default(0),
   awayLosses: integer('away_losses').default(0),
   awayDraws: integer('away_draws').default(0),
-  
+  awayGoalsFor: integer('away_goals_for').default(0).notNull(),
+  awayGoalsAgainst: integer('away_goals_against').default(0).notNull(),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

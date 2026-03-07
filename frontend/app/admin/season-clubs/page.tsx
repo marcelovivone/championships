@@ -149,11 +149,13 @@ export default function SeasonClubsPage() {
       assignedClubData = assignedClubData.filter(item => item.groupId === selectedGroupFilterId);
     }
     
-    // Sort assigned clubs by name
-    assignedClubData.sort((a, b) => a.club.name.localeCompare(b.club.name));
+    // Sort assigned clubs by shortName
+    assignedClubData.sort((a, b) => (a.club.shortName || '').localeCompare(b.club.shortName || ''));
     
     // Available clubs = clubs for this sport NOT assigned to ANY group in this season
     const available = clubsForSport.filter(club => !allAssignedClubIds.has(club.id));
+    // Sort available by shortName
+    available.sort((a, b) => (a.shortName || '').localeCompare(b.shortName || ''));
 
     setAvailableClubs(available);
     setAssignedClubs(assignedClubData);
@@ -220,7 +222,7 @@ export default function SeasonClubsPage() {
       .map(club => ({ club, groupId: assignedGroupId }));
 
     setAvailableClubs(prev => prev.filter(club => !selectedAvailable.includes(club.id)));
-    setAssignedClubs(prev => [...prev, ...clubsToMove].sort((a, b) => a.club.name.localeCompare(b.club.name)));
+    setAssignedClubs(prev => [...prev, ...clubsToMove].sort((a: any, b: any) => (a.club.shortName || '').localeCompare(b.club.shortName || '')));
     setSelectedAvailable([]);
     setHasChanges(true);
   };
@@ -233,7 +235,7 @@ export default function SeasonClubsPage() {
       .map(item => item.club);
 
     setAssignedClubs(prev => prev.filter(item => !selectedAssigned.includes(item.club.id)));
-    setAvailableClubs(prev => [...prev, ...clubsToMove].sort((a, b) => a.name.localeCompare(b.name)));
+    setAvailableClubs(prev => [...prev, ...clubsToMove].sort((a, b) => (a.shortName || '').localeCompare(b.shortName || '')));
     
     // Remove group assignments for moved clubs
     const newGroupAssignments = { ...groupAssignments };
@@ -250,48 +252,112 @@ export default function SeasonClubsPage() {
     if (!selectedSportId || !selectedLeagueId || !selectedSeasonId) return;
 
     try {
+      const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+      const deleteSequentialWithRetry = async (ids: number[]) => {
+        const results: Array<{ id: number; ok: boolean; error?: any }> = [];
+        for (const id of ids) {
+          let attempt = 0;
+          let done = false;
+          while (!done && attempt < 4) {
+            try {
+              await seasonClubsApi.delete(id);
+              results.push({ id, ok: true });
+              done = true;
+            } catch (err: any) {
+              attempt++;
+              const status = err?.response?.status;
+              if (status === 429) {
+                // backoff and retry
+                await sleep(200 * attempt);
+                continue;
+              }
+              results.push({ id, ok: false, error: err });
+              done = true;
+            }
+          }
+          // small delay between requests to avoid burst rate limits
+          await sleep(30);
+        }
+        return results;
+      };
+
+      const createSequentialWithRetry = async (items: { clubId: number; groupId?: number | undefined }[]) => {
+        const responses: any[] = [];
+        for (const item of items) {
+          let attempt = 0;
+          let created = false;
+          while (!created && attempt < 4) {
+            try {
+              const res = await seasonClubsApi.create({
+                sportId: selectedSportId!,
+                leagueId: selectedLeagueId!,
+                seasonId: selectedSeasonId!,
+                clubId: item.clubId,
+                groupId: item.groupId,
+              } as any);
+              responses.push(res);
+              created = true;
+            } catch (err: any) {
+              attempt++;
+              const status = err?.response?.status;
+              if (status === 429) {
+                await sleep(200 * attempt);
+                continue;
+              }
+              // push error info and break
+              responses.push({ error: err });
+              created = true;
+            }
+          }
+          await sleep(30);
+        }
+        return responses;
+      };
+
       // If groups are required and selected, only update clubs for the selected group
       if (groupsRequired && selectedGroupFilterId) {
-        // Delete existing associations for this season AND group only
-        const clubsToDelete = seasonClubs?.filter(sc => sc.groupId === selectedGroupFilterId) || [];
-        if (clubsToDelete.length > 0) {
-          await Promise.all(
-            clubsToDelete.map(sc => seasonClubsApi.delete(sc.id))
-          );
+        // Compute diff: only delete season-clubs in this group that are not in assignedClubs
+        const existingInGroup = (seasonClubs || []).filter(sc => sc.groupId === selectedGroupFilterId);
+        const existingClubIdToSeasonClubId = new Map<number, number>();
+        existingInGroup.forEach(sc => existingClubIdToSeasonClubId.set(sc.clubId, sc.id));
+
+        const assignedClubIds = new Set(assignedClubs.map(a => a.club.id));
+
+        const toDeleteIds = existingInGroup.filter(sc => !assignedClubIds.has(sc.clubId)).map(sc => sc.id);
+        const toCreateItems = assignedClubs.filter(a => !existingClubIdToSeasonClubId.has(a.club.id)).map(a => ({ clubId: a.club.id, groupId: selectedGroupFilterId }));
+
+        if (toDeleteIds.length > 0) {
+          console.log('Deleting season clubs (diff):', toDeleteIds);
+          await deleteSequentialWithRetry(toDeleteIds);
         }
 
-        // Create new associations for this group
-        await Promise.all(
-          assignedClubs.map(item => 
-            seasonClubsApi.create({
-              sportId: selectedSportId,
-              leagueId: selectedLeagueId,
-              seasonId: selectedSeasonId,
-              clubId: item.club.id,
-              groupId: selectedGroupFilterId,
-            })
-          )
-        );
+        if (toCreateItems.length > 0) {
+          console.log('Creating season clubs (diff) for group', selectedGroupFilterId, toCreateItems.map(i => i.clubId));
+          const createResponses = await createSequentialWithRetry(toCreateItems);
+          console.log('Create responses:', createResponses);
+        }
       } else {
         // No groups - delete all and recreate (original logic for non-grouped leagues)
-        if (seasonClubs && seasonClubs.length > 0) {
-          await Promise.all(
-            seasonClubs.map(sc => seasonClubsApi.delete(sc.id))
-          );
+        // Compute diff against all existing seasonClubs for this season
+        const existingMap = new Map<number, number>();
+        (seasonClubs || []).forEach(sc => existingMap.set(sc.clubId, sc.id));
+
+        const assignedClubIds = new Set(assignedClubs.map(a => a.club.id));
+
+        const toDeleteIds = (seasonClubs || []).filter(sc => !assignedClubIds.has(sc.clubId)).map(sc => sc.id);
+        const toCreateItems = assignedClubs.filter(a => !existingMap.has(a.club.id)).map(a => ({ clubId: a.club.id, groupId: a.groupId }));
+
+        if (toDeleteIds.length > 0) {
+          console.log('Deleting existing season clubs (diff):', toDeleteIds);
+          await deleteSequentialWithRetry(toDeleteIds);
         }
 
-        // Create new associations
-        await Promise.all(
-          assignedClubs.map(item => 
-            seasonClubsApi.create({
-              sportId: selectedSportId,
-              leagueId: selectedLeagueId,
-              seasonId: selectedSeasonId,
-              clubId: item.club.id,
-              groupId: item.groupId,
-            })
-          )
-        );
+        if (toCreateItems.length > 0) {
+          console.log('Creating season clubs (diff, no groups):', toCreateItems.map(i => i.clubId));
+          const createResponses = await createSequentialWithRetry(toCreateItems);
+          console.log('Create responses:', createResponses);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ['season-clubs-by-season'] });
@@ -327,11 +393,12 @@ export default function SeasonClubsPage() {
           assignedClubData = assignedClubData.filter(item => item.groupId === selectedGroupFilterId);
         }
 
-        // Sort assigned clubs by name
-        assignedClubData.sort((a, b) => a.club.name.localeCompare(b.club.name));
+        // Sort assigned clubs by shortName
+        assignedClubData.sort((a, b) => (a.club.shortName || '').localeCompare(b.club.shortName || ''));
 
         // Available clubs = clubs for this sport NOT assigned to ANY group in this season
         const available = clubsForSport.filter(club => !allAssignedClubIds.has(club.id));
+        available.sort((a, b) => (a.shortName || '').localeCompare(b.shortName || ''));
 
         setAvailableClubs(available);
         setAssignedClubs(assignedClubData);
@@ -482,7 +549,7 @@ export default function SeasonClubsPage() {
                               selectedAvailable.includes(club.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
                             }`}
                           >
-                            {club.name}
+                            {club.shortName}
                           </div>
                         ))}
                       </div>
@@ -601,7 +668,7 @@ export default function SeasonClubsPage() {
                               selectedAssigned.includes(item.club.id) ? 'bg-blue-600 text-white hover:bg-blue-700' : ''
                             }`}
                           >
-                            {item.club.name}
+                            {item.club.shortName}
                           </div>
                         ))}
                       </div>

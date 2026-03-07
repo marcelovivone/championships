@@ -15,8 +15,8 @@ export default function ClubStadiumsPage() {
   const [page, setPage] = useState(1);
   const [limit] = useState(10);
   const [pageInput, setPageInput] = useState('1');
-  const [sortBy, setSortBy] = useState('startDate');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState('clubId');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const queryClient = useQueryClient();
 
   // Sync pageInput with page state
@@ -32,17 +32,59 @@ export default function ClubStadiumsPage() {
   const clubStadiums = data?.data || [];
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
+  // Client-side sorting and pagination (fallback when backend didn't apply ordering/pagination)
+  const sortedClubStadiums = Array.isArray(clubStadiums)
+    ? [...clubStadiums].sort((a: any, b: any) => {
+        const key = sortBy as string;
+        let aVal = a?.[key];
+        let bVal = b?.[key];
+
+        // Use club shortName when sorting by clubId
+        if (key === 'clubId') {
+          aVal = a?.club?.shortName || clubs.find((c) => c.id === a?.clubId)?.shortName || '';
+          bVal = b?.club?.shortName || clubs.find((c) => c.id === b?.clubId)?.shortName || '';
+        }
+
+        // Use stadium name when sorting by stadiumId
+        if (key === 'stadiumId') {
+          aVal = a?.stadium?.name || stadiums.find((s) => s.id === a?.stadiumId)?.name || '';
+          bVal = b?.stadium?.name || stadiums.find((s) => s.id === b?.stadiumId)?.name || '';
+        }
+
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return 1;
+        if (bVal == null) return -1;
+
+        const aStr = String(aVal);
+        const bStr = String(bVal);
+
+        // ISO date-ish values sort by timestamp
+        const isoDateRe = /^\d{4}-\d{2}-\d{2}/;
+        let cmp = 0;
+        if (isoDateRe.test(aStr) && isoDateRe.test(bStr)) {
+          cmp = new Date(aStr).getTime() - new Date(bStr).getTime();
+        } else if (!isNaN(Number(aVal)) && !isNaN(Number(bVal))) {
+          cmp = Number(aVal) - Number(bVal);
+        } else {
+          cmp = aStr.localeCompare(bStr);
+        }
+
+        return sortOrder === 'asc' ? cmp : -cmp;
+      })
+    : [];
+
+  const displayedClubStadiums = sortedClubStadiums.slice((page - 1) * limit, page * limit);
 
   const { data: clubsData } = useQuery({
     queryKey: ['clubs'],
-    queryFn: () => clubsApi.getAll({ page: 1, limit: 100 }),
+    queryFn: () => clubsApi.getAll({ page: 1, limit: 1000 }),
   });
 
   const clubs = clubsData?.data || [];
 
   const { data: stadiumsData } = useQuery({
     queryKey: ['stadiums'],
-    queryFn: () => stadiumsApi.getAll({ page: 1, limit: 100 }),
+    queryFn: () => stadiumsApi.getAll({ page: 1, limit: 1000 }),
   });
 
   const stadiums = stadiumsData?.data || [];
@@ -131,14 +173,14 @@ export default function ClubStadiumsPage() {
   const columns = [
     {
       header: 'Club',
-      accessor: (cs: ClubStadium) => cs.club?.shortName || '-',
+      accessor: (cs: ClubStadium) => cs.club?.shortName || clubs.find(c => c.id === cs.clubId)?.shortName || '-',
       sortKey: 'clubId',
       sortable: true,
       width: '200px',
     },
     {
       header: 'Stadium',
-      accessor: (cs: ClubStadium) => cs.stadium?.name || '-',
+      accessor: (cs: ClubStadium) => cs.stadium?.name || stadiums.find(s => s.id === cs.stadiumId)?.name || '-',
       sortKey: 'stadiumId',
       sortable: true,
       width: '200px',
@@ -148,11 +190,11 @@ export default function ClubStadiumsPage() {
       accessor: (cs: ClubStadium) => new Date(cs.startDate).toLocaleDateString(),
       sortKey: 'startDate',
       sortable: true,
-      width: '130px',
+      width: '170px',
     },
     {
       header: 'End Date',
-      accessor: (cs: ClubStadium) => cs.endDate ? new Date(cs.endDate).toLocaleDateString() : 'Active',
+      accessor: (cs: ClubStadium) => cs.endDate ? new Date(cs.endDate).toLocaleDateString() : '-',
       className: 'text-center',
       sortKey: 'endDate',
       sortable: true,
@@ -187,7 +229,7 @@ export default function ClubStadiumsPage() {
 
       <DataTable
         columns={columns}
-        data={clubStadiums}
+        data={displayedClubStadiums}
         onEdit={handleEdit}
         onDelete={handleDelete}
         isLoading={isLoading}

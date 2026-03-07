@@ -30,7 +30,19 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard size={20} />, href: '/common' },
-  { label: 'Standings', icon: <MapPin size={20} />, href: '/common/standings' },
+  {
+    label: 'Standings',
+    icon: <MapPin size={20} />,
+    href: '/common/standings',
+    children: [
+      { label: 'Football', icon: <Flag size={16} />, href: '/common/standings/football' },
+      { label: 'Basketball', icon: <Target size={16} />, href: '/common/standings/basketball' },
+      { label: 'Futsal', icon: <Table size={16} />, href: '/common/standings/futsal' },
+      { label: 'Handball', icon: <Users size={16} />, href: '/common/standings/handball' },
+      { label: 'Ice Hockey', icon: <Shield size={16} />, href: '/common/standings/ice-hockey' },
+      { label: 'Volleyball', icon: <Trophy size={16} />, href: '/common/standings/volleyball' },
+    ],
+  },
   { label: 'Statistics', icon: <MapPin size={20} />, href: '/common/statistics' },
 ];
 
@@ -57,6 +69,32 @@ export default function CommonSidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4">
         {menuItems.map((item) => {
+          const isParentActive = pathname?.startsWith(item.href);
+          if (item.children && item.children.length > 0) {
+            return (
+              <div key={item.href} className="mb-2">
+                <div className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isParentActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
+                  {item.icon}
+                  <span>{item.label}</span>
+                </div>
+                <div className="pl-8">
+                  {item.children.map((child) => {
+                    const isActive = pathname === child.href;
+                    return (
+                      <button
+                        key={child.href}
+                        onClick={() => router.push(child.href)}
+                        className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${isActive ? 'bg-blue-500 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
+                        {child.icon}
+                        <span>{child.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          }
+
           const isActive = pathname === item.href;
           return (
             <button

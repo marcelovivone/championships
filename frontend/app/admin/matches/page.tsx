@@ -899,13 +899,33 @@ const MatchesPage = () => {
                             // 1 - Update an existing match
                             await matchesApi.update(match.id, matchData);
                         } else {
-                            // 1 - Create a new match
-                            const createdMatch = await matchesApi.create(matchData);
-                            savedMatchId = createdMatch.id;
-
-                            // In the current logic, we are only creating new divisions for new matches
-                            // 2 - For matches with divisions, save divisions and link to match
-                            await createMatchDivisions(savedMatchId, match.matchDivisions);
+                                // 1 - Create a new match, but first check for an identical existing match to avoid duplicates
+                                try {
+                                    const possible = await matchesApi.getBySportLeagueSeasonAndGroup(
+                                        selectedSportId!, selectedLeagueId!, selectedSeasonId!, selectedGroupId || null
+                                    );
+                                    const found = possible.find((pm: any) => (
+                                        Number(pm.homeClubId) === Number(match.homeClubId) &&
+                                        Number(pm.awayClubId) === Number(match.awayClubId) &&
+                                        new Date(pm.date).toISOString() === new Date(dateToSend).toISOString()
+                                    ));
+                                    if (found) {
+                                        // Use existing match instead of creating duplicate
+                                        console.warn('Found existing identical match, skipping create, using id=', found.id);
+                                        savedMatchId = found.id;
+                                    } else {
+                                        const createdMatch = await matchesApi.create(matchData);
+                                        savedMatchId = createdMatch.id;
+                                        // Create divisions for the new match
+                                        await createMatchDivisions(savedMatchId, match.matchDivisions);
+                                    }
+                                } catch (e) {
+                                    // If the check fails, fall back to creating the match to avoid blocking the user
+                                    console.error('Error checking for existing matches, proceeding to create:', e);
+                                    const createdMatch = await matchesApi.create(matchData);
+                                    savedMatchId = createdMatch.id;
+                                    await createMatchDivisions(savedMatchId, match.matchDivisions);
+                                }
                         }
                         
                         // 2 - For matches with divisions, save divisions and link to match
@@ -914,20 +934,25 @@ const MatchesPage = () => {
                         
                         // 3 - Update standings based on the match results only if the match is finished. This way, we can allow users to save matches in scheduled or in-progress status without affecting the standings until the match is actually finished. This also allows users to enter match results in any order without worrying about the impact on standings until they mark the match as finished.
                         if (match.status === 'Finished') {
-                            // console.log("Updating standings for match ID:", savedMatchId);
                             // 3 - Create or update standings based on the match results
-                            await updateStandings(
-                                selectedSportId,
-                                leagues,
-                                selectedLeagueId,
-                                selectedSeasonId,
-                                selectedRoundId,
-                                matchDate,
-                                selectedGroupId,
-                                match.homeClubId,
-                                match.awayClubId,
-                                savedMatchId
-                            );
+                            try {
+                                await updateStandings(
+                                    selectedSportId,
+                                    leagues,
+                                    selectedLeagueId,
+                                    selectedSeasonId,
+                                    selectedRoundId,
+                                    matchDate,
+                                    selectedGroupId,
+                                    match.homeClubId,
+                                    match.awayClubId,
+                                    savedMatchId
+                                );
+                            } catch (e) {
+                                // Log error and continue processing other matches so a single failure
+                                // doesn't prevent remaining matches from being saved.
+                                console.error('Failed updating standings for match', savedMatchId, e);
+                            }
                         }
                     } catch (error) {
                         alert(`Error saving match: ${error}`);

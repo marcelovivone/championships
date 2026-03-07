@@ -1,0 +1,304 @@
+"use client";
+
+import React from 'react';
+import { apiClient } from '@/lib/api/client';
+
+export default function FilterBar({
+    season,
+    setSeason,
+    league,
+    setLeague,
+    roundOrDay,
+    setRoundOrDay,
+    viewType,
+    setViewType,
+    group,
+    setGroup,
+    hasGroups = false,
+    leagues = [],
+    seasons = [],
+    showTop = true,
+    showBottom = true,
+    compact = false,
+}: any) {
+    const dateInputRef = React.useRef<HTMLInputElement | null>(null);
+    const [seasonGroups, setSeasonGroups] = React.useState<any[]>([]);
+    const [seasonHasGroups, setSeasonHasGroups] = React.useState<boolean>(false);
+    const selectedLeague = Array.isArray(leagues) ? leagues.find((l: any) => String(l.id) === String(league)) : null;
+    const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule || selectedLeague.scheduleType || selectedLeague.type || selectedLeague.type_of_schedule_code);
+    const scheduleStr = rawSchedule !== undefined && rawSchedule !== null ? String(rawSchedule).toLowerCase() : '';
+    const scheduleIsDate = scheduleStr.includes('date') || scheduleStr.includes('day') || scheduleStr.includes('calendar') || scheduleStr.includes('dt') || scheduleStr === '1' || scheduleStr === 'date_based';
+    const adjustDate = (delta: number) => {
+        try {
+            const cur = roundOrDay ? new Date(roundOrDay) : new Date();
+            const d = new Date(cur);
+            d.setDate(d.getDate() + delta);
+            const iso = d.toISOString().slice(0, 10);
+            setRoundOrDay(iso);
+        } catch (e) {
+            // ignore invalid date
+        }
+    };
+    const getLeagueMaxRounds = (l: any) => {
+        if (!l) return undefined;
+        return Number(l.number_of_rounds_matches ?? l.numberOfRoundsMatches ?? l.numberOfRounds ?? l.number_of_rounds ?? l.numberOfRoundsMatches ?? 0) || undefined;
+    };
+    // Top row: League / Season / Round controls
+    const TopRow = () => (
+        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 bg-white p-1 rounded-lg">
+            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto">
+                <label className="text-sm text-gray-600">League</label>
+                <select value={league} onChange={(e) => setLeague(e.target.value)} className="ml-0 xs:ml-2 px-2 py-1 border rounded w-full xs:w-48">
+                    {Array.isArray(leagues) && leagues.length > 0 ? (
+                        leagues.map((l: any) => (
+                            <option key={l.id} value={String(l.id)}>{l.originalName}</option>
+                        ))
+                    ) : (
+                        <>
+                            <option value="league-a">League A</option>
+                            <option value="league-b">League B</option>
+                        </>
+                    )}
+                </select>
+            </div>
+
+            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto">
+                <label className="text-sm text-gray-600">Season</label>
+                <select value={season} onChange={(e) => setSeason(e.target.value)} className="ml-0 xs:ml-2 px-2 py-1 border rounded w-full xs:w-32">
+                    {Array.isArray(seasons) && seasons.length > 0 ? (
+                        seasons.map((s: any) => (
+                            <option key={s.id} value={String(s.id)}>{`${s.startYear}/${s.endYear}`}</option>
+                        ))
+                    ) : (
+                        <>
+                            <option value={new Date().getFullYear().toString()}>{new Date().getFullYear()}</option>
+                            <option value={(new Date().getFullYear() - 1).toString()}>{new Date().getFullYear() - 1}</option>
+                        </>
+                    )}
+                </select>
+            </div>
+
+            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto sm:ml-auto">
+                <label className="text-sm text-gray-600">{scheduleIsDate ? 'Date' : 'Round'}</label>
+                <div className="mt-0 flex items-center gap-2 whitespace-nowrap">
+                    {scheduleIsDate ? (
+                        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm">
+                            <button onClick={() => adjustDate(-1)} className="px-3 py-2 text-blue-600 hover:bg-blue-50">◀</button>
+                            <input
+                                ref={dateInputRef}
+                                type="date"
+                                className="w-36 text-center px-3 py-2 bg-gray-50 border-0 focus:outline-none"
+                                value={roundOrDay || ''}
+                                onChange={(e) => setRoundOrDay(e.target.value)}
+                            />
+                            <button onClick={() => adjustDate(1)} className="px-3 py-2 text-blue-600 hover:bg-blue-50">▶</button>
+                            <button
+                                onClick={() => {
+                                    if (dateInputRef.current) {
+                                        try {
+                                            // @ts-ignore
+                                            if (typeof dateInputRef.current.showPicker === 'function') dateInputRef.current.showPicker();
+                                        } catch (e) {
+                                            dateInputRef.current.focus();
+                                        }
+                                    }
+                                }}
+                                className="px-3 py-2 text-blue-600 hover:bg-blue-50"
+                                aria-label="Open calendar"
+                            >
+                                📅
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm">
+                            <button onClick={() => {
+                                const cur = Number(roundOrDay || 1);
+                                const min = 1;
+                                const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
+                                const next = Math.max(min, cur - 1);
+                                setRoundOrDay(next > max ? max : next);
+                            }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">◀</button>
+                            <input
+                                type="number"
+                                min={1}
+                                max={getLeagueMaxRounds(selectedLeague) || undefined}
+                                className="w-14 text-center px-2 py-2 bg-gray-50 border-0 focus:outline-none"
+                                value={roundOrDay}
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    const parsed = Number(v);
+                                    const min = 1;
+                                    const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
+                                    if (v === '') {
+                                        // don't allow empty; reset to min
+                                        setRoundOrDay(min);
+                                        return;
+                                    }
+                                    if (isNaN(parsed)) {
+                                        return;
+                                    }
+                                    const clamped = Math.max(min, Math.min(max, Math.trunc(parsed)));
+                                    setRoundOrDay(clamped);
+                                }}
+                            />
+                            <button onClick={() => {
+                                const cur = Number(roundOrDay || 1);
+                                const min = 1;
+                                const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
+                                const next = Math.min(max, cur + 1);
+                                setRoundOrDay(next < min ? min : next);
+                            }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">▶</button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    // Bottom row: ViewType + Group (supports inline compact mode)
+    const BottomRow = ({ inline = false }: { inline?: boolean }) => (
+        <div className={inline ? 'flex items-center gap-3 w-full pr-6' : 'flex flex-col sm:flex-row sm:items-center sm:justify-start sm:gap-4'}>
+            {inline ? (
+                <>
+                    {seasonHasGroups && (
+                        <div className="flex items-center gap-2 text-sm ml-4">
+                            <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-0.5 border rounded text-sm">
+                                <option value="all">All groups</option>
+                                {seasonGroups.map((g: any) => (
+                                    <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    <div className="flex-1" />
+
+                    <div className="flex items-center gap-2 text-sm">
+                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('all')}>All</button>
+                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'home' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('home')}>Home</button>
+                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'away' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('away')}>Away</button>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="flex items-center gap-2">
+                        <button className={`px-3 py-1 rounded ${viewType === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('all')}>All</button>
+                        <button className={`px-3 py-1 rounded ${viewType === 'home' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('home')}>Home</button>
+                        <button className={`px-3 py-1 rounded ${viewType === 'away' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('away')}>Away</button>
+                    </div>
+
+                    {seasonHasGroups && (
+                        <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                            <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-1 border rounded">
+                                <option value="all">All groups</option>
+                                {seasonGroups.map((g: any) => (
+                                    <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </>
+            )}
+
+        </div>
+    );
+
+    // When league changes, initialize roundOrDay depending on schedule type
+    React.useEffect(() => {
+        let mounted = true;
+        const isIsoDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+        const init = async () => {
+            if (!league) return;
+
+            if (scheduleIsDate) {
+                // If current value is not an ISO date, or it's a numeric round, set to today
+                const today = new Date();
+                const iso = today.toISOString().slice(0, 10);
+                if (!isIsoDate(roundOrDay)) {
+                    if (mounted) setRoundOrDay(iso);
+                }
+                return;
+            }
+
+            // For round-based leagues, fetch rounds for the league and pick the one marked as current
+            try {
+                const resp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}`);
+                const rounds = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+                const current = rounds.find((r: any) => r.flgCurrent || r.flg_current || r.isCurrent || r.flg_current === true || r.flgCurrent === true);
+                if (current && mounted) {
+                    // display the user-facing round number (roundNumber)
+                    const roundVal = String(current.roundNumber ?? current.round ?? current.id ?? 1);
+                    setRoundOrDay(roundVal);
+                } else if (rounds && rounds.length > 0 && mounted) {
+                    const first = rounds[0];
+                    const roundVal = String(first.roundNumber ?? first.round ?? first.id ?? 1);
+                    setRoundOrDay(roundVal);
+                } else if (mounted) {
+                    setRoundOrDay(1);
+                }
+            } catch (e) {
+                if (mounted && !isIsoDate(roundOrDay)) setRoundOrDay(1);
+            }
+        };
+
+        init();
+
+        return () => {
+            mounted = false;
+        };
+    }, [league, scheduleIsDate]);
+
+    // When season changes, determine if it has groups and fetch them
+    React.useEffect(() => {
+        let mounted = true;
+
+        const sel = Array.isArray(seasons) ? seasons.find((s: any) => String(s.id) === String(season)) : null;
+        const num = sel ? Number(sel.numberOfGroups ?? sel.number_of_groups ?? 0) : 0;
+        if (!mounted) return;
+        if (num && num > 0) {
+            setSeasonHasGroups(true);
+            // fetch groups for season
+            (async () => {
+                try {
+                    const resp = await apiClient.get(`/v1/groups?seasonId=${Number(season)}`);
+                    const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+                    if (mounted) {
+                        setSeasonGroups(data);
+                        // default group to 'all'
+                        setGroup('all');
+                    }
+                } catch (e) {
+                    if (mounted) {
+                        setSeasonGroups([]);
+                        setGroup('all');
+                    }
+                }
+            })();
+        } else {
+            setSeasonHasGroups(false);
+            setSeasonGroups([]);
+            setGroup('all');
+        }
+
+        return () => {
+            mounted = false;
+        };
+    }, [season, seasons]);
+
+    // If compact, render only the inline bottom row without padding/background
+    if (compact) {
+        return (
+            <div className="inline-flex items-center w-full pl-14 pr-16">
+                <BottomRow inline />
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white rounded p-4 flex flex-col gap-3">
+            {showTop && <TopRow />}
+            {showBottom && <BottomRow />}
+        </div>
+    );
+}

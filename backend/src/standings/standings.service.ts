@@ -24,7 +24,7 @@ export class StandingsService {
                             clubId ? eq(standings.clubId, clubId) : undefined
                         )
                     )
-                    .orderBy(desc(standings.points), asc(standings.goalDifference));
+                    .orderBy(desc(standings.points), asc(standings.goalsFor));
             } catch (error) {
                 throw new BadRequestException('Failed to fetch standings by league, season, and round');
             }
@@ -51,7 +51,7 @@ export class StandingsService {
                             clubId ? eq(standings.clubId, clubId) : undefined
                         )
                     )
-                    .orderBy(desc(standings.points), asc(standings.goalDifference));
+                    .orderBy(desc(standings.points));
             } catch (error) {
                 throw new BadRequestException('Failed to fetch standings by league, season, and matchDate');
             }
@@ -70,7 +70,7 @@ export class StandingsService {
             return await this.db
                 .select()
                 .from(standings)
-                .orderBy(desc(standings.points), asc(standings.goalDifference));
+                .orderBy(desc(standings.points), asc(standings.goalsFor));
         } catch (error) {
             throw new BadRequestException('Failed to fetch standings');
         }
@@ -126,33 +126,12 @@ export class StandingsService {
                 .select()
                 .from(standings)
                 .where(whereClause)
-                .orderBy(desc(standings.points), asc(standings.goalDifference));
+                .orderBy(desc(standings.points), asc(standings.goalsFor));
         } catch (error) {
             if (error instanceof NotFoundException) throw error;
             throw new BadRequestException('Failed to fetch standings by match');
         }
     }
-
-    //   /**
-    //    * Get standings by league and round
-    //    */
-    //   async findByLeagueAndRound(leagueId: number, roundId: number) {
-    //     try {
-    //       // Verify league exists
-    //       const league = await this.db
-    //         .select()
-    //         .from(leagues)
-    //         .where(eq(leagues.id, leagueId))
-    //         .limit(1);
-
-    //       if (!league || league.length === 0) {
-    //         throw new NotFoundException(`League with ID ${leagueId} not found`);
-    //       }
-
-    //       // Verify round exists
-    //       throw new BadRequestException('Failed to fetch standings by league and round');
-    //     }
-    //   }
 
     /**
      * Get standings by league (all rounds)
@@ -175,7 +154,7 @@ export class StandingsService {
                 .from(standings)
                 .innerJoin(seasons, eq(standings.seasonId, seasons.id))
                 .where(eq(standings.roundId, roundId))
-                .orderBy(desc(standings.points), asc(standings.goalDifference))
+                .orderBy(desc(standings.points), asc(standings.goalsFor))
                 .then(results => results.map(r => r.standings));
         } catch (error) {
             if (error instanceof NotFoundException) throw error;
@@ -199,7 +178,7 @@ export class StandingsService {
                 .select()
                 .from(standings)
                 .where(eq(standings.matchDate, date))
-                .orderBy(desc(standings.points), asc(standings.goalDifference));
+                .orderBy(desc(standings.points), asc(standings.goalsFor));
         } catch (error) {
             if (error instanceof BadRequestException) throw error;
             throw new BadRequestException('Failed to fetch standings by matchDate');
@@ -261,13 +240,6 @@ export class StandingsService {
                 previousAwayStanding: latestAwayStanding || null,
                 matchDivisions: createStandingDto.matchDivisions || [],
             };
-            // const awayMatchData = {
-            //     ...createStandingDto,
-            //     clubId: createStandingDto.awayClubId,
-            //     homeScore: createStandingDto.awayScore,
-            //     awayScore: createStandingDto.homeScore,
-            //     previousStanding: latestAwayStanding || null,
-            // };
 
             // Load real sport name
             let sportName = 'default';
@@ -278,7 +250,7 @@ export class StandingsService {
                 }
             }
             // Calculate stats for both clubs
-            const { home: homeStats, away: awayStats } = this.calculator.calculate(sportName, matchData);
+            const { home: homeStats, away: awayStats } = this.calculator.calculate(sportName, matchData, latestHomeStanding, latestAwayStanding);
 
             // Convert matchDate to Date object
             const matchDateObj = new Date(createStandingDto.matchDate);
@@ -304,19 +276,22 @@ export class StandingsService {
                 losses: homeStats.losses,
                 goalsFor: homeStats.goalsFor,
                 goalsAgainst: homeStats.goalsAgainst,
-                goalDifference: homeStats.goalsFor - homeStats.goalsAgainst,
                 setsWon: homeStats.setsWon,
                 setsLost: homeStats.setsLost,
-                divisionsWon: createStandingDto.divisionsWon || 0,
-                divisionsLost: createStandingDto.divisionsLost || 0,
                 homeGamesPlayed: homeStats.homeGamesPlayed || 0,
                 awayGamesPlayed: homeStats.awayGamesPlayed || 0,
+                homePoints: homeStats.homePoints || 0,
+                awayPoints: homeStats.awayPoints || 0,
                 homeWins: homeStats.homeWins || 0,
                 homeDraws: homeStats.homeDraws || 0,
                 homeLosses: homeStats.homeLosses || 0,
+                homeGoalsFor: homeStats.homeGoalsFor,
+                homeGoalsAgainst: homeStats.homeGoalsAgainst,
                 awayWins: homeStats.awayWins || 0,
                 awayDraws: homeStats.awayDraws || 0,
                 awayLosses: homeStats.awayLosses || 0,
+                awayGoalsFor: homeStats.awayGoalsFor,
+                awayGoalsAgainst: homeStats.awayGoalsAgainst,
                 overtimeWins: homeStats.overtimeWins,
                 overtimeLosses: homeStats.overtimeLosses,
                 penaltyWins: homeStats.penaltyWins,
@@ -338,19 +313,22 @@ export class StandingsService {
                 losses: awayStats.losses,
                 goalsFor: awayStats.goalsFor,
                 goalsAgainst: awayStats.goalsAgainst,
-                goalDifference: awayStats.goalsFor - awayStats.goalsAgainst,
                 setsWon: awayStats.setsWon,
                 setsLost: awayStats.setsLost,
-                divisionsWon: createStandingDto.divisionsWon || 0,
-                divisionsLost: createStandingDto.divisionsLost || 0,
                 homeGamesPlayed: awayStats.homeGamesPlayed || 0,
                 awayGamesPlayed: awayStats.awayGamesPlayed || 0,
+                homePoints: awayStats.homePoints || 0,
+                awayPoints: awayStats.awayPoints || 0,
                 homeWins: awayStats.homeWins || 0,
                 homeDraws: awayStats.homeDraws || 0,
                 homeLosses: awayStats.homeLosses || 0,
+                homeGoalsFor: awayStats.homeGoalsFor,
+                homeGoalsAgainst: awayStats.homeGoalsAgainst,
                 awayWins: awayStats.awayWins || 0,
                 awayDraws: awayStats.awayDraws || 0,
                 awayLosses: awayStats.awayLosses || 0,
+                awayGoalsFor: awayStats.awayGoalsFor,
+                awayGoalsAgainst: awayStats.awayGoalsAgainst,
                 overtimeWins: awayStats.overtimeWins,
                 overtimeLosses: awayStats.overtimeLosses,
                 penaltyWins: awayStats.penaltyWins,
