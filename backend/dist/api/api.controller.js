@@ -1,0 +1,152 @@
+"use strict";
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ApiController = void 0;
+const common_1 = require("@nestjs/common");
+const api_service_1 = require("./api.service");
+let ApiController = class ApiController {
+    constructor(apiService) {
+        this.apiService = apiService;
+    }
+    status() {
+        return { ok: true };
+    }
+    async import(payload) {
+        const created = await this.apiService.importData(payload);
+        return { created: Array.isArray(created) ? created.length : 0, items: created };
+    }
+    async fetchAndStore(body) {
+        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport);
+        return { stored: result };
+    }
+    async listTransitional(limit) {
+        const l = limit ? Number(limit) : 100;
+        const rows = await this.apiService.listTransitional(l);
+        return { count: rows.length, items: rows };
+    }
+    async getTransitional(id) {
+        const row = await this.apiService.getTransitional(id);
+        if (!row)
+            return { found: false };
+        return { found: true, item: row };
+    }
+    async parseTransitional(id) {
+        const parsed = await this.apiService.parseTransitional(id);
+        if (!parsed || !parsed.found) {
+            return { found: false };
+        }
+        return { found: true, columns: parsed.columns, rows: parsed.rows };
+    }
+    async structuredTransitional(id) {
+        const res = await this.apiService.extractStructuredFromTransitional(id);
+        if (!res || !res.found)
+            return { found: false };
+        return { found: true, firstRow: res.firstRow, matches: res.matches };
+    }
+    async applyFirstRow(id, body) {
+        const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
+        return result;
+    }
+    async loadTransitional(id, body) {
+        const result = await this.apiService.applyTransitional(id, {
+            dryRun: !!body?.dryRun,
+            targetTable: body?.targetTable,
+            mapping: body?.mapping,
+        });
+        return { result };
+    }
+    async getTargetColumns(table) {
+        if (!table)
+            return { columns: [] };
+        const cols = await this.apiService.getTableColumns(table);
+        return { columns: cols };
+    }
+};
+exports.ApiController = ApiController;
+__decorate([
+    (0, common_1.Get)('status'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], ApiController.prototype, "status", null);
+__decorate([
+    (0, common_1.Post)('import'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "import", null);
+__decorate([
+    (0, common_1.Post)('fetch-and-store'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "fetchAndStore", null);
+__decorate([
+    (0, common_1.Get)('transitional'),
+    __param(0, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "listTransitional", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getTransitional", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id/parse'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "parseTransitional", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id/structured'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "structuredTransitional", null);
+__decorate([
+    (0, common_1.Post)('transitional/:id/apply-first-row'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "applyFirstRow", null);
+__decorate([
+    (0, common_1.Post)('transitional/:id/load'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "loadTransitional", null);
+__decorate([
+    (0, common_1.Get)('target-columns'),
+    __param(0, (0, common_1.Query)('table')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getTargetColumns", null);
+exports.ApiController = ApiController = __decorate([
+    (0, common_1.Controller)('api'),
+    __metadata("design:paramtypes", [api_service_1.ApiService])
+], ApiController);
+//# sourceMappingURL=api.controller.js.map

@@ -2,6 +2,7 @@ import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 // import { LoggerMiddleware } from './logger.middleware';
 // import { RouteDebugMiddleware } from './route-debug.middleware';
 import { DbModule } from './db/db.module';
+import { ApiModule } from './api/api.module';
 import { CountriesModule } from './countries/countries.module';
 import { SportsModule } from './sports/sports.module';
 import { CitiesModule } from './cities/cities.module';
@@ -32,6 +33,7 @@ import { APP_GUARD } from '@nestjs/core';
       limit: 20,
     }]),
     DbModule, 
+    ApiModule,
     CountriesModule, 
     SportsModule,
     CitiesModule,
