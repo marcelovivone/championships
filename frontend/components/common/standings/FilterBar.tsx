@@ -22,8 +22,11 @@ export default function FilterBar({
     compact = false,
 }: any) {
     const dateInputRef = React.useRef<HTMLInputElement | null>(null);
+    const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
     const [seasonGroups, setSeasonGroups] = React.useState<any[]>([]);
     const [seasonHasGroups, setSeasonHasGroups] = React.useState<boolean>(false);
+    const roundsCacheRef = React.useRef<Record<string, any[]>>({});
+    const roundsFetchedAtRef = React.useRef<Record<string, number>>({});
     const selectedLeague = Array.isArray(leagues) ? leagues.find((l: any) => String(l.id) === String(league)) : null;
     const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule || selectedLeague.scheduleType || selectedLeague.type || selectedLeague.type_of_schedule_code);
     const scheduleStr = rawSchedule !== undefined && rawSchedule !== null ? String(rawSchedule).toLowerCase() : '';
@@ -43,6 +46,31 @@ export default function FilterBar({
         if (!l) return undefined;
         return Number(l.number_of_rounds_matches ?? l.numberOfRoundsMatches ?? l.numberOfRounds ?? l.number_of_rounds ?? l.numberOfRoundsMatches ?? 0) || undefined;
     };
+    const commitRoundInput = (rawValue?: string) => {
+        const v = (rawValue ?? inputRoundValue).trim();
+        const min = 1;
+        const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
+
+        if (v === '') {
+            return;
+        }
+
+        const parsed = Number(v);
+        if (isNaN(parsed)) {
+            return;
+        }
+
+        const clamped = Math.max(min, Math.min(max, Math.trunc(parsed)));
+        setRoundOrDay(clamped);
+        setInputRoundValue(String(clamped));
+    };
+
+    React.useEffect(() => {
+        if (!scheduleIsDate) {
+            setInputRoundValue(String(roundOrDay ?? ''));
+        }
+    }, [roundOrDay, scheduleIsDate]);
+
     // Top row: League / Season / Round controls
     const TopRow = () => (
         <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 bg-white p-1 rounded-lg">
@@ -116,29 +144,36 @@ export default function FilterBar({
                                 const min = 1;
                                 const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
                                 const next = Math.max(min, cur - 1);
-                                setRoundOrDay(next > max ? max : next);
+                                const clamped = next > max ? max : next;
+                                setRoundOrDay(clamped);
+                                setInputRoundValue(String(clamped));
                             }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">◀</button>
                             <input
                                 type="number"
                                 min={1}
                                 max={getLeagueMaxRounds(selectedLeague) || undefined}
-                                className="w-14 text-center px-2 py-2 bg-gray-50 border-0 focus:outline-none"
-                                value={roundOrDay}
+                                className="no-spinner w-14 text-center px-2 py-2 bg-gray-50 border-0 focus:outline-none"
+                                value={inputRoundValue}
                                 onChange={(e) => {
                                     const v = e.target.value;
-                                    const parsed = Number(v);
-                                    const min = 1;
-                                    const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
                                     if (v === '') {
-                                        // don't allow empty; reset to min
-                                        setRoundOrDay(min);
+                                        setInputRoundValue('');
                                         return;
                                     }
-                                    if (isNaN(parsed)) {
-                                        return;
+
+                                    if (/^\d{1,3}$/.test(v)) {
+                                        setInputRoundValue(v);
                                     }
-                                    const clamped = Math.max(min, Math.min(max, Math.trunc(parsed)));
-                                    setRoundOrDay(clamped);
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        commitRoundInput(e.currentTarget.value);
+                                    }
+
+                                    if (e.key === 'Tab') {
+                                        commitRoundInput(e.currentTarget.value);
+                                    }
                                 }}
                             />
                             <button onClick={() => {
@@ -146,7 +181,9 @@ export default function FilterBar({
                                 const min = 1;
                                 const max = getLeagueMaxRounds(selectedLeague) ?? Infinity;
                                 const next = Math.min(max, cur + 1);
-                                setRoundOrDay(next < min ? min : next);
+                                const clamped = next < min ? min : next;
+                                setRoundOrDay(clamped);
+                                setInputRoundValue(String(clamped));
                             }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">▶</button>
                         </div>
                     )}
@@ -156,52 +193,69 @@ export default function FilterBar({
     );
 
     // Bottom row: ViewType + Group (supports inline compact mode)
-    const BottomRow = ({ inline = false }: { inline?: boolean }) => (
-        <div className={inline ? 'flex items-center gap-3 w-full pr-6' : 'flex flex-col sm:flex-row sm:items-center sm:justify-start sm:gap-4'}>
-            {inline ? (
-                <>
-                    {seasonHasGroups && (
-                        <div className="flex items-center gap-2 text-sm ml-4">
-                            <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-0.5 border rounded text-sm">
-                                <option value="all">All groups</option>
-                                {seasonGroups.map((g: any) => (
-                                    <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
-                                ))}
-                            </select>
+    const BottomRow = ({ inline = false }: { inline?: boolean }) => {
+        const btnRefs = React.useRef<(HTMLButtonElement | null)[]>([null, null, null]);
+        const [btnMinWidth, setBtnMinWidth] = React.useState<number | null>(null);
+
+        React.useLayoutEffect(() => {
+            const nodes = btnRefs.current.filter(Boolean) as HTMLButtonElement[];
+            if (!nodes.length) return;
+            const widths = nodes.map((n) => Math.ceil(n.getBoundingClientRect().width));
+            const max = Math.max(...widths);
+            if (max && max !== btnMinWidth) setBtnMinWidth(max);
+        }, [viewType, inline, seasonGroups.length, seasonHasGroups]);
+
+        const btnStyle = btnMinWidth ? { minWidth: `${btnMinWidth}px` } : undefined;
+
+        const Buttons = () => (
+            <div className="flex items-center gap-2">
+                <button ref={(el) => { btnRefs.current[0] = el; }} style={btnStyle} className={`px-3 py-1 rounded ${viewType === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('all')}>All</button>
+                <button ref={(el) => { btnRefs.current[1] = el; }} style={btnStyle} className={`px-3 py-1 rounded ${viewType === 'home' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('home')}>Home</button>
+                <button ref={(el) => { btnRefs.current[2] = el; }} style={btnStyle} className={`px-3 py-1 rounded ${viewType === 'away' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('away')}>Away</button>
+            </div>
+        );
+
+        return (
+            <div className={inline ? 'flex items-center gap-3 w-full pr-6' : 'flex flex-col sm:flex-row sm:items-center sm:justify-start sm:gap-4'}>
+                {inline ? (
+                    <>
+                        {seasonHasGroups && (
+                            <div className="flex items-center gap-2 text-sm ml-4">
+                                <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-0.5 border rounded text-sm">
+                                    <option value="all">All groups</option>
+                                    {seasonGroups.map((g: any) => (
+                                        <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+
+                        <div className="flex-1" />
+
+                        <div className="flex items-center gap-2 text-sm">
+                            <Buttons />
                         </div>
-                    )}
+                    </>
+                ) : (
+                    <>
+                        <Buttons />
 
-                    <div className="flex-1" />
+                        {seasonHasGroups && (
+                            <div className="flex items-center gap-2 mt-2 sm:mt-0">
+                                <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-1 border rounded">
+                                    <option value="all">All groups</option>
+                                    {seasonGroups.map((g: any) => (
+                                        <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                    </>
+                )}
 
-                    <div className="flex items-center gap-2 text-sm">
-                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('all')}>All</button>
-                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'home' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('home')}>Home</button>
-                        <button className={`px-2 py-0.5 text-sm rounded ${viewType === 'away' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('away')}>Away</button>
-                    </div>
-                </>
-            ) : (
-                <>
-                    <div className="flex items-center gap-2">
-                        <button className={`px-3 py-1 rounded ${viewType === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('all')}>All</button>
-                        <button className={`px-3 py-1 rounded ${viewType === 'home' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('home')}>Home</button>
-                        <button className={`px-3 py-1 rounded ${viewType === 'away' ? 'bg-blue-600 text-white' : 'bg-gray-100'}`} onClick={() => setViewType('away')}>Away</button>
-                    </div>
-
-                    {seasonHasGroups && (
-                        <div className="flex items-center gap-2 mt-2 sm:mt-0">
-                            <select value={group} onChange={(e) => setGroup(e.target.value)} className="ml-2 px-2 py-1 border rounded">
-                                <option value="all">All groups</option>
-                                {seasonGroups.map((g: any) => (
-                                    <option key={g.id} value={String(g.id)}>{g.name ?? g.originalName ?? g.code ?? `Group ${g.id}`}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-                </>
-            )}
-
-        </div>
-    );
+            </div>
+        );
+    };
 
     // When league changes, initialize roundOrDay depending on schedule type
     React.useEffect(() => {
@@ -223,8 +277,31 @@ export default function FilterBar({
 
             // For round-based leagues, fetch rounds for the league and pick the one marked as current
             try {
-                const resp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}`);
+                const cacheKey = `${String(league)}_${String(season)}`;
+                const cached = roundsCacheRef.current[cacheKey];
+                if (cached && Array.isArray(cached) && cached.length > 0) {
+                    const current = cached.find((r: any) => r.flgCurrent || r.flg_current || r.isCurrent || r.flg_current === true || r.flgCurrent === true);
+                    if (current && mounted) {
+                        const roundVal = String(current.roundNumber ?? current.round ?? current.id ?? 1);
+                        setRoundOrDay(roundVal);
+                    } else if (cached && cached.length > 0 && mounted) {
+                        const first = cached[0];
+                        const roundVal = String(first.roundNumber ?? first.round ?? first.id ?? 1);
+                        setRoundOrDay(roundVal);
+                    }
+                    return;
+                }
+
+                // prevent refetching too often during rapid re-renders: short TTL of 5s
+                const last = roundsFetchedAtRef.current[cacheKey];
+                if (last && (Date.now() - last) < 5000) {
+                    return;
+                }
+
+                const resp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`);
                 const rounds = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+                roundsCacheRef.current[cacheKey] = rounds;
+                roundsFetchedAtRef.current[cacheKey] = Date.now();
                 const current = rounds.find((r: any) => r.flgCurrent || r.flg_current || r.isCurrent || r.flg_current === true || r.flgCurrent === true);
                 if (current && mounted) {
                     // display the user-facing round number (roundNumber)
@@ -297,7 +374,7 @@ export default function FilterBar({
 
     return (
         <div className="bg-white rounded p-4 flex flex-col gap-3">
-            {showTop && <TopRow />}
+            {showTop && TopRow()}
             {showBottom && <BottomRow />}
         </div>
     );

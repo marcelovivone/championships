@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useLayoutEffect } from 'react';
 import DataTable from '@/components/ui/data-table';
 import { Table as TableIcon, Database, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -40,6 +40,58 @@ export default function EtlPage() {
     const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
     const searchParams = useSearchParams();
+    const exportJsonRef = useRef<HTMLButtonElement | null>(null);
+    const resetBtnRef = useRef<HTMLButtonElement | null>(null);
+    const [minBtnWidth, setMinBtnWidth] = useState<number | null>(() => {
+        try {
+            if (typeof window === 'undefined') return 100;
+            const raw = Number(localStorage.getItem('etl_min_btn_width') || 0);
+            const stored = Math.max(raw || 0, 100);
+            try { localStorage.setItem('etl_min_btn_width', String(stored)); } catch (e) {}
+            return stored;
+        } catch {
+            return 100;
+        }
+    });
+
+    useLayoutEffect(() => {
+        const measure = () => {
+            try {
+                // Prefer the Export button (typically wider) when measuring initial width
+                const el = exportJsonRef.current ?? resetBtnRef.current;
+                const width = el?.offsetWidth ?? exportJsonRef.current?.offsetWidth ?? 0;
+                // Determine candidate width (measured or fallback)
+                const candidateMeasured = (width && width > 0) ? width : 0;
+                const candidateFallback = exportJsonRef.current?.offsetWidth || 100;
+                const candidate = candidateMeasured || candidateFallback;
+                // Read stored value and enforce a 100px baseline so we don't shrink below it
+                let storedRaw = 0;
+                try { storedRaw = Number(localStorage.getItem('etl_min_btn_width') || 0); } catch (e) { storedRaw = 0; }
+                const baseline = Math.max(storedRaw || 0, 100);
+                const tag = el?.tagName ?? 'unknown';
+                const snippet = String(el?.textContent ?? '').trim().slice(0, 30);
+                if (candidate >= baseline) {
+                    setMinBtnWidth(candidate);
+                    try { localStorage.setItem('etl_min_btn_width', String(candidate)); } catch (e) {}
+                }
+            } catch (err) {
+                console.error('[ETL] measure failed', err);
+            }
+        };
+        // measure synchronously before paint and again after paint (rAF) to catch refs
+        measure();
+        let rafId: number | null = null;
+        try {
+            rafId = window.requestAnimationFrame(() => measure());
+        } catch (e) {
+            rafId = null;
+        }
+        window.addEventListener('resize', measure);
+        return () => {
+            window.removeEventListener('resize', measure);
+            if (rafId) window.cancelAnimationFrame(rafId);
+        };
+    }, [selected, parsedRowsData]);
 
     useEffect(() => {
         setLoadingRows(true);
@@ -49,6 +101,19 @@ export default function EtlPage() {
             .catch((e) => console.error(e))
             .finally(() => setLoadingRows(false));
     }, []);
+
+    const reloadRows = async () => {
+        setLoadingRows(true);
+        try {
+            const r = await fetch(`${API_BASE}/v1/api/transitional`);
+            const j = await r.json();
+            setRows(j.items || j.data?.items || []);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoadingRows(false);
+        }
+    };
 
     useEffect(() => {
         const id = searchParams?.get?.('rowId');
@@ -106,29 +171,64 @@ export default function EtlPage() {
     };
 
     const handleToDbTables = async (id: number) => {
-        if (!confirm('Run the process to apply the first parsed row into application tables?')) return;
+        // Fetch the transitional row to check status before processing
+        let transitionalRow: any = null;
+        try {
+            const checkResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
+            const checkJson = await checkResp.json().catch(() => ({}));
+            transitionalRow = checkJson.item || checkJson.data?.item || checkJson;
+        } catch (e) {
+            console.error('Failed to fetch transitional row for status check', e);
+        }
+        const alreadyProcessed = transitionalRow?.status === true || transitionalRow?.status === 't';
+        const verb = dryRun ? 'run a dry-run of' : 'run the process to apply the first parsed row into application tables';
+        if (alreadyProcessed && !dryRun) {
+            alert('This row was already processed (status = True).');
+            return;
+        }
+        if (!confirm(`Confirm: ${verb}?`)) return;
         setRunningLoad(true);
         setLoadResult(null);
         try {
-            const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-first-row`, {
+            // Use apply-all-rows for both dry runs and real runs (backend will honor dryRun flag)
+            const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-all-rows`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
+                body: JSON.stringify({ sportId: 36, dryRun: !!dryRun }),
             });
             const j = await resp.json();
             const payload = j?.data ?? j;
             setLoadResult(payload ?? payload?.result ?? j);
-            if (!resp.ok) {
-                alert(`Apply failed: ${payload?.error || resp.statusText}`);
-            } else {
-                alert('Apply completed — see Last Operation Result for details.');
-                // Optionally refresh list or selection
-                setRows((s) => s.map((r) => (r.id === id ? { ...r } : r)));
+                if (!resp.ok) alert(`${dryRun ? 'Dry run' : 'Apply'} failed: ${payload?.error || resp.statusText}`);
+            else {
+                alert(`${dryRun ? 'Dry run' : 'Apply'} completed — see Last Operation Result for details.`);
+                // If this was a real run, persist status=true on the server and update UI
+                if (!dryRun) {
+                    try {
+                        const persistResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: true }),
+                        });
+                        if (!persistResp.ok) {
+                            const errBody = await persistResp.json().catch(() => ({}));
+                            console.warn('[ETL] failed to persist status update', errBody || persistResp.statusText);
+                        }
+                    } catch (e) {
+                        console.warn('[ETL] status persist failed', e);
+                    }
+
+                    // Update local UI optimistically and then refresh from server
+                    setRows((s) => s.map((r) => (r.id === id ? { ...r, status: true } : r)));
+                    setSelected((s: any) => (s && s.id === id ? { ...s, status: true } : s));
+                    await reloadRows();
+                    loadRow(id);
+                }
             }
         } catch (e) {
             console.error(e);
             setLoadResult({ error: String(e) });
-            alert(`Apply failed: ${String(e)}`);
+            alert(`Operation failed: ${String(e)}`);
         } finally {
             setRunningLoad(false);
         }
@@ -170,25 +270,18 @@ export default function EtlPage() {
     const handleExport = () => {
         if (!selected) return;
         const row = selected;
-        // Prefer server-parsed rows when available
-        if (parsedRowsData && parsedRowsData.length) {
-            const csv = toCSV(parsedRowsData as any[]);
-            downloadFile(`api_transitional_${row.id}_parsed.csv`, csv);
-            return;
+        // Always export JSON. Prefer server-parsed rows when available.
+        let payloadToExport: any = null;
+        if (parsedRowsData && parsedRowsData.length) payloadToExport = parsedRowsData;
+        else {
+            const payload = row.payload || row;
+            let arr: any[] | null = null;
+            if (Array.isArray(payload)) arr = payload as any[];
+            else if (payload?.response && Array.isArray(payload.response)) arr = payload.response;
+            else if (payload?.data && Array.isArray(payload.data)) arr = payload.data;
+            payloadToExport = arr ?? payload;
         }
-
-        const payload = row.payload || row;
-        let arr: any[] | null = null;
-        if (Array.isArray(payload)) arr = payload as any[];
-        else if (payload?.response && Array.isArray(payload.response)) arr = payload.response;
-        else if (payload?.data && Array.isArray(payload.data)) arr = payload.data;
-
-        if (arr) {
-            const csv = toCSV(arr);
-            downloadFile(`api_transitional_${row.id}.csv`, csv);
-        } else {
-            downloadFile(`api_transitional_${row.id}.json`, JSON.stringify(row.payload || row, null, 2));
-        }
+        downloadFile(`api_transitional_${row.id}.json`, JSON.stringify(payloadToExport ?? (row.payload || row), null, 2));
     };
 
     const runLoad = async (doDryRun: boolean) => {
@@ -375,26 +468,32 @@ export default function EtlPage() {
     };
 
     return (
-        <div className="p-6">
-            <h1 className="text-2xl font-bold mb-4">ETL - FOOTBALL</h1>
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold">ETL - Football</h1>
+            </div>
 
             <section className="mb-6">
-                <h2 className="text-lg font-semibold mb-2">Available API Loads</h2>
+                <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-lg font-semibold">Available API Loads</h2>
+                    <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
+                </div>
                 <DataTable
                     columns={[
                         { header: 'ID', accessor: 'id' },
                         { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px' },
                         { header: 'Season', accessor: 'season' },
                         { header: 'Source', accessor: (r: any) => <div className="truncate max-w-xs">{r.source_url ?? '-'}</div> },
-                        { header: 'Fetched At', accessor: (r: any) => r.fetched_at },
+                        { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at) },
+                        { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded') },
                         {
                             header: 'Actions',
                             accessor: (r: any) => (
                                 <div className="flex items-center gap-3 justify-end">
-                                    <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="To Frontend Table">
+                                    <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="Table/Json View">
                                         <TableIcon size={18} />
                                     </button>
-                                    <button onClick={() => handleToDbTables(r.id)} className="text-green-600 hover:text-green-900" title="To DB Tables">
+                                    <button onClick={() => handleToDbTables(r.id)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
                                         <Database size={18} />
                                     </button>
                                     <button onClick={() => handleDeleteRow(r.id)} className="text-red-600 hover:text-red-900" title="Delete">
@@ -413,28 +512,50 @@ export default function EtlPage() {
             {/* Operation result feedback */}
             {loadResult && (
                 <div className="mb-6">
-                    <h3 className="font-medium mb-2">Last Operation Result</h3>
-                    <pre className="bg-gray-50 border p-3 rounded text-sm max-h-40 overflow-auto">{JSON.stringify(loadResult, null, 2)}</pre>
+                            <h3 className="font-medium mb-2">Last Operation Result</h3>
+                            <pre className="bg-gray-50 border p-3 rounded text-sm max-h-40 overflow-auto">{JSON.stringify(loadResult?.data ?? loadResult ?? loadResult, null, 2)}</pre>
+                    
                 </div>
             )}
 
             <section>
-                <h2 className="text-lg font-semibold mb-2">Processing Result</h2>
+                <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-lg font-semibold">Result</h2>
+                    <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
+                </div>
                 {loadingRow && <div>Loading selected row...</div>}
                 {!selected && !loadingRow && <div>Select an API load above to preview its payload and export.</div>}
                 {selected && (
                     <div>
                         <div className="mb-4">
-                            <strong>ID:</strong> {selected.id} &nbsp; <strong>Fetched:</strong> {selected.fetched_at}
+                            <strong>ID:</strong> {selected.id} &nbsp; <strong>Fetched:</strong> {formatDateTimeMinute(selected.fetched_at)}
                         </div>
                         <div className="mb-4">
-                            <button onClick={handleExport} className="px-4 py-2 bg-blue-600 text-white rounded">Export CSV/JSON</button>
-                            <div className="inline-block ml-3 align-middle">
-                                <label className="text-sm mr-2">View:</label>
-                                <button onClick={() => setViewMode('table')} className={`px-2 py-1 mr-1 rounded text-sm ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>Table</button>
-                                <button onClick={() => setViewMode('json')} className={`px-2 py-1 rounded text-sm ${viewMode === 'json' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>JSON</button>
-                                <button onClick={() => selected && handleToDbTables(selected.id)} className="px-2 py-1 ml-3 bg-green-600 text-white rounded text-sm">To DB Tables</button>
-                                <button onClick={handleClearResults} className="px-2 py-1 ml-2 bg-gray-300 text-gray-800 rounded text-sm">Clear / Hide</button>
+                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 w-full">
+                                {/* Left: To DB + Dry run + Clear */}
+                                <div className="flex items-center gap-2 order-1 md:order-1">
+                                    <button disabled={runningLoad} onClick={() => selected && handleToDbTables(selected.id)} className={`px-3 py-2 rounded text-sm ${runningLoad ? 'bg-gray-400 text-gray-800' : 'bg-green-600 text-white'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>
+                                        {runningLoad ? 'Running...' : (dryRun ? 'Transform & Load (Dry run)' : 'Transform & Load')}
+                                    </button>
+                                    <label className="inline-flex items-center text-sm ml-1">
+                                        <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mr-2" />
+                                        Dry run
+                                    </label>
+                                </div>
+
+                                {/* Center: view toggles */}
+                                <div className="flex items-center gap-2 order-3 md:order-2 justify-center">
+                                    <div className="flex items-center bg-gray-100 rounded space-x-2 p-2">
+                                        <button onClick={() => setViewMode('table')} className={`px-3 py-2 rounded text-sm ${viewMode === 'table' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Table</button>
+                                        <button onClick={() => setViewMode('json')} className={`px-3 py-2 rounded text-sm ${viewMode === 'json' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>JSON</button>
+                                    </div>
+                                </div>
+
+                                {/* Right: Export buttons */}
+                                <div className="flex items-center gap-2 order-2 md:order-3 justify-end">
+                                    <button ref={exportJsonRef} onClick={handleExport} className="px-3 py-2 bg-blue-600 text-white rounded text-sm">Export JSON</button>
+                                    <button onClick={() => downloadFile(`api_transitional_${selected.id}_preview.csv`, toCSV(parsedRowsData || []))} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Export CSV</button>
+                                </div>
                             </div>
                         </div>
                         {/* <div className="mb-4 p-3 border rounded bg-gray-50">
@@ -577,4 +698,16 @@ export default function EtlPage() {
             </section>
         </div>
     );
+}
+
+function formatDateTimeMinute(input?: string | null) {
+    if (!input) return '-';
+    const d = new Date(String(input));
+    if (Number.isNaN(d.getTime())) return String(input);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }

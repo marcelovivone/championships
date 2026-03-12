@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { StandingsCalculatorService } from '../standings/standings-calculator.service';
 import { Pool } from 'pg';
+import { matches } from 'class-validator/types/decorator/string/Matches';
+import { eq } from 'drizzle-orm/sql/expressions/conditions';
 
 @Injectable()
 export class ApiService {
@@ -9,6 +12,8 @@ export class ApiService {
   async importData(payload: any) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    // declare insertCols in function scope so catch blocks can reference it for diagnostics
+    let insertCols: string[] = [];
     try {
       await pool.query(`
         CREATE TABLE IF NOT EXISTS api_transitional (
@@ -18,6 +23,7 @@ export class ApiService {
           sport INTEGER,
           source_url TEXT,
           payload JSONB,
+          status BOOLEAN DEFAULT false,
           fetched_at TIMESTAMPTZ DEFAULT now()
         );
       `);
@@ -114,14 +120,14 @@ export class ApiService {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
-      const apiKey = process.env.API_FOOTBALL_KEY || process.env.APISPORTS_KEY;
+      const apiKey = process.env.APISPORTS_KEY;
       if (!apiKey) throw new Error('Missing API key: set API_FOOTBALL_KEY or APISPORTS_KEY');
 
       const url = new URL('https://v3.football.api-sports.io/fixtures');
       if (season) url.searchParams.set('season', String(season));
       if (league) url.searchParams.set('league', String(league));
-
       this.logger.log(`Fetching external API: ${url.toString()}`);
+
       const resp = await fetch(url.toString(), { headers: { 'x-apisports-key': apiKey } });
       if (!resp.ok) {
         const txt = await resp.text();
@@ -137,6 +143,7 @@ export class ApiService {
           sport INTEGER,
           source_url TEXT,
           payload JSONB,
+          status BOOLEAN DEFAULT false,
           fetched_at TIMESTAMPTZ DEFAULT now()
         );
       `);
@@ -158,7 +165,7 @@ export class ApiService {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       const res = await pool.query(
-        `SELECT id, league, season, sport, source_url, fetched_at FROM api_transitional ORDER BY fetched_at DESC LIMIT $1`,
+        `SELECT id, league, season, sport, source_url, status, fetched_at FROM api_transitional ORDER BY fetched_at DESC LIMIT $1`,
         [limit],
       );
       return res.rows;
@@ -174,6 +181,21 @@ export class ApiService {
     try {
       const res = await pool.query(`SELECT * FROM api_transitional WHERE id = $1 LIMIT 1`, [id]);
       return res.rows[0] || null;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  // Delete a transitional row by id
+  async deleteTransitional(id: number) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      const res = await pool.query(`DELETE FROM api_transitional WHERE id = $1 RETURNING id`, [id]);
+      if (res.rows && res.rows.length) {
+        return { deleted: true, id: res.rows[0].id };
+      }
+      return { deleted: false };
     } finally {
       await pool.end();
     }
@@ -272,14 +294,34 @@ export class ApiService {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
+    // wrap client.query to capture last SQL and params for better diagnostics when debugging
+    const origQuery = client.query.bind(client);
+    let lastSql: string | null = null;
+    let lastParams: any[] | null = null;
+    // declare insertCols in function scope so catch blocks can reference it for diagnostics
+    let insertCols: string[] = [];
+    client.query = (async (sql: any, params?: any[]) => {
+      lastSql = typeof sql === 'string' ? sql : JSON.stringify(sql);
+      lastParams = params ?? null;
+      return origQuery(sql, params);
+    }) as any;
     try {
-      // Ensure audit table exists
+      // Ensure audit and import log tables exist
       await client.query(`
         CREATE TABLE IF NOT EXISTS api_transitional_audit (
           id SERIAL PRIMARY KEY,
           transitional_id INTEGER,
           action TEXT,
           payload JSONB,
+          created_at TIMESTAMPTZ DEFAULT now()
+        );
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS api_import_log (
+          id SERIAL PRIMARY KEY,
+          transitional_id INTEGER,
+          message TEXT,
+          details JSONB,
           created_at TIMESTAMPTZ DEFAULT now()
         );
       `);
@@ -306,7 +348,6 @@ export class ApiService {
       const targetCols = colRes.rows.map((r) => r.column_name);
 
       // Determine insertable columns
-      let insertCols: string[] = [];
       let mapping: Record<string, string> | undefined = options.mapping;
       if (mapping && Object.keys(mapping).length) {
         // mapping: targetColumn -> sourceColumn
@@ -318,7 +359,7 @@ export class ApiService {
         if (!insertCols.length) return { applied: 0, reason: 'no_matching_columns' };
       }
 
-      // Begin transaction
+      // Begin transaction (make full load atomic)
       await client.query('BEGIN');
       let applied = 0;
       for (const r of rows) {
@@ -336,11 +377,59 @@ export class ApiService {
           }
           applied += 1;
         } catch (e) {
-          // On insert error, record and continue to allow auditing of failures
+          // On any insert error: capture failing SQL/params, rollback transaction and record a single import log entry
+          const snapshotSql = lastSql;
+          const snapshotParams = lastParams;
+          try {
+            await client.query('ROLLBACK');
+          } catch (_) {}
+          const includeDebug = process.env.DEBUG_ETL === 'true' || process.env.NODE_ENV !== 'production';
+          const details: any = { error: String(e), failedRow: r };
+          // Always try to detect which parameter/column caused the failure; fall back to scanning the parsed row
+          try {
+            if (snapshotParams && Array.isArray(snapshotParams)) {
+              // detect explicit NaN or JS NaN values
+              for (let i = 0; i < snapshotParams.length; i++) {
+                const val = snapshotParams[i];
+                if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val))) {
+                  details.failing = { index: i + 1, column: insertCols?.[i] ?? null, value: val };
+                  break;
+                }
+                const colName = insertCols?.[i] ?? '';
+                const numericHint = /\b(id|score|goals|minute|seconds|number|round|home|away|points|played|wins|losses|draws)\b/i.test(colName);
+                if (numericHint && val !== null && val !== undefined && !/^[-]?\d+$/.test(String(val))) {
+                  details.failing = { index: i + 1, column: colName || null, value: val };
+                  break;
+                }
+              }
+            }
+            // If we didn't find the failing param via snapshotParams, inspect the row fields for NaN-like values
+            if (!details.failing && (String(e).toLowerCase().includes('invalid input syntax for type integer') || String(e).includes('NaN'))) {
+              const offending: Array<any> = [];
+              for (const k of Object.keys(r || {})) {
+                const v = r[k];
+                if (v === 'NaN' || (typeof v === 'number' && Number.isNaN(v)) || (v !== null && v !== undefined && v !== '' && Number.isNaN(Number(v)))) {
+                  const guessedColumn = insertCols?.includes(k) ? k : k.replace(/\./g, '_');
+                  offending.push({ key: k, value: v, guessedColumn });
+                }
+              }
+                if (offending.length) details.offendingFields = offending;
+            }
+          } catch (_) {}
+          if (includeDebug) {
+            details.lastSql = snapshotSql;
+            details.lastParams = snapshotParams;
+            try {
+              if (snapshotParams && Array.isArray(snapshotParams) && insertCols && insertCols.length) {
+                details.paramColumnMap = Object.fromEntries(insertCols.map((col, idx) => [col, snapshotParams[idx]]));
+              }
+            } catch (_) {}
+          }
           await client.query(
-            `INSERT INTO api_transitional_audit (transitional_id, action, payload) VALUES ($1,$2,$3)`,
-            [id, 'insert_error', { error: String(e), row: r }],
+            `INSERT INTO api_import_log (transitional_id, message, details) VALUES ($1,$2,$3) RETURNING id`,
+            [id, 'apply_transitional_error', details],
           );
+          return { applied: 0, error: String(e), rolledBack: true, details: includeDebug ? details : undefined };
         }
       }
 
@@ -357,13 +446,35 @@ export class ApiService {
         await client.query('COMMIT');
       }
 
+      // If this was a real run (not a dry run), mark the transitional row as processed
+      if (!options.dryRun) {
+        try {
+          await client.query(`UPDATE api_transitional SET status = true WHERE id = $1`, [id]);
+        } catch (e) {
+          this.logger.error('Failed to update api_transitional status', e as any);
+        }
+      }
+
       return { applied, dryRun: !!options.dryRun };
     } catch (e) {
+      const snapshotSql = lastSql;
+      const snapshotParams = lastParams;
       try {
         await client.query('ROLLBACK');
       } catch (_) {}
       this.logger.error('applyTransitional error', e as any);
-      return { applied: 0, error: String(e) };
+      const includeDebug = process.env.DEBUG_ETL === 'true' || process.env.NODE_ENV !== 'production';
+      const details: any = { error: String(e) };
+      if (includeDebug) {
+        details.lastSql = snapshotSql;
+        details.lastParams = snapshotParams;
+        try {
+          if (snapshotParams && Array.isArray(snapshotParams) && insertCols && insertCols.length) {
+            details.paramColumnMap = Object.fromEntries(insertCols.map((col, idx) => [col, snapshotParams[idx]]));
+          }
+        } catch (_) {}
+      }
+      return { applied: 0, error: String(e), details: includeDebug ? details : undefined };
     } finally {
       client.release();
       await pool.end();
@@ -383,6 +494,79 @@ export class ApiService {
     } finally {
       await pool.end();
     }
+  }
+
+  // Create match_divisions rows for a given match using sport defaults (e.g., football = sportId 36)
+  // client: an active pg client within a transaction
+  // matchRow: parsed row data with keys like 'score.halftime.home', 'score.halftime.away', 'goals.home', 'goals.away'
+  async createMatchDivisions(
+    client: any,
+    sportId: number,
+    matchId: number,
+    matchRow: Record<string, any>,
+  ) {
+    // Read sport defaults
+    const sp = await client.query(
+      `SELECT min_match_divisions_number AS min_divisions, max_match_divisions_number AS max_divisions, has_overtime, has_penalties FROM sports WHERE id = $1 LIMIT 1`,
+      [sportId],
+    );
+    let maxDivisions = 2;
+    let hasOvertime = false;
+    let hasPenalties = false;
+    if (sp.rows && sp.rows.length) {
+      const r = sp.rows[0];
+      if (r.max_divisions !== undefined && r.max_divisions !== null) maxDivisions = Number(r.max_divisions) || maxDivisions;
+      hasOvertime = !!r.has_overtime;
+      hasPenalties = !!r.has_penalties;
+    }
+
+    // Parse numeric scores (tolerate nulls) and guard against NaN
+    const hfHomeRaw = matchRow['score.halftime.home'];
+    const hfAwayRaw = matchRow['score.halftime.away'];
+    const gHomeRaw = matchRow['goals.home'];
+    const gAwayRaw = matchRow['goals.away'];
+    const hfHome = hfHomeRaw != null ? Number(hfHomeRaw) : null;
+    const hfAway = hfAwayRaw != null ? Number(hfAwayRaw) : null;
+    const gHome = gHomeRaw != null ? Number(gHomeRaw) : null;
+    const gAway = gAwayRaw != null ? Number(gAwayRaw) : null;
+
+    // For football typical behavior: 2 divisions (first half, second half)
+    // Insert divisions 1..maxDivisions using halftime and fulltime deltas where possible
+    for (let div = 1; div <= maxDivisions; div++) {
+      let homeScore: number | null = null;
+      let awayScore: number | null = null;
+      let divisionType = 'REGULAR';
+
+      if (div === 1) {
+        homeScore = hfHome != null ? hfHome : (gHome != null ? gHome : 0);
+        awayScore = hfAway != null ? hfAway : (gAway != null ? gAway : 0);
+      } else if (div === 2) {
+        // second period = fulltime - halftime when available
+        if (gHome != null && hfHome != null) homeScore = gHome - hfHome;
+        else if (gHome != null) homeScore = gHome;
+        else homeScore = 0;
+
+        if (gAway != null && hfAway != null) awayScore = gAway - hfAway;
+        else if (gAway != null) awayScore = gAway;
+        else awayScore = 0;
+      } else {
+        // For further divisions, distribute remaining goals as 0 (no detailed info)
+        homeScore = 0;
+        awayScore = 0;
+      }
+
+      // Ensure integers and guard against NaN by coercing non-finite values to 0
+      homeScore = homeScore == null || !Number.isFinite(Number(homeScore)) ? 0 : Math.max(0, Math.trunc(Number(homeScore)));
+      awayScore = awayScore == null || !Number.isFinite(Number(awayScore)) ? 0 : Math.max(0, Math.trunc(Number(awayScore)));
+
+      await client.query(
+        `INSERT INTO match_divisions (match_id, division_number, division_type, home_score, away_score) VALUES ($1,$2,$3,$4,$5)`,
+        [matchId, div, divisionType, homeScore, awayScore],
+      );
+    }
+
+    // If sport indicates overtime/penalties, caller may insert extra rows accordingly (not implemented here)
+    return { created: maxDivisions };
   }
 
   // Apply first-row processing: upsert country, league, season based on parsed first row
@@ -436,17 +620,43 @@ export class ApiService {
 
       await client.query('BEGIN');
 
-      // Upsert country: try to find by name (case-insensitive)
+      // Upsert country: enhanced matching and alias support
       let countryId: number | null = null;
       if (leagueCountry) {
-        const cRes = await client.query(`SELECT id FROM countries WHERE lower(name) = lower($1) LIMIT 1`, [leagueCountry]);
+        const nameClean = String(leagueCountry).trim();
+        // Try exact name or code match
+        let cRes = await client.query(
+          `SELECT id FROM countries WHERE lower(name) = lower($1) OR lower(code) = lower($1) LIMIT 1`,
+          [nameClean],
+        );
+        // Try substring match
+        if (!cRes.rows.length) {
+          cRes = await client.query(`SELECT id FROM countries WHERE name ILIKE $1 LIMIT 1`, [`%${nameClean}%`]);
+        }
+        // Try simple alias map
+        if (!cRes.rows.length) {
+          const aliases: Record<string, string> = {
+            'england': 'United Kingdom',
+            'uk': 'United Kingdom',
+            'united kingdom': 'United Kingdom',
+            'usa': 'United States',
+            'u.s.a.': 'United States',
+            'united states of america': 'United States',
+            'united states': 'United States',
+          };
+          const mapped = aliases[nameClean.toLowerCase()];
+          if (mapped) {
+            cRes = await client.query(`SELECT id FROM countries WHERE lower(name) = lower($1) LIMIT 1`, [mapped]);
+          }
+        }
+
         if (cRes.rows.length) {
           countryId = cRes.rows[0].id;
         } else {
-          const code = leagueCountry.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
+          const code = nameClean.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
           const ins = await client.query(
             `INSERT INTO countries (name, code, flag, continent) VALUES ($1,$2,$3,$4) RETURNING id`,
-            [leagueCountry, code, leagueFlag || null, 'Europe'],
+            [nameClean, code, leagueFlag || null, 'Europe'],
           );
           countryId = ins.rows[0].id;
         }
@@ -455,7 +665,7 @@ export class ApiService {
       // Upsert league: try to find by original_name or secondary_name using country and sport if available
       let leagueId: number | null = null;
       if (leagueName) {
-        const sportId = options.sportId ?? null;
+        const sportId = options.sportId ?? 36;
         const q = `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1)` + (countryId ? ' AND country_id = $2' : '') + (sportId ? ' AND sport_id = $3' : '') + ' LIMIT 1';
         const params: any[] = [leagueName];
         if (countryId) params.push(countryId);
@@ -468,7 +678,7 @@ export class ApiService {
           const ins = await client.query(
             `INSERT INTO leagues (sport_id, country_id, image_url, original_name, secondary_name, city_id, number_of_rounds_matches, min_divisions_number, max_divisions_number, division_time, has_ascends, ascends_quantity, has_descends, descends_quantity, has_subleagues, number_of_sub_leagues, flg_default, flg_round_automatic, type_of_schedule) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
             [
-              options.sportId ?? null,
+              sportId,
               countryId,
               leagueFlag || null,
               leagueName,
@@ -496,16 +706,17 @@ export class ApiService {
       // Upsert season: check by sport_id, league_id, start_year
       let seasonId: number | null = null;
       if (leagueSeason && leagueId) {
+        const sportId = options.sportId ?? 36;
         const sRes = await client.query(
           `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`,
-          [options.sportId ?? null, leagueId, leagueSeason],
+          [sportId, leagueId, leagueSeason],
         );
         if (sRes.rows.length) {
           seasonId = sRes.rows[0].id;
         } else {
           const ins = await client.query(
             `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-            [options.sportId ?? null, leagueId, 'Finished', false, 0, leagueSeason, leagueSeason],
+            [sportId, leagueId, 'Finished', false, 0, leagueSeason, leagueSeason],
           );
           seasonId = ins.rows[0].id;
         }
@@ -520,6 +731,495 @@ export class ApiService {
       } catch (_) {}
       this.logger.error('applyFirstRowToApp error', e as any);
       return { applied: false, error: String(e) };
+    } finally {
+      client.release();
+      await pool.end();
+    }
+  }
+
+  // Apply all rows: create rounds, clubs, and matches (atomic)
+  async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean } = {}) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const client = await pool.connect();
+    // wrap client.query to capture last SQL and params for diagnostics when debugging
+    const origQueryAll = client.query.bind(client);
+    let lastSqlAll: string | null = null;
+    let lastParamsAll: any[] | null = null;
+    client.query = (async (sql: any, params?: any[]) => {
+      lastSqlAll = typeof sql === 'string' ? sql : JSON.stringify(sql);
+      lastParamsAll = params ?? null;
+      return origQueryAll(sql, params);
+    }) as any;
+    try {
+      // Ensure import log and audit tables exist
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS api_import_log (
+          id SERIAL PRIMARY KEY,
+          transitional_id INTEGER,
+          message TEXT,
+          details JSONB,
+          created_at TIMESTAMPTZ DEFAULT now()
+        );
+      `);
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS api_transitional_audit (
+          id SERIAL PRIMARY KEY,
+          transitional_id INTEGER,
+          action TEXT,
+          payload JSONB,
+          created_at TIMESTAMPTZ DEFAULT now()
+        );
+      `);
+
+      const parsed = await this.parseTransitional(id);
+      if (!parsed || !parsed.found) return { applied: 0, reason: 'not_found' };
+      const rows = parsed.rows || [];
+      if (!rows.length) return { applied: 0, reason: 'no_rows' };
+
+      // Ensure we have leagueId & seasonId (use applyFirstRowToApp if necessary)
+      let leagueId = options.leagueId ?? null;
+      let seasonId = options.seasonId ?? null;
+      const sportId = options.sportId ?? 36;
+      if (!leagueId || !seasonId) {
+        const firstRowResult = await this.applyFirstRowToApp(id, { sportId });
+        if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
+        leagueId = firstRowResult.leagueId;
+        seasonId = firstRowResult.seasonId;
+      }
+
+      // In-memory caches
+      const clubCache: Record<string, number> = {};
+      const roundCache: Record<number, number> = {};
+      const standingsCalculator = new StandingsCalculatorService();
+
+      await client.query('BEGIN');
+      let applied = 0;
+      let createdClubs = 0;
+      // Track club names that were included in this import (existing or newly created)
+      const clubsIncluded: string[] = [];
+      let createdRounds = 0;
+      let createdDivisions = 0;
+      let createdStandings = 0;
+
+      for (const r of rows) {
+        try {
+          const roundNumber = r['league.round'] ?? r['round'] ?? null;
+          let roundId: number | null = null;
+          let roundNumberInt: number | null = null;
+          if (roundNumber !== null && roundNumber !== undefined) {
+            // Round values may be strings like "Regular Season - 1". Extract 1-3 digit number when present.
+            roundNumberInt = null;
+            if (typeof roundNumber === 'string') {
+              const m = String(roundNumber).match(/(\d{1,3})\b/);
+              roundNumberInt = m ? Number(m[1]) : null;
+            } else {
+              const parsed = Number(roundNumber);
+              roundNumberInt = Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+            }
+            if (roundNumberInt !== null) {
+              if (roundCache[roundNumberInt]) {
+                roundId = roundCache[roundNumberInt];
+              } else {
+                const rr = await client.query(
+                  `SELECT id FROM rounds WHERE league_id = $1 AND season_id = $2 AND round_number = $3 LIMIT 1`,
+                  [leagueId, seasonId, roundNumberInt],
+                );
+                if (rr.rows.length) {
+                  roundId = rr.rows[0].id;
+                  roundCache[roundNumberInt] = roundId;
+                } else {
+                  const ins = await client.query(
+                    `INSERT INTO rounds (league_id, season_id, round_number) VALUES ($1,$2,$3) RETURNING id`,
+                    [leagueId, seasonId, roundNumberInt],
+                  );
+                  roundId = ins.rows[0].id;
+                  roundCache[roundNumberInt] = roundId;
+                  createdRounds += 1;
+                }
+              }
+            }
+          }
+
+          // Helper to find or create club
+          const findOrCreateClub = async (clubNameRaw: any, clubLogo: any) => {
+            if (!clubNameRaw) return null;
+            const clubName = String(clubNameRaw).trim();
+            if (!clubName) return null;
+            if (clubCache[clubName]) return clubCache[clubName];
+
+            // Try exact short_name or name
+            let cres = await client.query(
+              `SELECT id FROM clubs WHERE lower(short_name)=lower($1) OR lower(name)=lower($1) LIMIT 1`,
+              [clubName],
+            );
+            if (!cres.rows.length) {
+              cres = await client.query(`SELECT id FROM clubs WHERE name ILIKE $1 OR short_name ILIKE $1 LIMIT 1`, [`%${clubName}%`]);
+            }
+            if (cres.rows.length) {
+              clubCache[clubName] = cres.rows[0].id;
+              return cres.rows[0].id;
+            }
+
+            // Create club
+            const countryId = (await client.query(`SELECT id FROM countries LIMIT 1`)).rows[0]?.id ?? null;
+            const ins = await client.query(
+              `INSERT INTO clubs (name, short_name, image_url, foundation_year, country_id, city_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+              [clubName, clubName, clubLogo || null, 2000, countryId, null],
+            );
+            const cid = ins.rows[0].id;
+            clubCache[clubName] = cid;
+            createdClubs += 1;
+            // only track clubs that were actually created during this run
+            if (!clubsIncluded.includes(clubName)) clubsIncluded.push(clubName);
+            return cid;
+          };
+
+          const homeName = r['teams.home.name'] ?? r['home_team'] ?? null;
+          const awayName = r['teams.away.name'] ?? r['away_team'] ?? null;
+          const homeLogo = r['teams.home.logo'] ?? null;
+          const awayLogo = r['teams.away.logo'] ?? null;
+
+          const homeClubId = await findOrCreateClub(homeName, homeLogo);
+          const awayClubId = await findOrCreateClub(awayName, awayLogo);
+
+          // Prepare match insert
+          const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
+          const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
+          const statusShort = r['fixture.status.short'] ?? null;
+          const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
+          const homeScore = r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+          const awayScore = r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+
+          // Insert match
+          const matchRes = await client.query(
+            `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+            [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, null, dateVal, status, homeScore, awayScore],
+          );
+          const matchId = matchRes.rows[0].id;
+          // create match_divisions rows according to sport defaults and parsed row data
+          try {
+            const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
+            if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
+          } catch (e) {
+            // if creating divisions fails, treat as fatal for this transaction
+            throw e;
+          }
+
+          // Build standings: fetch previous standings and match_divisions, compute stats, insert two rows
+          try {
+            // fetch latest standings entries for both clubs
+            const latestHomeRes = await client.query(
+              `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
+            //   match_date, sport_id, match_id, group_id, club_id, points, played, wins, draws, losses, goals_for, goals_against, updated_at, league_id, season_id, round_id, overtime_wins, overtime_losses, penalty_wins, penalty_losses, sets_won, sets_lost
+              [homeClubId, leagueId, seasonId],
+            );
+
+            const latestAwayRes = await client.query(
+              `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
+              [awayClubId, leagueId, seasonId],
+            );
+
+            const latestHomeStanding = latestHomeRes.rows[0] ?? null;
+            const latestAwayStanding = latestAwayRes.rows[0] ?? null;
+
+            const mapRowToStanding = (r: any) =>
+              r
+                ? {
+                    points: r.points ?? 0,
+                    played: r.played ?? r.games_played ?? 0,
+                    wins: r.wins ?? 0,
+                    draws: r.draws ?? 0,
+                    losses: r.losses ?? 0,
+                    goalsFor: r.goals_for ?? r.goalsFor ?? 0,
+                    goalsAgainst: r.goals_against ?? r.goalsAgainst ?? 0,
+                    homeGamesPlayed: r.home_games_played ?? r.homeGamesPlayed ?? 0,
+                    awayGamesPlayed: r.away_games_played ?? r.awayGamesPlayed ?? 0,
+                    homePoints: r.home_points ?? r.homePoints ?? 0,
+                    awayPoints: r.away_points ?? r.awayPoints ?? 0,
+                    homeWins: r.home_wins ?? r.homeWins ?? 0,
+                    homeLosses: r.home_losses ?? r.homeLosses ?? 0,
+                    homeDraws: r.home_draws ?? r.homeDraws ?? 0,
+                    homeGoalsFor: r.home_goals_for ?? r.homeGoalsFor ?? 0,
+                    homeGoalsAgainst: r.home_goals_against ?? r.homeGoalsAgainst ?? 0,
+                    awayWins: r.away_wins ?? r.awayWins ?? 0,
+                    awayLosses: r.away_losses ?? r.awayLosses ?? 0,
+                    awayDraws: r.away_draws ?? r.awayDraws ?? 0,
+                    awayGoalsFor: r.away_goals_for ?? r.awayGoalsFor ?? 0,
+                    awayGoalsAgainst: r.away_goals_against ?? r.awayGoalsAgainst ?? 0,
+                    overtimeWins: r.overtime_wins ?? r.overtimeWins ?? 0,
+                    overtimeLosses: r.overtime_losses ?? r.overtimeLosses ?? 0,
+                    penaltyWins: r.penalty_wins ?? r.penaltyWins ?? 0,
+                    penaltyLosses: r.penalty_losses ?? r.penaltyLosses ?? 0,
+                    setsWon: r.sets_won ?? r.setsWon ?? 0,
+                    setsLost: r.sets_lost ?? r.setsLost ?? 0,
+                  }
+                : null;
+
+            const latestHome = mapRowToStanding(latestHomeStanding);
+            const latestAway = mapRowToStanding(latestAwayStanding);
+
+            if (roundNumberInt <= 4) {
+            if (homeClubId === 265) {
+                console.log('Debug homeStats', 'Round ', roundNumberInt, { latestHomeStanding });
+            }
+            if (awayClubId === 265) {
+                console.log('Debug awayStats', 'Round ', roundNumberInt, { latestAwayStanding });
+            }
+            }
+
+            // fetch sport name
+            const spn = await client.query(`SELECT name FROM sports WHERE id = $1 LIMIT 1`, [sportId]);
+            const sportName = spn.rows[0]?.name ?? 'default';
+
+            // fetch match divisions we just created
+            const md = await client.query(
+              `SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`,
+              [matchId],
+            );
+            const matchDivisions = md.rows.map((d: any) => ({ id: d.id, divisionNumber: d.division_number, divisionType: d.division_type, homeScore: d.home_score, awayScore: d.away_score }));
+
+            const matchData = {
+              sportId: sportId,
+              leagueId,
+              seasonId,
+              roundId,
+              matchDate: dateVal,
+              groupId: null,
+              homeClubId,
+              awayClubId,
+              homeScore: homeScore ?? 0,
+              awayScore: awayScore ?? 0,
+              matchId: matchId,
+              matchDivisions,
+            };
+
+            // Use calculator to compute stats
+            const { home: homeStats, away: awayStats } = standingsCalculator.calculate(
+              sportName,
+              matchData,
+              latestHome,
+              latestAway,
+            );
+
+            // Insert home standing (validate param count before executing)
+            {
+              const standingsSql = `INSERT INTO standings (sport_id, league_id, season_id, round_id, match_date, group_id, club_id, match_id, points, played, wins, draws, losses, goals_for, goals_against, sets_won, sets_lost, home_games_played, away_games_played, home_points, away_points, home_wins, home_draws, home_losses, home_goals_for, home_goals_against, away_wins, away_draws, away_losses, away_goals_for, away_goals_against, overtime_wins, overtime_losses, penalty_wins, penalty_losses) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`;
+              let standingsParams: any[] = [
+                sportId,
+                leagueId,
+                seasonId,
+                roundId ?? null,
+                dateVal,
+                null,
+                homeClubId,
+                matchId,
+                homeStats.points,
+                homeStats.played,
+                homeStats.wins,
+                homeStats.draws,
+                homeStats.losses,
+                homeStats.goalsFor,
+                homeStats.goalsAgainst,
+                homeStats.setsWon,
+                homeStats.setsLost,
+                homeStats.homeGamesPlayed,
+                homeStats.awayGamesPlayed,
+                homeStats.homePoints,
+                homeStats.awayPoints,
+                homeStats.homeWins,
+                homeStats.homeDraws,
+                homeStats.homeLosses,
+                homeStats.homeGoalsFor,
+                homeStats.homeGoalsAgainst,
+                homeStats.awayWins,
+                homeStats.awayDraws,
+                homeStats.awayLosses,
+                homeStats.awayGoalsFor,
+                homeStats.awayGoalsAgainst,
+                homeStats.overtimeWins,
+                homeStats.overtimeLosses,
+                homeStats.penaltyWins,
+                homeStats.penaltyLosses,
+              ];
+              const placeholders = (standingsSql.match(/\$\d+/g) || []).length;
+              if (standingsParams.length !== placeholders) {
+                this.logger.warn(`Param count mismatch for standings INSERT (home): expected=${placeholders} got=${standingsParams.length}. Adjusting params.`);
+                if (standingsParams.length > placeholders) {
+                  standingsParams = standingsParams.slice(0, placeholders);
+                } else {
+                  // pad with nulls so we don't trigger Postgres placeholder mismatch
+                  while (standingsParams.length < placeholders) standingsParams.push(null);
+                }
+              }
+              await client.query(standingsSql, standingsParams);
+            }
+
+            // Insert away standing (validate param count before executing)
+            {
+              const standingsSql = `INSERT INTO standings (sport_id, league_id, season_id, round_id, match_date, group_id, club_id, match_id, points, played, wins, draws, losses, goals_for, goals_against, sets_won, sets_lost, home_games_played, away_games_played, home_points, away_points, home_wins, home_draws, home_losses, home_goals_for, home_goals_against, away_wins, away_draws, away_losses, away_goals_for, away_goals_against, overtime_wins, overtime_losses, penalty_wins, penalty_losses) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`;
+              let standingsParams: any[] = [
+                sportId,
+                leagueId,
+                seasonId,
+                roundId ?? null,
+                dateVal,
+                null,
+                awayClubId,
+                matchId,
+                awayStats.points,
+                awayStats.played,
+                awayStats.wins,
+                awayStats.draws,
+                awayStats.losses,
+                awayStats.goalsFor,
+                awayStats.goalsAgainst,
+                awayStats.setsWon,
+                awayStats.setsLost,
+                awayStats.homeGamesPlayed,
+                awayStats.awayGamesPlayed,
+                awayStats.homePoints,
+                awayStats.awayPoints,
+                awayStats.homeWins,
+                awayStats.homeDraws,
+                awayStats.homeLosses,
+                awayStats.homeGoalsFor,
+                awayStats.homeGoalsAgainst,
+                awayStats.awayWins,
+                awayStats.awayDraws,
+                awayStats.awayLosses,
+                awayStats.awayGoalsFor,
+                awayStats.awayGoalsAgainst,
+                awayStats.overtimeWins,
+                awayStats.overtimeLosses,
+                awayStats.penaltyWins,
+                awayStats.penaltyLosses,
+              ];
+              const placeholders = (standingsSql.match(/\$\d+/g) || []).length;
+              if (standingsParams.length !== placeholders) {
+                this.logger.warn(`Param count mismatch for standings INSERT (away): expected=${placeholders} got=${standingsParams.length}. Adjusting params.`);
+                if (standingsParams.length > placeholders) {
+                  standingsParams = standingsParams.slice(0, placeholders);
+                } else {
+                  while (standingsParams.length < placeholders) standingsParams.push(null);
+                }
+              }
+              await client.query(standingsSql, standingsParams);
+            }
+            createdStandings += 2;
+          } catch (e) {
+            throw e;
+          }
+
+          applied += 1;
+          } catch (e) {
+          // rollback and log with diagnostic details when available
+          const snapshotSql = lastSqlAll;
+          const snapshotParams = lastParamsAll;
+          try {
+            await client.query('ROLLBACK');
+          } catch (_) {}
+          const includeDebug = process.env.DEBUG_ETL === 'true' || process.env.NODE_ENV !== 'production';
+          const details: any = { error: String(e), row: r };
+          // Try to parse column list from last SQL and map failing param index to column
+          try {
+            let cols: string[] | undefined = undefined;
+            if (snapshotSql && typeof snapshotSql === 'string') {
+              const m = snapshotSql.match(/INSERT\s+INTO\s+[^\(]+\(([^)]+)\)/i);
+              if (m && m[1]) {
+                cols = m[1].split(',').map((s) => s.trim());
+                if (snapshotParams && Array.isArray(snapshotParams)) {
+                  for (let i = 0; i < snapshotParams.length; i++) {
+                    const val = snapshotParams[i];
+                    if (val === 'NaN' || (typeof val === 'number' && Number.isNaN(val))) {
+                      details.failing = { index: i + 1, column: cols[i] ?? null, value: val };
+                      break;
+                    }
+                    const colName = cols[i] ?? '';
+                    const numericHint = /\b(id|score|goals|minute|seconds|number|round|home|away|points|played|wins|losses|draws)\b/i.test(colName);
+                    if (numericHint && val !== null && val !== undefined && !/^[-]?\d+$/.test(String(val))) {
+                      details.failing = { index: i + 1, column: colName || null, value: val };
+                      break;
+                    }
+                  }
+                }
+              } else {
+                if (snapshotParams && Array.isArray(snapshotParams)) details.paramValues = snapshotParams;
+              }
+            } else {
+              if (snapshotParams && Array.isArray(snapshotParams)) details.paramValues = snapshotParams;
+            }
+            // If we didn't find a failing param via SQL/params, try to inspect the parsed row for NaN-like values
+            if (!details.failing && (String(e).toLowerCase().includes('invalid input syntax for type integer') || String(e).includes('NaN'))) {
+              const offending: Array<any> = [];
+              const numericKeyRegex = /\b(id|score|goals|minute|seconds|number|round|periods|elapsed|timestamp|home|away|points|played|wins|losses|draws)\b/i;
+              for (const k of Object.keys(r || {})) {
+                // only consider keys that look like numeric fields
+                if (!numericKeyRegex.test(k)) continue;
+                const v = r[k];
+                if (v === 'NaN' || (typeof v === 'number' && Number.isNaN(v)) || (v !== null && v !== undefined && v !== '' && Number.isNaN(Number(v)))) {
+                  // try to guess a column name by simple mapping: direct key -> column or key with dots replaced
+                  // guess target column by preferring a direct match in parsed INSERT cols when available
+                  const guessedColumn = cols && cols.includes(k) ? k : k.replace(/\./g, '_');
+                  offending.push({ key: k, value: v, guessedColumn });
+                }
+              }
+              if (offending.length) details.offendingFields = offending;
+            }
+          } catch (_) {}
+          if (includeDebug) {
+            details.lastSql = snapshotSql;
+            details.lastParams = snapshotParams;
+          }
+          await client.query(`INSERT INTO api_import_log (transitional_id, message, details) VALUES ($1,$2,$3)`, [
+            id,
+            'apply_all_rows_error',
+            details,
+          ]);
+          return { applied: 0, error: String(e), rolledBack: true, details: includeDebug ? details : undefined };
+        }
+      }
+
+      // Insert audit record summarizing the run
+      try {
+        await client.query(
+          `INSERT INTO api_transitional_audit (transitional_id, action, payload) VALUES ($1,$2,$3)`,
+          [
+            id,
+            options.dryRun ? 'dry_run' : 'applied',
+            { applied, createdClubs, createdRounds, createdDivisions, createdStandings, clubsIncluded, dryRun: !!options.dryRun },
+          ],
+        );
+      } catch (e) {
+        // audit insertion failed — log and continue to commit/rollback
+        this.logger.error('Failed to write api_transitional_audit', e as any);
+      }
+
+      if (options.dryRun) {
+        await client.query('ROLLBACK');
+      } else {
+        await client.query('COMMIT');
+      }
+
+      return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, clubsIncluded, dryRun: !!options.dryRun };
+    } catch (e) {
+      const snapshotSql = lastSqlAll;
+      const snapshotParams = lastParamsAll;
+      try {
+        await client.query('ROLLBACK');
+      } catch (_) {}
+      const includeDebug = process.env.DEBUG_ETL === 'true' || process.env.NODE_ENV !== 'production';
+      const details: any = { error: String(e) };
+      if (includeDebug) {
+        details.lastSql = snapshotSql;
+        details.lastParams = snapshotParams;
+        try {
+          if (snapshotParams && Array.isArray(snapshotParams)) details.paramValues = snapshotParams;
+        } catch (_) {}
+      }
+      await client.query(`INSERT INTO api_import_log (transitional_id, message, details) VALUES ($1,$2,$3)`, [id, 'apply_all_rows_exception', details]);
+      this.logger.error('applyAllRowsToApp error', e as any);
+      return { applied: 0, error: String(e), details: includeDebug ? details : undefined };
     } finally {
       client.release();
       await pool.end();

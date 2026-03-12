@@ -14,10 +14,5 @@ export const queryClient = new QueryClient({
       },
     },
   },
-  // Suppress all React Query internal error logging
-  logger: {
-    log: console.log,
-    warn: console.warn,
-    error: () => {}, // Suppress error logs
-  },
+  // Note: keep default React Query logging; suppressing logger causes type errors
 });

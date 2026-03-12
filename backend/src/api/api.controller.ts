@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, ParseIntPipe, Query, Delete, NotFoundException } from '@nestjs/common';
 import { ApiService } from './api.service';
 
 @Controller('api')
@@ -60,6 +60,15 @@ export class ApiController {
     return result;
   }
 
+  @Post('transitional/:id/apply-all-rows')
+  async applyAllRows(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { sportId?: number; dryRun?: boolean },
+  ) {
+    const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun });
+    return result;
+  }
+
   @Post('transitional/:id/load')
   async loadTransitional(
     @Param('id', ParseIntPipe) id: number,
@@ -71,6 +80,13 @@ export class ApiController {
       mapping: body?.mapping,
     });
     return { result };
+  }
+
+  @Delete('transitional/:id')
+  async deleteTransitional(@Param('id', ParseIntPipe) id: number) {
+    const res = await this.apiService.deleteTransitional(id);
+    if (!res || !res.deleted) throw new NotFoundException('Transitional row not found');
+    return { success: true, id: res.id };
   }
 
   @Get('target-columns')

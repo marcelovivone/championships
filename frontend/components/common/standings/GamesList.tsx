@@ -42,7 +42,7 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div>
         {list.map((g) => (
-          <div key={g.id} className="px-4 py-3 border-b border-gray-100">
+          <div key={g.id} className="px-4 py-3 pt-4 pb-4 border-b border-gray-100">
             <div className="text-sm text-gray-500 text-center">
               <div className="inline-flex items-center justify-center gap-3">
                 <span className="truncate">{g.stadium}</span>
@@ -55,9 +55,9 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
                 {g.home.image ? (
                   <img src={g.home.image} alt={g.home.name} className="w-8 h-8 rounded-full object-cover" />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">{g.home.name.charAt(0)}</div>
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm"> {g.home.name.charAt(0)}</div>
                 )}
-                <div className="font-medium truncate">{g.home.name}</div>
+                <div className="text-sm truncate">{g.home.name}</div>
               </div>
 
               <div className="w-20 flex-shrink-0 text-center">
@@ -72,11 +72,11 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
               </div>
 
               <div className="flex items-center gap-3 justify-end flex-1 min-w-0">
-                <div className="font-medium text-right truncate">{g.away.name}</div>
+                <div className="text-sm text-right truncate">{g.away.name}</div>
                 {g.away.image ? (
                   <img src={g.away.image} alt={g.away.name} className="w-8 h-8 rounded-full object-cover" />
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm font-medium">{g.away.name.charAt(0)}</div>
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm">{g.away.name.charAt(0)}</div>
                 )}
               </div>
             </div>

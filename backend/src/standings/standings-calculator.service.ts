@@ -103,7 +103,6 @@ export class StandingsCalculatorService {
             setsWon: Number(previousAwayStanding?.setsWon ?? 0),
             setsLost: Number(previousAwayStanding?.setsLost ?? 0),
         };
-        // matchDivisions is now available for use in calculation logic
 
         // Set games played based on the presence of scores (assuming a match with scores means both teams played)
         homeStats.played = Number(homeStats.played) + 1;
@@ -184,14 +183,14 @@ export class StandingsCalculatorService {
             home.losses = Number(home.losses) + 1;
             home.homeLosses = Number(home.homeLosses) + 1;
             away.points = Number(away.points) + 3;
-            away.homePoints = Number(away.homePoints) + 3;
+            away.awayPoints = Number(away.awayPoints) + 3;
             away.wins = Number(away.wins) + 1;
             away.awayWins = Number(away.awayWins) + 1;
         } else {
             home.points = Number(home.points) + 1;
             home.homePoints = Number(home.homePoints) + 1;
             away.points = Number(away.points) + 1;
-            away.homePoints = Number(away.homePoints) + 1;
+            away.awayPoints = Number(away.awayPoints) + 1;
             home.draws = Number(home.draws) + 1;
             home.homeDraws = Number(home.homeDraws) + 1;
             away.draws = Number(away.draws) + 1;
@@ -210,7 +209,7 @@ export class StandingsCalculatorService {
             home.losses = Number(home.losses) + 1;
             home.homeLosses = Number(home.homeLosses) + 1;
             away.points = Number(away.points) + 2;
-            away.homePoints = Number(away.homePoints) + 2;
+            away.awayPoints = Number(away.awayPoints) + 2;
             away.wins = Number(away.wins) + 1;
             away.awayWins = Number(away.awayWins) + 1;
         }
@@ -227,7 +226,7 @@ export class StandingsCalculatorService {
             home.losses = Number(home.losses) + 1;
             home.homeLosses = Number(home.homeLosses) + 1;
             away.points = Number(away.points) + 2;
-            away.homePoints = Number(away.homePoints) + 2;
+            away.awayPoints = Number(away.awayPoints) + 2;
             away.wins = Number(away.wins) + 1;
             away.awayWins = Number(away.awayWins) + 1;
         }

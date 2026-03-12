@@ -34,6 +34,7 @@ export default function BaseStandings({
     initialLeagueId ? String(initialLeagueId) : (leagues && leagues.length > 0 ? String(leagues[0].id) : '')
   );
   const [roundOrDay, setRoundOrDay] = React.useState<number | string>(1);
+  const [debouncedRoundOrDay, setDebouncedRoundOrDay] = React.useState<number | string>(roundOrDay);
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
 
@@ -46,112 +47,165 @@ export default function BaseStandings({
   });
 
   const seasons = seasonsData || [];
-  const selectedLeague = Array.isArray(leagues) ? leagues.find((l: any) => String(l.id) === String(league)) : null;
-  const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule || selectedLeague.scheduleType || selectedLeague.type || selectedLeague.type_of_schedule_code);
-  const scheduleStr = rawSchedule !== undefined && rawSchedule !== null ? String(rawSchedule).toLowerCase() : '';
-  const scheduleIsDate = scheduleStr.includes('date') || scheduleStr.includes('day') || scheduleStr.includes('calendar') || scheduleStr.includes('dt') || scheduleStr === '1' || scheduleStr === 'date_based';
-  // Fetch standings and matches based on selected league/season/roundOrDay
-  const standingsQuery = useQuery({
-    queryKey: ['standings', league, season, String(roundOrDay), group, viewType],
-    queryFn: async () => {
+  // Fetch rounds for the selected league+season once and cache via React Query
+  const roundsQuery = useQuery({
+    queryKey: ['rounds', league, season],
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
       if (!league || !season) return [];
       try {
-        let url = '';
-        if (scheduleIsDate) {
-          url = `/v1/standings?leagueId=${Number(league)}&seasonId=${Number(season)}&matchDate=${encodeURIComponent(String(roundOrDay))}`;
-        } else {
-          // if user provided a round number (e.g. '1'), translate it to the DB round id
-          let roundIdToUse: string | undefined = undefined;
-          const maybeNum = Number(roundOrDay);
-          if (!isNaN(maybeNum)) {
-            // fetch rounds for league and try to find a round with that roundNumber
-            try {
-              const rresp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}`);
-              const rdata = (rresp.data && Array.isArray(rresp.data)) ? rresp.data : (Array.isArray(rresp) ? rresp : []);
-              const found = rdata.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
-              if (found) roundIdToUse = String(found.id ?? found.roundId ?? found.round_id ?? found.id);
-            } catch (e) {
-              // ignore - we'll fall back to using the provided value
-            }
-          }
-          const roundParam = roundIdToUse ? `roundId=${encodeURIComponent(String(roundIdToUse))}` : `roundId=${encodeURIComponent(String(roundOrDay))}`;
-          url = `/v1/standings?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}`;
-        }
-        try { console.log('[BaseStandings] fetching standings ->', url); } catch (e) {}
-        const resp = await apiClient.get(url);
-        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
-        try { console.log('[BaseStandings] standings returned', Array.isArray(data) ? data.length : typeof data); } catch (e) {}
-        return data;
-      } catch (e) {
-        return [];
-      }
-    },
-    enabled: Boolean(league && season),
-    staleTime: 1000 * 30,
-  });
-
-  const matchesQuery = useQuery({
-    queryKey: ['matches', sportId, league, season, String(roundOrDay), group, viewType],
-    queryFn: async () => {
-      if (!league || !season) return [];
-      try {
-        const groupParam = group && group !== 'all' ? `&groupId=${encodeURIComponent(String(group))}` : '';
-        let url = '';
-        if (scheduleIsDate) {
-          if (sportId) url = `/v1/matches?sportId=${Number(sportId)}&leagueId=${Number(league)}&seasonId=${Number(season)}&date=${encodeURIComponent(String(roundOrDay))}${groupParam}`;
-          else url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}&date=${encodeURIComponent(String(roundOrDay))}${groupParam}`;
-        } else {
-          // For round-based leagues, translate displayed round number into DB round id when possible
-          let roundIdToUse: string | undefined = undefined;
-          const maybeNum = Number(roundOrDay);
-          if (!isNaN(maybeNum)) {
-            try {
-              const rresp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}`);
-              const rdata = (rresp.data && Array.isArray(rresp.data)) ? rresp.data : (Array.isArray(rresp) ? rresp : []);
-              const found = rdata.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
-              if (found) roundIdToUse = String(found.id ?? found.roundId ?? found.round_id ?? found.id);
-            } catch (e) {
-              // ignore and fall back to provided value
-            }
-          }
-          const roundParam = roundIdToUse ? `roundId=${encodeURIComponent(String(roundIdToUse))}` : `roundId=${encodeURIComponent(String(roundOrDay))}`;
-          if (sportId) url = `/v1/matches?sportId=${Number(sportId)}&leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
-          else url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
-        }
-        try { console.log('[BaseStandings] fetching matches ->', url); } catch (e) {}
-        const resp = await apiClient.get(url);
-        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
-        try { console.log('[BaseStandings] matches returned', Array.isArray(data) ? data.length : typeof data); } catch (e) {}
-        return data;
-      } catch (e) {
-        return [];
-      }
-    },
-    enabled: Boolean(league && season),
-    staleTime: 1000 * 30,
-  });
-
-  // Fetch all matches for the selected season/league (used to compute historical last10)
-  const allMatchesQuery = useQuery({
-    queryKey: ['matchesAll', sportId, league, season],
-    queryFn: async () => {
-      if (!league || !season) return [];
-      try {
-        const sportParam = sportId ? `&sportId=${Number(sportId)}` : '';
-        const url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}${sportParam}`;
-        const resp = await apiClient.get(url);
+        const resp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`, { signal });
         const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
         return data;
       } catch (e) {
+        if ((e as any)?.name === 'CanceledError' || (e as any)?.message === 'canceled') return [];
         return [];
       }
     },
     enabled: Boolean(league && season),
     staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  });
+  const selectedLeague = Array.isArray(leagues) ? leagues.find((l: any) => String(l.id) === String(league)) : null;
+  const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule || selectedLeague.scheduleType || selectedLeague.type || selectedLeague.type_of_schedule_code);
+  const scheduleStr = rawSchedule !== undefined && rawSchedule !== null ? String(rawSchedule).toLowerCase() : '';
+  const scheduleIsDate = scheduleStr.includes('date') || scheduleStr.includes('day') || scheduleStr.includes('calendar') || scheduleStr.includes('dt') || scheduleStr === '1' || scheduleStr === 'date_based';
+  // Fetch standings and matches based on selected league/season/roundOrDay
+  React.useEffect(() => {
+    const id = setTimeout(() => setDebouncedRoundOrDay(roundOrDay), 300);
+    return () => clearTimeout(id);
+  }, [roundOrDay]);
+
+  const standingsQuery = useQuery({
+    queryKey: ['standings', league, season, String(debouncedRoundOrDay), group, viewType],
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+      if (!league || !season) return [];
+      const cooldown = (globalThis as any).__apiCooldownUntil;
+      if (cooldown && Date.now() < cooldown) return [];
+      try {
+        let url = '';
+        if (scheduleIsDate) {
+          url = `/v1/standings?leagueId=${Number(league)}&seasonId=${Number(season)}&matchDate=${encodeURIComponent(String(debouncedRoundOrDay))}`;
+        } else {
+          // if user provided a round number (e.g. '1'), translate it to the DB round id
+          let roundIdToUse: string | undefined = undefined;
+          const maybeNum = Number(debouncedRoundOrDay);
+          if (!isNaN(maybeNum)) {
+            // try cached rounds from roundsQuery first
+            const rdata = roundsQuery.data && Array.isArray(roundsQuery.data) ? roundsQuery.data : [];
+            let found = rdata.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
+            // if not found in cache, fetch rounds for the current league+season to ensure we match the correct season
+            if (!found) {
+              try {
+                const rresp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`, { signal });
+                const fresp = (rresp.data && Array.isArray(rresp.data)) ? rresp.data : (Array.isArray(rresp) ? rresp : []);
+                found = fresp.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
+              } catch (e) {
+                // ignore - we'll fall back to using the provided value
+              }
+            }
+            if (found) roundIdToUse = String(found.id ?? found.roundId ?? found.round_id ?? found.id);
+          }
+          const roundParam = roundIdToUse ? `roundId=${encodeURIComponent(String(roundIdToUse))}` : `roundId=${encodeURIComponent(String(debouncedRoundOrDay))}`;
+          url = `/v1/standings?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}`;
+        }
+        const resp = await apiClient.get(url, { signal });
+        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+        return data;
+      } catch (e) {
+        return [];
+      }
+    },
+    enabled: Boolean(league && season && debouncedRoundOrDay !== undefined && debouncedRoundOrDay !== null),
+    
+    staleTime: 1000 * 60 * 2,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 429) return false;
+      return failureCount < 1;
+    },
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  });
+
+  const matchesQuery = useQuery({
+    queryKey: ['matches', sportId, league, season, String(debouncedRoundOrDay), group, viewType],
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+      if (!league || !season) return [];
+      const cooldown = (globalThis as any).__apiCooldownUntil;
+      if (cooldown && Date.now() < cooldown) return [];
+      try {
+        const groupParam = group && group !== 'all' ? `&groupId=${encodeURIComponent(String(group))}` : '';
+        let url = '';
+        if (scheduleIsDate) {
+          if (sportId) url = `/v1/matches?sportId=${Number(sportId)}&leagueId=${Number(league)}&seasonId=${Number(season)}&date=${encodeURIComponent(String(debouncedRoundOrDay))}${groupParam}`;
+          else url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}&date=${encodeURIComponent(String(debouncedRoundOrDay))}${groupParam}`;
+        } else {
+          // For round-based leagues, translate displayed round number into DB round id when possible
+          let roundIdToUse: string | undefined = undefined;
+          const maybeNum = Number(debouncedRoundOrDay);
+          if (!isNaN(maybeNum)) {
+            // try cached rounds first
+            const rdata = roundsQuery.data && Array.isArray(roundsQuery.data) ? roundsQuery.data : [];
+            let found = rdata.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
+            if (!found) {
+              try {
+                const rresp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`, { signal });
+                const fresp = (rresp.data && Array.isArray(rresp.data)) ? rresp.data : (Array.isArray(rresp) ? rresp : []);
+                found = fresp.find((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) === maybeNum);
+              } catch (e) {
+                // ignore and fall back to provided value
+              }
+            }
+            if (found) roundIdToUse = String(found.id ?? found.roundId ?? found.round_id ?? found.id);
+          }
+          const roundParam = roundIdToUse ? `roundId=${encodeURIComponent(String(roundIdToUse))}` : `roundId=${encodeURIComponent(String(debouncedRoundOrDay))}`;
+          if (sportId) url = `/v1/matches?sportId=${Number(sportId)}&leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
+          else url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
+        }
+        const resp = await apiClient.get(url, { signal });
+        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+        return data;
+      } catch (e) {
+        return [];
+      }
+    },
+    enabled: Boolean(league && season && debouncedRoundOrDay !== undefined && debouncedRoundOrDay !== null),
+    
+    staleTime: 1000 * 60 * 2,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    retry: (failureCount, error: any) => {
+      if (error?.response?.status === 429) return false;
+      return failureCount < 1;
+    },
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  });
+
+  // Fetch all matches for the selected season/league (used to compute historical last10)
+  const allMatchesQuery = useQuery({
+    queryKey: ['matchesAll', sportId, league, season],
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+      if (!league || !season) return [];
+      const cooldown = (globalThis as any).__apiCooldownUntil;
+      if (cooldown && Date.now() < cooldown) return [];
+      try {
+        const sportParam = sportId ? `&sportId=${Number(sportId)}` : '';
+        const url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}${sportParam}`;
+        const resp = await apiClient.get(url, { signal });
+        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+        return data;
+      } catch (e) {
+        return [];
+      }
+    },
+    enabled: Boolean(league && season),
+    
+    staleTime: 1000 * 60 * 5,
   });
 
   // Map of clubId -> clubName (populated from matches and fetched as needed)
   const [clubsMap, setClubsMap] = React.useState<Record<string, string>>({});
+
 
   // Populate clubsMap from matches when matches change
   React.useEffect(() => {
@@ -303,8 +357,9 @@ export default function BaseStandings({
                 }
               }
 
-              const currentMatches = matchesQuery.data !== undefined ? matchesQuery.data : games;
-              return <StandingsTable rows={filtered} clubsMap={clubsMap} historicalMatches={allMatchesQuery.data} cutoffDate={cutoffDate} currentMatches={currentMatches} viewType={viewType} />;
+              const currentMatches = (matchesQuery.data !== undefined ? matchesQuery.data : games) as any[];
+              const historicalMatches = (allMatchesQuery.data || []) as any[];
+              return <StandingsTable rows={filtered} clubsMap={clubsMap} historicalMatches={historicalMatches} cutoffDate={cutoffDate} currentMatches={currentMatches} viewType={viewType} />;
             })()
           )}
         </div>
@@ -325,7 +380,7 @@ export default function BaseStandings({
                 const homeName = m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.name ?? m.homeClub?.originalName ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined);
                 const awayName = m.awayClub?.short_name ?? m.awayClub?.shortName ?? m.awayClub?.name ?? m.awayClub?.originalName ?? (m.awayClubId ? clubsMap[String(m.awayClubId)] : undefined) ?? (m.awayClubId ? `#${m.awayClubId}` : undefined);
                 const status = m.status ?? m.matchStatus ?? null;
-                const score = (typeof m.homeScore !== 'undefined' && typeof m.awayScore !== 'undefined') ? `${m.homeScore}-${m.awayScore}` : (m.homeScore || m.awayScore ? `${m.homeScore ?? 0}-${m.awayScore ?? 0}` : null);
+                const score = (typeof m.homeScore !== 'undefined' && typeof m.awayScore !== 'undefined') ? `${m.homeScore} - ${m.awayScore}` : (m.homeScore || m.awayScore ? `${m.homeScore ?? 0}-${m.awayScore ?? 0}` : null);
                 return {
                   id: m.id ?? `${m.homeClubId || m.homeClub?.id || 'h'}-${m.awayClubId || m.awayClub?.id || 'a'}`,
                   stadium,

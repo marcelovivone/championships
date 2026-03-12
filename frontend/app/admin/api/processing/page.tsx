@@ -21,14 +21,32 @@ export default function ProcessingPage() {
     useEffect(() => {
     fetch(`${API_BASE}/v1/api/transitional`)
         .then((r) => r.json())
-        .then((d) => setRows(d.items || []))
+        .then((d) => setRows(d.items || d.data?.items || []))
         .catch((e) => console.error(e))
         .finally(() => setLoading(false));
     }, []);
 
+  const reloadRows = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/v1/api/transitional`);
+      const j = await r.json();
+      setRows(j.items || j.data?.items || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">API Processing</h1>
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">API Processing</h1>
+        <div>
+          <button onClick={reloadRows} className="px-3 py-2 bg-blue-600 text-white rounded text-sm">Reload</button>
+        </div>
+      </div>
       {loading && <div>Loading...</div>}
       {error && <div className="text-red-600">Error: {error}</div>}
       <div className="mt-2 text-sm text-gray-600">API_BASE: {API_BASE}</div>

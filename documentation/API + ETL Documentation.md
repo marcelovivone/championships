@@ -104,19 +104,20 @@ Process description:
     - If any error happens during the process, we should rollback the whole rows saved to the database. Because of this, the process should be atomic (in older langauges we opened a transacion and commit everything only ate the end of the whole process, if any error happend. I don't know how to to it here. Let me know what will be implemented)
 
 - First row:
-The rirst row has specific tests to be performed, as we need to check the tables above the matches and the standings table, from which this two tables have foreign keys.
-    - Get the follow contents of the first row and We should check the respective tables to identify if we need to add a row or just get the ids
-    - league.country: check if the country exists in table countries. If it exists, get its id. If not, create a new contry and keep the id. We should consider the variances of the countries name. For instance, England coould be United Kindgon, Unitaed States, could be USA, United States of America. We should consider these possibilities. This id will be called in this document as countryId.
-        - Creating row on leeagues table (if is a new league):
+The first row has specific tests to be performed, as we need to check the tables above the matches and the standings table, from which this two tables have foreign keys.
+    - Get the follow contents of the first row and add a row into the respective database table
+    - league.country: 
+        - create a new contry and keep the id. We should consider the variances of the countries name. For instance, England coould be United Kindgon, Unitaed States, could be USA, United States of America. We should consider these possibilities. This id will be called in this document as countryId.
+        - Table name: countries
+            COLUMN NAME                  VALUE
         - name: league.country
         - continent: if it is possible to get the continent during the process, get it from the web. If not, use Europe and I will fix it after the processing
         - flg_coutry: if it is possible to get the continent during the process, get it from the web. If not, use null and I will fix it after the processing
         - code: use the 3 first letters of the country (if necessary, I will fix it manually after the processing)
 
     - league.name: 
-        - If on the first step we created a new country, just create a new league on table leagues and keep it id
-        - Otherwise, try to find in the table leagues the league.name value in columns original_name and secondary_rname, using also the country id got on the first step and comparing it with the country_id and the sport_id=39 to compare with the column sport_id of the table. If the league name exists, get its id. If the league name do not exist, create a new row on the league table and get the id. This id will be called in this document as leagueId.
-        - Creating row on leeagues table (if it is needed to insert a new league):
+        - Create a new row on the league table and get the id. This id will be called in this document as leagueId.
+        - Table name: leagues
             COLUMN NAME                  VALUE
             - sport_id                     36
             - country_id                   countryId
@@ -141,14 +142,8 @@ The rirst row has specific tests to be performed, as we need to check the tables
             - type_of_schedule             Round
 
     - league.season:
-        - if the it is new league, there is no need to perform the test of the season existence. Just create a new season and get its id.
-        - if the league already exists, check the table seasons using:
-            TABLE COLUMN        VALUE
-        - sport_id            36
-        - league_id           leagueId
-        - start_year          league.season
-        if the league exists, read its id. If not, create a new season and keep its id. This id will be called in this document as seasonId.
-        - Creating row on season table (if it is needed to insert a new season):
+        - Create a new season and keep its id. This id will be called in this document as seasonId.
+        - Table name: seasons
             COLUMN NAME                  VALUE
             - sport_id                     36
             - league_id                    leagueId
@@ -159,7 +154,6 @@ The rirst row has specific tests to be performed, as we need to check the tables
             - end_year                     league.season
 
 - All rows
-TO BE DEFINED.
 Now we will be dealing with the games played or to be played and the whole process to save them in our database.
 The tables to be updated are roumds. matches, match_divisions and standings.
 The json elements to be considered in the phase are:
@@ -181,6 +175,76 @@ When reading a row, first thing is identify if the round exists in the database.
   - season_id           seasonId
   - round_id            league.round
     if the round exists, keep its id. If not, create a new season and keep its id. This id will be called in this document as seasonId.
+
+First let's deal with the clubs.
+Every row read has a teams.home.name and teams.away.name and we should check if the clubs already exists in the table clubs.
+We have to access the clubs table using the short_name column. If we find the club or something similar to the teams.home.name and teams.away.name, we should get its id. If the club does not exist, we have to create it and keep the id. From now on, the  ids will be called homeClubId and awayClubId. To create a new club, we should use:
+    - Table name: clubs
+    TABLE COLUMN        VALUE
+    - name              teams.home.name or teams.away.name, depending we searched by the home or the away club name
+    - short_name        teams.home.name or teams.away.name, depending we searched by the home or the away club name
+    - image_url         teams.home.logo or teams.away.logo
+    - foundation_year   2000
+    - country_id        countryId
+    - city_id           null
+To have a more optimized code, we should have in account that finished the first round, we will have worked with all the clubs participating of the championship. From the second round on, the clubs will be repeated. All the clubs will appear as home club and away club along the rest of the process. Maybe, we could save the clubs in memory, so, from the first row of the second round on, we don't need to access again the tables club. The rows are ordered by round and date.
+The first time we read a club, doesn't matter if as homeClubId or awayClubId, whe have to to some extra work.
+If we had to include the a new row in table clubs, we have to add the club reference into 4 or 5 other tables. If the club already exists, we have to create a reference for sure in one of the three tables and check if it is needed to be included to the other 4.
+If it is a new club, we have to (we have to follow the following order):
+- Create a new row in sport_clubs
+    - Table name: sport_clubs
+    TABLE COLUMN        VALUE
+    - sport_id          sportId
+    - club_id           homeClubId or awayClubId
+    - flag_active       true
+    - name              teams.home.name or teams.away.name
+- Create a new row in season_clubs
+    - Table name: sport_clubs
+    TABLE COLUMN        VALUE
+    - sport_id          sportId
+    - league_id         leaguId
+    - season_id         seasonId
+    - club_id           homeClubId or awayClubId
+    - group_id          null
+- Check if fixture.venue.city exists in table city using the count_id = countryId and name like fixture.venue.city. If the city exists, get it id. If not, create a new row and keep its id (in both cases, this id will be called cityId in this document):
+    - Table name: ity
+    TABLE COLUMN        VALUE
+    - name              fixture.venue.city
+    - city_id           cityId
+- Create a new row in stadiums. In this case, we have to keep the id of the new row, called in this document as stadiumId.
+    - Table name: stadiums
+    TABLE COLUMN        VALUE
+    - sport_id          sportId
+    - name              fixture.venue.name
+    - city_id           cityId
+    - season_id         seasonId
+    - club_id           homeClubId or awayClubId
+    - capacity          null
+    - image_url         null
+    - year_constructed  null
+    - type              stadium
+- Create a new row in club_stadiums
+    - Table name: club_stadiums
+    TABLE COLUMN        VALUE
+    - club_id           homeClubId or awayClubId
+    - stadium_id        stadiumId
+    - start_date        1902-07-21
+    - end_date          null
+In the case the club already exists (we have to follow the following order):
+- Check if the club is already registered in the the sport_clubs for the current sport using:
+    - Table sport_clubs: sport_id = sportId and clubId = homeClubId or awayClubId
+    - If it exists, nothing to do. If not, create a new row in the table using the same structure previously defined.
+- Create a new row in season_clubs using the same structure defined previously.
+- Check if the city exists:
+  - Table cities: name = fixture.venue.city
+  - If it exists, get its id. If not, create the new city using the structure previously definid. In both cases, the id is called cityId in the document. 
+- Check if the statium exists:
+  - Table stadiums: name = fixture.venue.name
+  - If it exists, get its id. If not, create the new stadium using the structure previously definid. In both cases, the id is called stadiumId in the document. 
+- Check if the club_stadiums exists:
+  - Table club_stadiums: club_id = homeClubId or awayClubid and stadium_id = stadiumId
+  - If it exists, nothing to do. If not, create the new club_stadiums using the structure previously definid. 
+
 Now, dealing with the matches table
 Each row read from the json should generate one new row in matches table:
     TABLE COLUMN        VALUE
@@ -197,18 +261,6 @@ Each row read from the json should generate one new row in matches table:
     - home_club_id      homeClubId *Defined next*
     - away_club_id      awayCludId *Defined next*
 *Definition of homeClubId and awayClubId*
-The club ids should be get from the clubs table.
-When we read teams.home.name and teams.away.name we should access the clubs table using the short_name column. If we find the club or something similar to the teams.home.name and teams.away.name, we should get its id, If the club does not exist, we have to create it and keep the id. From now on, the this id will be called clubId. To create a new club, we should use:
-    TABLE COLUMN        VALUE
-    - name              teams.home.name or teams.away.name, depending we searched by the home or the away club name
-    - short_name        teams.home.name or teams.away.name, depending we searched by the home or the away club name
-    - image_url         teams.home.logo or teams.away.logo
-    - foundation_year   2000
-    - country_id        countryId
-    - city_id           null
-In the case of home club, the id will be called homeClubId. The away, awayCludId.
-To have a more optimized code, we should have in account that finished the first round, we will have worked with all the clubs participating of the championship. From the second round on, the clubs will be repeated. All the clubs will appear as home club and away club along all the rows. Maybe, we could save the clubs in memory, so, from the first row of the second round on, we don't need to access again the tables club. The rows are ordered by round and date.
-We should keep the id of the new row created in matches. I am callind this id as matchId.
 Now, the table match_divisions
 In the case of the football, which is the sport we are dealing now, we will be saving 2 row in this table. But, I prefer we, at the beginning of the process, to get this information from the sports table, using the sports_id = 36. The column max_match_division_number has the value we should use to determine how many rows to be included. The same should be applied to the has_overtime and has_penalties of matches. I said before to put a null value. But get the corresponding values from the columns has_overtime and has_penalties of sports table.
 To create a new row in maatch_dividions use this:

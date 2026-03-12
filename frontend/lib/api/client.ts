@@ -42,6 +42,17 @@ apiClient.interceptors.response.use(
       });
     }
     
+    // Handle rate-limit (429) by setting a short client-side cooldown to avoid retry storms
+    if (response.status === 429) {
+      const reset = Number(response.headers['x-ratelimit-reset'] || response.headers['x-rate-limit-reset'] || 0);
+      const now = Date.now();
+      const until = reset ? reset * 1000 : now + 2000;
+      try {
+        (globalThis as any).__apiCooldownUntil = until;
+      } catch (e) {}
+      return Promise.reject({ response, message: 'Rate limited', isAxiosError: true });
+    }
+
     // If response has the data wrapper, unwrap it
     if (response.data && typeof response.data === 'object' && 'data' in response.data) {
       response.data = response.data.data;
