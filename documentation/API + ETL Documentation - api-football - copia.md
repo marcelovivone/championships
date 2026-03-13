@@ -178,7 +178,7 @@ When reading a row, first thing is identify if the round exists in the database.
 
 First let's deal with the clubs.
 Every row read has a teams.home.name and teams.away.name and we should check if the clubs already exists in the table clubs.
-We have to access the clubs table using the short_name column. If we find the club or something similar to the teams.home.name and teams.away.name, we should get its id. If the club does not exist, we have to create it and keep the id. From now on, the  ids will be called homeClubId and awayClubId. To create a new club, we should use:
+We have to access the clubs table using the short_name column. If we find the club or something similar to the teams.home.name and teams.away.name and country_id = countryId, we should get its id. If the club does not exist, we have to create it and keep the id. From now on, the  ids will be called homeClubId and awayClubId. To create a new club, we should use:
     - Table name: clubs
     TABLE COLUMN        VALUE
     - name              teams.home.name or teams.away.name, depending we searched by the home or the away club name

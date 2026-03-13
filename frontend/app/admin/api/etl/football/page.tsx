@@ -385,39 +385,6 @@ export default function EtlPage() {
         return { array: null, arrayKey: null, header: payload };
     };
 
-    // derive combined columns and merged rows (header repeated per row) for table view
-    //   const deriveTable = (selectedItem: any, parsedCols: string[] | null, parsedRows: any[] | null) => {
-    //     const payload = selectedItem?.payload || selectedItem || null;
-    //     const info = getPayloadArrayInfo(payload);
-    //     // Use the response array (or parsedRows if not available)
-    //     const arr = info.array ?? (Array.isArray(payload) ? payload : parsedRows || []);
-    //     const pCols = parsedCols || [];
-
-    //     // flatten nested objects in array elements (dot notation)
-    //     const flatten = (obj: any, prefix = '') => {
-    //       const out: Record<string, any> = {};
-    //       if (obj === null || obj === undefined) return out;
-    //       if (typeof obj !== 'object' || obj instanceof Date) {
-    //         out[prefix || 'value'] = obj;
-    //         return out;
-    //       }
-    //       for (const k of Object.keys(obj)) {
-    //         const v = obj[k];
-    //         const key = prefix ? `${prefix}.${k}` : k;
-    //         if (v === null || v === undefined) {
-    //           out[key] = v;
-    //         } else if (Array.isArray(v)) {
-    //           try { out[key] = JSON.stringify(v); } catch (e) { out[key] = String(v); }
-    //         } else if (typeof v === 'object') {
-    //           Object.assign(out, flatten(v, key));
-    //         } else if (v instanceof Date) {
-    //           out[key] = v.toISOString();
-    //         } else {
-    //           out[key] = v;
-    //         }
-    //       }
-    //       return out;
-    //     };
     const deriveTable = (selectedItem: any) => {
         const payload: any = selectedItem?.payload || selectedItem || {};
 
@@ -480,10 +447,9 @@ export default function EtlPage() {
                 </div>
                 <DataTable
                     columns={[
-                        { header: 'ID', accessor: 'id' },
                         { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px' },
                         { header: 'Season', accessor: 'season' },
-                        { header: 'Source', accessor: (r: any) => <div className="truncate max-w-xs">{r.source_url ?? '-'}</div> },
+                        { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div> },
                         { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at) },
                         { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded') },
                         {

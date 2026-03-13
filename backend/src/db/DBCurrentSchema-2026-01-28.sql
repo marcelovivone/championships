@@ -486,7 +486,7 @@ CREATE TABLE public.leagues (
 	number_of_rounds_matches int4 DEFAULT 0 NOT NULL,
 	min_divisions_number int4 NOT NULL,
 	max_divisions_number int4 NOT NULL,
-	divisions_time int4 NULL,
+	division_time int4 NULL,
 	has_overtime_override bool NULL,
 	has_penalties_override bool NULL,
 	has_ascends bool DEFAULT false NOT NULL,

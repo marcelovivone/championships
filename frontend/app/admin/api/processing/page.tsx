@@ -10,15 +10,7 @@ export default function ProcessingPage() {
   const [rawResponse, setRawResponse] = useState<string | null>(null);
   const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-//   useEffect(() => {
-//     fetch(`${API_BASE}/v1/api/transitional`)
-//       .then((r) => r.json())
-//       .then((d) => setRows(d.items || []))
-//       .catch((e) => console.error(e))
-//       .finally(() => setLoading(false));
-//   }, []);
-
-    useEffect(() => {
+  useEffect(() => {
     fetch(`${API_BASE}/v1/api/transitional`)
         .then((r) => r.json())
         .then((d) => setRows(d.items || d.data?.items || []))
@@ -60,7 +52,6 @@ export default function ProcessingPage() {
       <table className="w-full table-auto border-collapse">
         <thead>
           <tr className="text-left">
-            <th className="p-2">ID</th>
             <th className="p-2">League</th>
             <th className="p-2">Season</th>
             <th className="p-2">Source</th>
@@ -71,7 +62,6 @@ export default function ProcessingPage() {
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-t">
-              <td className="p-2">{r.id}</td>
               <td className="p-2">{r.league ?? '-'}</td>
               <td className="p-2">{r.season ?? '-'}</td>
               <td className="p-2 truncate max-w-xs">{r.source_url ?? '-'}</td>

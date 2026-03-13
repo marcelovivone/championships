@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, Param, ParseIntPipe, Query, Delete, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, ParseIntPipe, Query, Delete, Patch, NotFoundException } from '@nestjs/common';
 import { ApiService } from './api.service';
 
 @Controller('api')
@@ -87,6 +87,13 @@ export class ApiController {
     const res = await this.apiService.deleteTransitional(id);
     if (!res || !res.deleted) throw new NotFoundException('Transitional row not found');
     return { success: true, id: res.id };
+  }
+
+  @Patch('transitional/:id')
+  async patchTransitional(@Param('id', ParseIntPipe) id: number, @Body() body: any) {
+    const res = await this.apiService.updateTransitional(id, body);
+    if (!res || !res.updated) throw new NotFoundException('Transitional row not found');
+    return { success: true, id: res.id, status: res.status };
   }
 
   @Get('target-columns')

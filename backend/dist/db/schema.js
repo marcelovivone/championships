@@ -71,7 +71,7 @@ exports.leagues = (0, pg_core_1.pgTable)('leagues', {
     numberOfRoundsMatches: (0, pg_core_1.integer)('number_of_rounds_matches').default(0).notNull(),
     minDivisionsNumber: (0, pg_core_1.integer)('min_divisions_number').notNull(),
     maxDivisionsNumber: (0, pg_core_1.integer)('max_divisions_number').notNull(),
-    divisionsTime: (0, pg_core_1.integer)('divisions_time'),
+    divisionTime: (0, pg_core_1.integer)('division_time'),
     hasOvertimeOverride: (0, pg_core_1.boolean)('has_overtime_override'),
     hasPenaltiesOverride: (0, pg_core_1.boolean)('has_penalties_override'),
     hasAscends: (0, pg_core_1.boolean)('has_ascends').notNull().default(false),

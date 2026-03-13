@@ -111,7 +111,7 @@ export const leagues = pgTable('leagues', {
   // Division configuration (can override sport defaults)
   minDivisionsNumber: integer('min_divisions_number').notNull(), // Minimum match divisions
   maxDivisionsNumber: integer('max_divisions_number').notNull(), // Maximum match divisions
-  divisionsTime: integer('divisions_time'), // Override sport's divisionTime (NULL = use sport value)
+  divisionTime: integer('division_time'), // Override sport's divisionTime (NULL = use sport value)
   hasOvertimeOverride: boolean('has_overtime_override'), // Override sport's hasOvertime (NULL = use sport value)
   hasPenaltiesOverride: boolean('has_penalties_override'), // Override sport's hasPenalties (NULL = use sport value)
   

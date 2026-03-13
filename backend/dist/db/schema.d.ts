@@ -1026,8 +1026,8 @@ export declare const leagues: import("drizzle-orm/pg-core").PgTableWithColumns<{
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
-        divisionsTime: import("drizzle-orm/pg-core").PgColumn<{
-            name: "divisions_time";
+        divisionTime: import("drizzle-orm/pg-core").PgColumn<{
+            name: "division_time";
             tableName: "leagues";
             dataType: "number";
             columnType: "PgInteger";

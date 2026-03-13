@@ -201,6 +201,45 @@ export class ApiService {
     }
   }
 
+  // Update fields on a transitional row (supports status and a few common fields)
+  async updateTransitional(id: number, updates: any) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      if (!updates || typeof updates !== 'object') return { updated: false };
+      // only allow a whitelist of fields to be updated
+      const allowed = ['status', 'league', 'season', 'sport', 'source_url', 'payload'];
+      const keys = Object.keys(updates).filter((k) => allowed.includes(k));
+      if (!keys.length) return { updated: false };
+
+      // Normalize boolean-like status values
+      const params: any[] = [];
+      const setParts: string[] = [];
+      for (let i = 0; i < keys.length; i++) {
+        const key = keys[i];
+        let val = updates[key];
+        if (key === 'status') {
+          if (typeof val === 'string') {
+            val = val === 'true' || val === '1' || val === 't';
+          }
+          val = !!val;
+        }
+        params.push(val);
+        // parameter offset will start at $2 because $1 is id
+        setParts.push(`${key} = $${i + 2}`);
+      }
+
+      const sql = `UPDATE api_transitional SET ${setParts.join(', ')} WHERE id = $1 RETURNING id, status`;
+      const res = await pool.query(sql, [id, ...params]);
+      if (res.rows && res.rows.length) {
+        return { updated: true, id: res.rows[0].id, status: res.rows[0].status };
+      }
+      return { updated: false };
+    } finally {
+      await pool.end();
+    }
+  }
+
   // Parse a transitional payload into tabular rows/columns
   async parseTransitional(id: number) {
     const row = await this.getTransitional(id);
@@ -676,7 +715,7 @@ export class ApiService {
         } else {
           // Insert minimal league row per spec
           const ins = await client.query(
-            `INSERT INTO leagues (sport_id, country_id, image_url, original_name, secondary_name, city_id, number_of_rounds_matches, min_divisions_number, max_divisions_number, division_time, has_ascends, ascends_quantity, has_descends, descends_quantity, has_subleagues, number_of_sub_leagues, flg_default, flg_round_automatic, type_of_schedule) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+            `INSERT INTO leagues (sport_id, country_id, image_url, original_name, secondary_name, city_id, number_of_rounds_matches, min_divisions_number, max_divisions_number, division_time, has_ascends, ascends_quantity, has_descends, descends_quantity, number_of_sub_leagues, flg_default, flg_round_automatic, type_of_schedule) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
             [
               sportId,
               countryId,
@@ -692,7 +731,6 @@ export class ApiService {
               10,
               true,
               10,
-              false,
               0,
               false,
               true,
@@ -714,9 +752,12 @@ export class ApiService {
         if (sRes.rows.length) {
           seasonId = sRes.rows[0].id;
         } else {
+          const startYearNum = Number(leagueSeason);
+          const startYear = Number.isFinite(startYearNum) ? Math.trunc(startYearNum) : leagueSeason;
+          const endYear = Number.isFinite(startYearNum) ? startYearNum + 1 : startYear;
           const ins = await client.query(
             `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-            [sportId, leagueId, 'Finished', false, 0, leagueSeason, leagueSeason],
+            [sportId, leagueId, 'Finished', false, 0, startYear, endYear],
           );
           seasonId = ins.rows[0].id;
         }
@@ -791,7 +832,201 @@ export class ApiService {
       // In-memory caches
       const clubCache: Record<string, number> = {};
       const roundCache: Record<number, number> = {};
+      const cityCache: Record<string, number> = {};
+      const stadiumCache: Record<string, number> = {};
+      const sportClubCache = new Set<string>();
+      const seasonClubCache = new Set<string>();
+      const clubStadiumCache = new Set<string>();
       const standingsCalculator = new StandingsCalculatorService();
+
+      const leagueMetaRes = await client.query(`SELECT country_id FROM leagues WHERE id = $1 LIMIT 1`, [leagueId]);
+      const leagueCountryId = leagueMetaRes.rows[0]?.country_id ?? (await client.query(`SELECT id FROM countries LIMIT 1`)).rows[0]?.id ?? null;
+
+      const normalizeText = (value: any) => String(value ?? '').trim();
+      const normalizeLookupKey = (value: any) =>
+        normalizeText(value)
+          .toLowerCase()
+          .normalize('NFKD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '')
+          .trim();
+
+      const ensureSportClub = async (clubId: number | null, clubNameRaw: any) => {
+        if (!clubId) return;
+        const clubName = normalizeText(clubNameRaw);
+        const cacheKey = `${sportId}:${clubId}`;
+        if (sportClubCache.has(cacheKey)) return;
+
+        const existing = await client.query(
+          `SELECT id FROM sport_clubs WHERE sport_id = $1 AND club_id = $2 LIMIT 1`,
+          [sportId, clubId],
+        );
+        if (!existing.rows.length) {
+          await client.query(
+            `INSERT INTO sport_clubs (sport_id, club_id, name, flg_active) VALUES ($1, $2, $3, $4)`,
+            [sportId, clubId, clubName || null, true],
+          );
+        }
+
+        sportClubCache.add(cacheKey);
+      };
+
+      const ensureSeasonClub = async (clubId: number | null) => {
+        if (!clubId) return;
+        const cacheKey = `${sportId}:${leagueId}:${seasonId}:${clubId}`;
+        if (seasonClubCache.has(cacheKey)) return;
+
+        const existing = await client.query(
+          `SELECT id FROM season_clubs WHERE sport_id = $1 AND league_id = $2 AND season_id = $3 AND club_id = $4 AND group_id IS NULL LIMIT 1`,
+          [sportId, leagueId, seasonId, clubId],
+        );
+        if (!existing.rows.length) {
+          await client.query(
+            `INSERT INTO season_clubs (sport_id, league_id, season_id, club_id, group_id) VALUES ($1, $2, $3, $4, $5)`,
+            [sportId, leagueId, seasonId, clubId, null],
+          );
+        }
+
+        seasonClubCache.add(cacheKey);
+      };
+
+      const ensureCity = async (cityNameRaw: any) => {
+        const cityName = normalizeText(cityNameRaw).replace(/[;]+$/g, '');
+        if (!cityName || !leagueCountryId) return null;
+
+        const baseCityName = cityName.split(',')[0]?.trim() || cityName;
+        const cityVariants = Array.from(new Set([cityName, baseCityName].filter(Boolean)));
+
+        for (const variant of cityVariants) {
+          const cacheKey = `${leagueCountryId}:${variant.toLowerCase()}`;
+          if (cityCache[cacheKey]) return cityCache[cacheKey];
+        }
+
+        for (const variant of cityVariants) {
+          const exact = await client.query(
+            `SELECT id FROM cities WHERE country_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+            [leagueCountryId, variant],
+          );
+          if (exact.rows.length) {
+            for (const cacheVariant of cityVariants) {
+              cityCache[`${leagueCountryId}:${cacheVariant.toLowerCase()}`] = exact.rows[0].id;
+            }
+            return exact.rows[0].id;
+          }
+        }
+
+        const flexible = await client.query(
+          `SELECT id, name
+             FROM cities
+            WHERE country_id = $1
+              AND (
+                lower($2) LIKE '%' || lower(name) || '%'
+                OR lower(name) LIKE '%' || lower($3) || '%'
+                OR lower($4) LIKE '%' || lower(name) || '%'
+                OR lower(name) LIKE '%' || lower($5) || '%'
+              )
+            ORDER BY
+              CASE
+                WHEN lower(name) = lower($3) THEN 0
+                WHEN lower(name) = lower($2) THEN 1
+                ELSE 2
+              END,
+              length(name) ASC
+            LIMIT 1`,
+          [leagueCountryId, cityName, baseCityName, baseCityName, cityName],
+        );
+        if (flexible.rows.length) {
+          for (const cacheVariant of cityVariants) {
+            cityCache[`${leagueCountryId}:${cacheVariant.toLowerCase()}`] = flexible.rows[0].id;
+          }
+          return flexible.rows[0].id;
+        }
+
+        const inserted = await client.query(
+          `INSERT INTO cities (name, country_id) VALUES ($1, $2) RETURNING id`,
+          [baseCityName, leagueCountryId],
+        );
+        for (const cacheVariant of cityVariants) {
+          cityCache[`${leagueCountryId}:${cacheVariant.toLowerCase()}`] = inserted.rows[0].id;
+        }
+        return inserted.rows[0].id;
+      };
+
+      const ensureStadium = async (venueNameRaw: any, cityId: number | null) => {
+        const venueName = normalizeText(venueNameRaw);
+        if (!venueName || !cityId) return null;
+
+        const normalizedVenueName = normalizeLookupKey(venueName);
+        const cacheKey = `${sportId}:${cityId}:${normalizedVenueName}`;
+        if (stadiumCache[cacheKey]) return stadiumCache[cacheKey];
+
+        const existing = await client.query(
+          `SELECT id FROM stadiums WHERE sport_id = $1 AND city_id = $2 AND lower(name) = lower($3) LIMIT 1`,
+          [sportId, cityId, venueName],
+        );
+        if (existing.rows.length) {
+          stadiumCache[cacheKey] = existing.rows[0].id;
+          return existing.rows[0].id;
+        }
+
+        const normalizedExisting = await client.query(
+          `SELECT id
+             FROM stadiums
+            WHERE sport_id = $1
+              AND city_id = $2
+              AND regexp_replace(lower(name), '[^a-z0-9]+', '', 'g') = $3
+            LIMIT 1`,
+          [sportId, cityId, normalizedVenueName],
+        );
+        if (normalizedExisting.rows.length) {
+          stadiumCache[cacheKey] = normalizedExisting.rows[0].id;
+          return normalizedExisting.rows[0].id;
+        }
+
+        const flexible = await client.query(
+          `SELECT id
+             FROM stadiums
+            WHERE sport_id = $1
+              AND city_id = $2
+              AND (
+                $3 LIKE '%' || regexp_replace(lower(name), '[^a-z0-9]+', '', 'g') || '%'
+                OR regexp_replace(lower(name), '[^a-z0-9]+', '', 'g') LIKE '%' || $3 || '%'
+              )
+            ORDER BY length(name) ASC
+            LIMIT 1`,
+          [sportId, cityId, normalizedVenueName],
+        );
+        if (flexible.rows.length) {
+          stadiumCache[cacheKey] = flexible.rows[0].id;
+          return flexible.rows[0].id;
+        }
+
+        const inserted = await client.query(
+          `INSERT INTO stadiums (sport_id, name, city_id, capacity, image_url, year_constructed, type) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [sportId, venueName, cityId, null, null, null, 'stadium'],
+        );
+        stadiumCache[cacheKey] = inserted.rows[0].id;
+        return inserted.rows[0].id;
+      };
+
+      const ensureClubStadium = async (clubId: number | null, stadiumId: number | null) => {
+        if (!clubId || !stadiumId) return;
+        const cacheKey = `${clubId}:${stadiumId}`;
+        if (clubStadiumCache.has(cacheKey)) return;
+
+        const existing = await client.query(
+          `SELECT id FROM club_stadiums WHERE club_id = $1 AND stadium_id = $2 LIMIT 1`,
+          [clubId, stadiumId],
+        );
+        if (!existing.rows.length) {
+          await client.query(
+            `INSERT INTO club_stadiums (club_id, stadium_id, start_date, end_date) VALUES ($1, $2, $3, $4)`,
+            [clubId, stadiumId, new Date('1902-07-21T00:00:00.000Z'), null],
+          );
+        }
+
+        clubStadiumCache.add(cacheKey);
+      };
 
       await client.query('BEGIN');
       let applied = 0;
@@ -848,13 +1083,16 @@ export class ApiService {
             if (!clubName) return null;
             if (clubCache[clubName]) return clubCache[clubName];
 
-            // Try exact short_name or name
+            // Try exact short_name or name (restrict to current country)
             let cres = await client.query(
-              `SELECT id FROM clubs WHERE lower(short_name)=lower($1) OR lower(name)=lower($1) LIMIT 1`,
-              [clubName],
+              `SELECT id FROM clubs WHERE (lower(short_name)=lower($1) OR lower(name)=lower($1)) AND country_id = $2 LIMIT 1`,
+              [clubName, leagueCountryId],
             );
             if (!cres.rows.length) {
-              cres = await client.query(`SELECT id FROM clubs WHERE name ILIKE $1 OR short_name ILIKE $1 LIMIT 1`, [`%${clubName}%`]);
+              cres = await client.query(
+                `SELECT id FROM clubs WHERE (name ILIKE $1 OR short_name ILIKE $1) AND country_id = $2 LIMIT 1`,
+                [`%${clubName}%`, leagueCountryId],
+              );
             }
             if (cres.rows.length) {
               clubCache[clubName] = cres.rows[0].id;
@@ -862,7 +1100,7 @@ export class ApiService {
             }
 
             // Create club
-            const countryId = (await client.query(`SELECT id FROM countries LIMIT 1`)).rows[0]?.id ?? null;
+            const countryId = leagueCountryId;
             const ins = await client.query(
               `INSERT INTO clubs (name, short_name, image_url, foundation_year, country_id, city_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
               [clubName, clubName, clubLogo || null, 2000, countryId, null],
@@ -879,9 +1117,21 @@ export class ApiService {
           const awayName = r['teams.away.name'] ?? r['away_team'] ?? null;
           const homeLogo = r['teams.home.logo'] ?? null;
           const awayLogo = r['teams.away.logo'] ?? null;
+          const venueCity = r['fixture.venue.city'] ?? null;
+          const venueName = r['fixture.venue.name'] ?? null;
 
           const homeClubId = await findOrCreateClub(homeName, homeLogo);
           const awayClubId = await findOrCreateClub(awayName, awayLogo);
+
+          await ensureSportClub(homeClubId, homeName);
+          await ensureSportClub(awayClubId, awayName);
+          await ensureSeasonClub(homeClubId);
+          await ensureSeasonClub(awayClubId);
+
+          // Venue data is attached to the fixture, which in football corresponds to the home club context.
+          const cityId = await ensureCity(venueCity);
+          const stadiumId = await ensureStadium(venueName, cityId);
+          await ensureClubStadium(homeClubId, stadiumId);
 
           // Prepare match insert
           const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
@@ -894,7 +1144,7 @@ export class ApiService {
           // Insert match
           const matchRes = await client.query(
             `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-            [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, null, dateVal, status, homeScore, awayScore],
+            [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
           );
           const matchId = matchRes.rows[0].id;
           // create match_divisions rows according to sport defaults and parsed row data
