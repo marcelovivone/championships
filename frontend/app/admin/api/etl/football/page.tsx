@@ -199,8 +199,16 @@ export default function EtlPage() {
             const j = await resp.json();
             const payload = j?.data ?? j;
             setLoadResult(payload ?? payload?.result ?? j);
-                if (!resp.ok) alert(`${dryRun ? 'Dry run' : 'Apply'} failed: ${payload?.error || resp.statusText}`);
-            else {
+
+            const detailedConflictMessage = payload?.error || payload?.details?.message;
+            const isLogicalFailure = payload?.reason === 'round_assignment_conflict' || payload?.applied === 0 && !!detailedConflictMessage;
+
+            if (!resp.ok || isLogicalFailure) {
+                const missingTeams = Array.isArray(payload?.details?.missingTeams)
+                    ? ` Missing teams: ${payload.details.missingTeams.map((team: any) => team?.name || team?.id).join(', ')}.`
+                    : '';
+                alert(`${dryRun ? 'Dry run' : 'Apply'} failed: ${detailedConflictMessage || resp.statusText}${missingTeams}`);
+            } else {
                 alert(`${dryRun ? 'Dry run' : 'Apply'} completed — see Last Operation Result for details.`);
                 // If this was a real run, persist status=true on the server and update UI
                 if (!dryRun) {
@@ -447,6 +455,7 @@ export default function EtlPage() {
                 </div>
                 <DataTable
                     columns={[
+                        { header: 'Origin', accessor: (r: any) => r.origin ?? 'Api-Football' },
                         { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px' },
                         { header: 'Season', accessor: 'season' },
                         { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div> },
@@ -537,31 +546,36 @@ export default function EtlPage() {
                                 <h3 className="font-medium mb-2">Parsed Preview</h3>
                                 <div className="overflow-auto border rounded max-h-[60vh]">
                                     {(() => {
-                                        // const tbl = deriveTable(selected, parsedColumns, parsedRowsData);
-                                        const tbl = deriveTable(selected);
-                                        const cols = tbl.combined;
-                                        const rows = tbl.rows;
-                                        return (
-                                            <table className="min-w-max table-fixed border-collapse whitespace-nowrap">
-                                                <thead className="bg-gray-100">
-                                                    <tr>
-                                                        {cols.map((c) => (
-                                                            <th key={c} className="p-2 text-left text-sm border-b">{c}</th>
-                                                        ))}
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {rows.map((r, i) => (
-                                                        <tr key={i} className="odd:bg-white even:bg-gray-50 border-t">
+                                            // Prefer server-parsed preview when available (parsedRowsData / parsedColumns).
+                                            let cols: string[] | null = parsedColumns && parsedColumns.length ? parsedColumns : null;
+                                            let rows: any[] | null = parsedRowsData && parsedRowsData.length ? parsedRowsData : null;
+                                            if (!cols || !rows) {
+                                                const tbl = deriveTable(selected);
+                                                cols = cols || tbl.combined;
+                                                rows = rows || tbl.rows;
+                                            }
+
+                                            return (
+                                                <table className="min-w-max table-fixed border-collapse whitespace-nowrap">
+                                                    <thead className="bg-gray-100">
+                                                        <tr>
                                                             {cols.map((c) => (
-                                                                <td key={c} className="p-2 text-sm align-top border-r">{String(r[c] ?? '')}</td>
+                                                                <th key={c} className="p-2 text-left text-sm border-b">{c}</th>
                                                             ))}
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        );
-                                    })()}
+                                                    </thead>
+                                                    <tbody>
+                                                        {rows.map((r, i) => (
+                                                            <tr key={i} className="odd:bg-white even:bg-gray-50 border-t">
+                                                                {cols.map((c) => (
+                                                                    <td key={c} className="p-2 text-sm align-top border-r">{String(r[c] ?? '')}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            );
+                                        })()}
                                 </div>
                                 {/* <div className="mt-4 p-3 border-t">
                                     <h4 className="font-medium mb-2">Loader</h4>
@@ -656,7 +670,7 @@ export default function EtlPage() {
                         ) : (
                             <div className="mb-4">
                                 <h3 className="font-medium mb-2">Raw Payload</h3>
-                                <pre className="bg-gray-50 border p-3 rounded text-sm max-h-[60vh] overflow-auto">{JSON.stringify(selected.payload, null, 2)}</pre>
+                                <pre className="bg-gray-50 border p-3 rounded text-sm max-h-[60vh] overflow-auto">{JSON.stringify(selected.payload ?? selected, null, 2)}</pre>
                             </div>
                         )}
                     </div>

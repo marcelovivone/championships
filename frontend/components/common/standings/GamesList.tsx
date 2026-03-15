@@ -53,7 +53,9 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
             <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-3 flex-1 min-w-0">
                 {g.home.image ? (
-                  <img src={g.home.image} alt={g.home.name} className="w-8 h-8 rounded-full object-cover" />
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center p-0.5">
+                    <img src={g.home.image} alt={g.home.name} className="max-w-full max-h-full object-contain" />
+                  </div>
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm"> {g.home.name.charAt(0)}</div>
                 )}
@@ -74,7 +76,9 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
               <div className="flex items-center gap-3 justify-end flex-1 min-w-0">
                 <div className="text-sm text-right truncate">{g.away.name}</div>
                 {g.away.image ? (
-                  <img src={g.away.image} alt={g.away.name} className="w-8 h-8 rounded-full object-cover" />
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center p-0.5">
+                    <img src={g.away.image} alt={g.away.name} className="max-w-full max-h-full object-contain" />
+                  </div>
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm">{g.away.name.charAt(0)}</div>
                 )}

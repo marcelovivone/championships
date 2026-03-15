@@ -11,8 +11,11 @@ export default function AdminApiPage() {
   const [loading, setLoading] = useState(false);
   const [league, setLeague] = useState('39');
   const [season, setSeason] = useState('2025');
+  const [startDate, setStartDate] = useState('2025-08-01');
+  const [endDate, setEndDate] = useState('2026-05-31');
   const [sports, setSports] = useState<any[]>([]);
   const [sportId, setSportId] = useState<number>(36);
+  const [origin, setOrigin] = useState<string>('Api-Football');
   const [minBtnWidth, setMinBtnWidth] = useState<number | null>(() => {
     try {
       if (typeof window === 'undefined') return 100;
@@ -110,7 +113,14 @@ export default function AdminApiPage() {
       const res = await fetch(`${API_BASE}/v1/api/fetch-and-store`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ league: Number(league), season: Number(season) , sport: Number(sportId) }),
+        body: JSON.stringify({
+          league: Number(league),
+          season: Number(season),
+          sport: Number(sportId),
+          origin,
+          startDate,
+          endDate,
+        }),
         signal: controllerRef.current.signal,
       });
       clearTimeout(timeout);
@@ -146,7 +156,14 @@ export default function AdminApiPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Extract from API</h1>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
+        <div>
+          <label className="block text-sm text-gray-600">Origin</label>
+          <select value={origin} onChange={(e) => setOrigin(e.target.value)} className="w-full p-2 border rounded">
+            <option value="Api-Football">Api-Football</option>
+            <option value="Api-Espn">Api-Espn</option>
+          </select>
+        </div>
         <div>
           <label className="block text-sm text-gray-600">Sport</label>
           <select value={sportId} onChange={(e) => setSportId(Number(e.target.value))} className="w-full p-2 border rounded">
@@ -159,10 +176,41 @@ export default function AdminApiPage() {
           <label className="block text-sm text-gray-600">League (used by the API server originally)</label>
           <input className="w-full p-2 border rounded" value={league} onChange={(e) => setLeague(e.target.value)} />
         </div>
-        <div>
-          <label className="block text-sm text-gray-600">Season (used by the API server originally)</label>
-          <input className="w-full p-2 border rounded" value={season} onChange={(e) => setSeason(e.target.value)} />
-        </div>
+        {origin !== 'Api-Espn' && (
+          <div>
+            <label className="block text-sm text-gray-600">Season (used by the API server originally)</label>
+            <input className="w-full p-2 border rounded" value={season} onChange={(e) => setSeason(e.target.value)} />
+          </div>
+        )}
+
+        {origin === 'Api-Espn' && (
+          <>
+            <div>
+              <label className="block text-sm text-gray-600">Start Date</label>
+              <input
+                type="date"
+                className="w-full p-2 border rounded"
+                value={startDate}
+                onChange={(e) => {
+                  const nextStartDate = e.target.value;
+                  setStartDate(nextStartDate);
+                  if (nextStartDate) {
+                    setSeason(nextStartDate.slice(0, 4));
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-gray-600">End Date</label>
+              <input
+                type="date"
+                className="w-full p-2 border rounded"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
+          </>
+        )}
         <div className="flex items-end justify-end gap-2">
           <button
             onClick={handleFetchAndStore}

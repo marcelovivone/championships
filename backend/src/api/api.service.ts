@@ -21,6 +21,7 @@ export class ApiService {
           league INTEGER,
           season INTEGER,
           sport INTEGER,
+          origin TEXT,
           source_url TEXT,
           payload JSONB,
           status BOOLEAN DEFAULT false,
@@ -115,20 +116,53 @@ export class ApiService {
     return { found: true, firstRow, matches };
   }
 
-  // Fetch from external API (api-football) and store full JSON response
-  async fetchAndStore(league: number, season: number, sport?: number) {
+  // Fetch from external API and store full JSON response
+  // origin: 'Api-Football' (default) or 'Api-Espn'
+  async fetchAndStore(
+    league: number,
+    season: number,
+    sport?: number,
+    origin?: string,
+    startDate?: string,
+    endDate?: string,
+  ) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const effectiveOrigin = origin || 'Api-Football';
+    const effectiveSeason = startDate ? Number(String(startDate).slice(0, 4)) : season;
     try {
-      const apiKey = process.env.APISPORTS_KEY;
-      if (!apiKey) throw new Error('Missing API key: set API_FOOTBALL_KEY or APISPORTS_KEY');
+      let url: URL;
+      let headers: Record<string, string> = {};
 
-      const url = new URL('https://v3.football.api-sports.io/fixtures');
-      if (season) url.searchParams.set('season', String(season));
-      if (league) url.searchParams.set('league', String(league));
-      this.logger.log(`Fetching external API: ${url.toString()}`);
+      if (effectiveOrigin === 'Api-Espn') {
+        // ESPN API doesn't require API key for public endpoints
+        // Build URL for ESPN scoreboard
+        // url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard');
+        url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard');
+        // ESPN uses date range format: YYYYMMDD-YYYYMMDD
+        if (startDate && endDate) {
+          const normalizedStartDate = startDate.replace(/-/g, '');
+          const normalizedEndDate = endDate.replace(/-/g, '');
+          url.searchParams.set('dates', `${normalizedStartDate}-${normalizedEndDate}`);
+          url.searchParams.set('limit', '1000');
+        } else if (season) {
+          const fallbackStartDate = `${season}0801`;
+          const fallbackEndDate = `${Number(season) + 1}0531`;
+          url.searchParams.set('dates', `${fallbackStartDate}-${fallbackEndDate}`);
+          url.searchParams.set('limit', '1000');
+        }
+      } else {
+        // Api-Football (default)
+        const apiKey = process.env.APISPORTS_KEY;
+        if (!apiKey) throw new Error('Missing API key: set API_FOOTBALL_KEY or APISPORTS_KEY');
+        url = new URL('https://v3.football.api-sports.io/fixtures');
+        if (season) url.searchParams.set('season', String(season));
+        if (league) url.searchParams.set('league', String(league));
+        headers = { 'x-apisports-key': apiKey };
+      }
+      this.logger.log(`Fetching external API (${effectiveOrigin}): ${url.toString()}`);
 
-      const resp = await fetch(url.toString(), { headers: { 'x-apisports-key': apiKey } });
+      const resp = await fetch(url.toString(), { headers });
       if (!resp.ok) {
         const txt = await resp.text();
         throw new Error(`External API error ${resp.status}: ${txt}`);
@@ -149,8 +183,8 @@ export class ApiService {
       `);
 
       const insertRes = await pool.query(
-        `INSERT INTO api_transitional (league, season, sport, source_url, payload) VALUES ($1,$2,$3,$4,$5) RETURNING id, fetched_at;`,
-        [league || null, season || null, sport || null, url.toString(), json],
+        `INSERT INTO api_transitional (league, season, sport, source_url, payload, origin) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, fetched_at;`,
+        [league || null, effectiveSeason || null, sport || null, url.toString(), json, effectiveOrigin],
       );
       this.logger.log(`Fetched and inserted api_transitional id=${insertRes.rows[0].id}`);
       return { id: insertRes.rows[0].id, fetched_at: insertRes.rows[0].fetched_at };
@@ -165,7 +199,7 @@ export class ApiService {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       const res = await pool.query(
-        `SELECT id, league, season, sport, source_url, status, fetched_at FROM api_transitional ORDER BY fetched_at DESC LIMIT $1`,
+        `SELECT id, league, season, sport, source_url, status, fetched_at, COALESCE(origin, 'Api-Football') as origin FROM api_transitional ORDER BY fetched_at DESC LIMIT $1`,
         [limit],
       );
       return res.rows;
@@ -208,7 +242,7 @@ export class ApiService {
     try {
       if (!updates || typeof updates !== 'object') return { updated: false };
       // only allow a whitelist of fields to be updated
-      const allowed = ['status', 'league', 'season', 'sport', 'source_url', 'payload'];
+      const allowed = ['status', 'league', 'season', 'sport', 'source_url', 'payload', 'origin'];
       const keys = Object.keys(updates).filter((k) => allowed.includes(k));
       if (!keys.length) return { updated: false };
 
@@ -244,6 +278,14 @@ export class ApiService {
   async parseTransitional(id: number) {
     const row = await this.getTransitional(id);
     if (!row) return { found: false };
+    
+    // Check the origin and route to appropriate parser
+    const origin = row.origin ?? 'Api-Football';
+    if (origin === 'Api-Espn') {
+      return this.parseTransitionalEspn(row);
+    }
+    
+    // Default: Api-Football parsing
 // console.log('Parsing transitional id=', id, 'payload=', row.payload);
     const payload = row.payload ?? row;
 // console.log('Payload to parse:', payload);
@@ -325,6 +367,285 @@ export class ApiService {
     return { found: true, columns, rows: flatRows };
   }
 
+  // Parse ESPN API response into tabular format
+  // ESPN structure: events[] -> competitions[0] -> competitors[], venue, status
+  private parseTransitionalEspn(row: any) {
+    const payload = row.payload ?? row;
+    
+    // ESPN data structure: { events: [...] }
+    const events = payload?.events ?? [];
+    if (!Array.isArray(events) || events.length === 0) {
+      return { found: false, reason: 'no_events_array' };
+    }
+    
+    // Extract league info from the first event's season
+    const firstEvent = events[0];
+    const seasonInfo = firstEvent?.season ?? {};
+    const leagueInfo = payload?.leagues?.[0] ?? {};
+
+    const getEspnRoundNumbers = (items: any[]) => {
+      const roundByEventId = new Map<string, number>();
+      const uniqueClubIds = new Set<string>();
+      const reservedEventIds = new Set<string>();
+
+      const getTeamId = (competitor: any) => {
+        const teamId = competitor?.team?.id ?? competitor?.id;
+        return teamId !== undefined && teamId !== null ? String(teamId) : null;
+      };
+
+      const getTeamName = (competitor: any) =>
+        competitor?.team?.displayName ?? competitor?.team?.shortDisplayName ?? competitor?.team?.name ?? null;
+
+      for (const event of items) {
+        const competition = event?.competitions?.[0];
+        const competitors = competition?.competitors ?? [];
+        for (const competitor of competitors) {
+          const teamId = getTeamId(competitor);
+          if (teamId) uniqueClubIds.add(teamId);
+        }
+      }
+
+      const allTeamIds = Array.from(uniqueClubIds);
+      const maxMatchesPerRound = uniqueClubIds.size >= 2 ? Math.floor(uniqueClubIds.size / 2) : null;
+      const toUtcDay = (date: Date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+      const sortableEvents = items
+        .map((event: any, index: number) => {
+          const competition = event?.competitions?.[0];
+          const competitors = competition?.competitors ?? [];
+          const home = competitors.find((c: any) => c.homeAway === 'home') ?? competitors[0] ?? null;
+          const away = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1] ?? competitors.find((c: any) => c !== home) ?? null;
+          const rawDate = competition?.startDate ?? competition?.date ?? event?.date ?? null;
+          const parsedDate = rawDate ? new Date(String(rawDate)) : null;
+          return {
+            event,
+            index,
+            date: parsedDate && !Number.isNaN(parsedDate.getTime()) ? parsedDate : null,
+            homeId: getTeamId(home),
+            awayId: getTeamId(away),
+            homeName: getTeamName(home),
+            awayName: getTeamName(away),
+          };
+        })
+        .filter((item) => item.date !== null)
+        .sort((left, right) => left.date!.getTime() - right.date!.getTime());
+
+      let currentRound = 1;
+      let previousDate: Date | null = null;
+      let matchesInCurrentRound = 0;
+      let currentRoundTeamIds = new Set<string>();
+      let index = 0;
+
+      while (index < sortableEvents.length) {
+        const item = sortableEvents[index];
+        const currentDate = item.date!;
+        const eventId = item.event?.id !== undefined && item.event?.id !== null ? String(item.event.id) : null;
+
+        if (!item.homeId || !item.awayId) {
+          previousDate = currentDate;
+          index += 1;
+          continue;
+        }
+
+        if (eventId && reservedEventIds.has(eventId)) {
+          previousDate = currentDate;
+          index += 1;
+          continue;
+        }
+
+        const roundReachedExpectedSize = maxMatchesPerRound !== null && matchesInCurrentRound >= maxMatchesPerRound;
+        if (roundReachedExpectedSize) {
+          currentRound += 1;
+          matchesInCurrentRound = 0;
+          currentRoundTeamIds = new Set<string>();
+          previousDate = null;
+          continue;
+        }
+
+        if (previousDate) {
+          const diffInDays = Math.floor((toUtcDay(currentDate) - toUtcDay(previousDate)) / (24 * 60 * 60 * 1000));
+          const hasRestDayBetweenMatches = diffInDays > 1;
+          const shouldSplitByGap = maxMatchesPerRound === null && hasRestDayBetweenMatches;
+          if (shouldSplitByGap) {
+            currentRound += 1;
+            matchesInCurrentRound = 0;
+            currentRoundTeamIds = new Set<string>();
+            previousDate = null;
+            continue;
+          }
+        }
+
+        const teamAlreadyInRound = currentRoundTeamIds.has(item.homeId) || currentRoundTeamIds.has(item.awayId);
+        if (teamAlreadyInRound && maxMatchesPerRound !== null) {
+          const missingTeamIds = allTeamIds.filter((teamId) => !currentRoundTeamIds.has(teamId));
+          const teamNamesById = new Map<string, string>();
+          for (const entry of sortableEvents) {
+            if (entry.homeId && entry.homeName && !teamNamesById.has(entry.homeId)) teamNamesById.set(entry.homeId, entry.homeName);
+            if (entry.awayId && entry.awayName && !teamNamesById.has(entry.awayId)) teamNamesById.set(entry.awayId, entry.awayName);
+          }
+
+          if (missingTeamIds.length > 2) {
+            return {
+              roundByEventId,
+              reservedEventIds,
+              conflict: {
+                reason: 'round_assignment_conflict',
+                message: `Round ${currentRound} is missing ${missingTeamIds.length / 2} matches; automatic lookup only supports one missing match.`,
+                details: {
+                  round: currentRound,
+                  expectedMatches: maxMatchesPerRound,
+                  assignedMatches: matchesInCurrentRound,
+                  currentEvent: {
+                    id: item.event?.id ?? null,
+                    date: item.event?.date ?? currentDate.toISOString(),
+                    homeTeam: item.homeName,
+                    awayTeam: item.awayName,
+                  },
+                  missingTeams: missingTeamIds.map((teamId) => ({ id: teamId, name: teamNamesById.get(teamId) ?? teamId })),
+                },
+              },
+            };
+          }
+
+          if (missingTeamIds.length === 2) {
+            const [missingHomeId, missingAwayId] = missingTeamIds;
+            const foundReplacement = sortableEvents.find((candidate, candidateIndex) => {
+              if (candidateIndex <= index) return false;
+              const candidateEventId = candidate.event?.id !== undefined && candidate.event?.id !== null ? String(candidate.event.id) : null;
+              if (!candidateEventId || reservedEventIds.has(candidateEventId) || roundByEventId.has(candidateEventId)) return false;
+              return (
+                (candidate.homeId === missingHomeId && candidate.awayId === missingAwayId) ||
+                (candidate.homeId === missingAwayId && candidate.awayId === missingHomeId)
+              );
+            });
+
+            if (!foundReplacement) {
+              return {
+                roundByEventId,
+                reservedEventIds,
+                conflict: {
+                  reason: 'round_assignment_conflict',
+                  message: `Round ${currentRound} is missing one postponed match, but no future fixture was found for the two missing teams.`,
+                  details: {
+                    round: currentRound,
+                    expectedMatches: maxMatchesPerRound,
+                    assignedMatches: matchesInCurrentRound,
+                    currentEvent: {
+                      id: item.event?.id ?? null,
+                      date: item.event?.date ?? currentDate.toISOString(),
+                      homeTeam: item.homeName,
+                      awayTeam: item.awayName,
+                    },
+                    missingTeams: missingTeamIds.map((teamId) => ({ id: teamId, name: teamNamesById.get(teamId) ?? teamId })),
+                  },
+                },
+              };
+            }
+
+            const replacementEventId = String(foundReplacement.event.id);
+            roundByEventId.set(replacementEventId, currentRound);
+            reservedEventIds.add(replacementEventId);
+            matchesInCurrentRound += 1;
+            currentRoundTeamIds.add(missingHomeId);
+            currentRoundTeamIds.add(missingAwayId);
+            currentRound += 1;
+            matchesInCurrentRound = 0;
+            currentRoundTeamIds = new Set<string>();
+            previousDate = null;
+            continue;
+          }
+        }
+
+        if (eventId) roundByEventId.set(eventId, currentRound);
+        matchesInCurrentRound += 1;
+        currentRoundTeamIds.add(item.homeId);
+        currentRoundTeamIds.add(item.awayId);
+        previousDate = currentDate;
+        index += 1;
+      }
+
+      return { roundByEventId, reservedEventIds, conflict: null };
+    };
+
+    const roundResult = getEspnRoundNumbers(events);
+    if (roundResult.conflict) {
+      return {
+        found: false,
+        reason: roundResult.conflict.reason,
+        error: roundResult.conflict.message,
+        details: roundResult.conflict.details,
+      };
+    }
+
+    const derivedRounds = roundResult.roundByEventId;
+    
+    // Map ESPN events to our standardized format (similar to Api-Football structure)
+    const rows: any[] = [];
+    
+    for (const event of events) {
+      const competition = event?.competitions?.[0];
+      if (!competition) continue;
+      
+      const competitors = competition?.competitors ?? [];
+      const homeTeam = competitors.find((c: any) => c.homeAway === 'home');
+      const awayTeam = competitors.find((c: any) => c.homeAway === 'away');
+      
+      if (!homeTeam || !awayTeam) continue;
+      
+      const venue = competition?.venue ?? {};
+      const status = competition?.status?.type ?? {};
+      
+      // Map to Api-Football-like structure for consistency
+      const mapped: Record<string, any> = {
+        // League info (from first event or payload)
+        'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Premier League',
+        'league.season': seasonInfo?.year ?? new Date().getFullYear(),
+        'league.country': venue?.address?.country ?? 'England',
+        'league.flag': null,
+        
+        // ESPN does not reliably expose round/matchday values. Derive rounds primarily from the
+        // expected number of matches in a round (clubs / 2). Date gaps are only a fallback when the
+        // expected round size cannot be inferred.
+        'league.round': derivedRounds.get(String(event?.id)) ?? null,
+
+        // Scores
+        'goals.home': homeTeam?.score ? Number(homeTeam.score) : null,
+        'goals.away': awayTeam?.score ? Number(awayTeam.score) : null,
+        
+        // ESPN doesn't provide halftime scores in the standard scoreboard endpoint
+        'score.halftime.home': null,
+        'score.halftime.away': null,
+        
+        // Teams
+        'teams.home.name': homeTeam?.team?.displayName ?? homeTeam?.team?.name ?? null,
+        'teams.home.logo': homeTeam?.team?.logo ?? null,
+        'teams.away.name': awayTeam?.team?.displayName ?? awayTeam?.team?.name ?? null,
+        'teams.away.logo': awayTeam?.team?.logo ?? null,
+        
+        // Fixture info
+        'fixture.date': competition?.date ?? event?.date ?? null,
+        'fixture.venue.city': venue?.address?.city ?? null,
+        'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
+        'fixture.status.long': status?.description ?? null,
+        'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
+        'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
+        
+        // Additional ESPN-specific fields that might be useful
+        'espn.event.id': event?.id ?? null,
+        'espn.competition.id': competition?.id ?? null,
+        'espn.attendance': competition?.attendance ?? null,
+      };
+      
+      rows.push(mapped);
+    }
+    
+    if (rows.length === 0) {
+      return { found: false, reason: 'no_valid_events' };
+    }
+    
+    const columns = Array.from(new Set(rows.flatMap(Object.keys)));
+    return { found: true, columns, rows };
+  }
+
   // Apply parsed transitional rows into a target table with dry-run and audit support
   async applyTransitional(
     id: number,
@@ -365,8 +686,19 @@ export class ApiService {
         );
       `);
 
-      const parsed = await this.parseTransitional(id);
-      if (!parsed || !parsed.found) return { applied: 0, reason: 'not_found' };
+      const parsed = await this.parseTransitional(id) as any;
+      if (!parsed || !parsed.found) {
+        if (parsed?.reason === 'round_assignment_conflict') {
+          const details = parsed?.details ?? {};
+          const message = parsed?.error ?? 'Round assignment conflict while deriving ESPN rounds';
+          const logRes = await client.query(
+            `INSERT INTO api_import_log (transitional_id, message, details) VALUES ($1,$2,$3) RETURNING id`,
+            [id, 'round_assignment_conflict', { message, ...details }],
+          );
+          return { applied: 0, reason: parsed.reason, error: message, details, logId: logRes.rows[0]?.id ?? null };
+        }
+        return { applied: 0, reason: 'not_found' };
+      }
 
       const rows = parsed.rows || [];
       if (!rows.length) return { applied: 0, reason: 'no_rows' };
@@ -625,7 +957,7 @@ export class ApiService {
         );
       `);
 
-      const parsed = await this.parseTransitional(id);
+      const parsed = await this.parseTransitional(id) as any;
       if (!parsed || !parsed.found) return { applied: false, reason: 'not_found' };
       const rows = parsed.rows || [];
       if (!rows.length) return { applied: false, reason: 'no_rows' };
@@ -813,7 +1145,7 @@ export class ApiService {
         );
       `);
 
-      const parsed = await this.parseTransitional(id);
+      const parsed = await this.parseTransitional(id) as any;
       if (!parsed || !parsed.found) return { applied: 0, reason: 'not_found' };
       const rows = parsed.rows || [];
       if (!rows.length) return { applied: 0, reason: 'no_rows' };
@@ -1156,8 +1488,13 @@ export class ApiService {
             throw e;
           }
 
-          // Build standings: fetch previous standings and match_divisions, compute stats, insert two rows
+          // Build standings only for finished matches: fetch previous standings and match_divisions, compute stats, insert two rows
           try {
+            if (status !== 'Finished') {
+              // skip standings update for non-finished matches
+              applied += 1;
+              continue;
+            }
             // fetch latest standings entries for both clubs
             const latestHomeRes = await client.query(
               `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
@@ -1208,15 +1545,6 @@ export class ApiService {
 
             const latestHome = mapRowToStanding(latestHomeStanding);
             const latestAway = mapRowToStanding(latestAwayStanding);
-
-            if (roundNumberInt <= 4) {
-            if (homeClubId === 265) {
-                console.log('Debug homeStats', 'Round ', roundNumberInt, { latestHomeStanding });
-            }
-            if (awayClubId === 265) {
-                console.log('Debug awayStats', 'Round ', roundNumberInt, { latestAwayStanding });
-            }
-            }
 
             // fetch sport name
             const spn = await client.query(`SELECT name FROM sports WHERE id = $1 LIMIT 1`, [sportId]);

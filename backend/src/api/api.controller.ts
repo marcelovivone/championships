@@ -17,8 +17,25 @@ export class ApiController {
   }
 
   @Post('fetch-and-store')
-  async fetchAndStore(@Body() body: { league: number; season: number; sport?: number }) {
-    const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport);
+  async fetchAndStore(
+    @Body()
+    body: {
+      league: number;
+      season: number;
+      sport?: number;
+      origin?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+  ) {
+    const result = await this.apiService.fetchAndStore(
+      body.league,
+      body.season,
+      body.sport,
+      body.origin,
+      body.startDate,
+      body.endDate,
+    );
     return { stored: result };
   }
 
@@ -38,12 +55,10 @@ export class ApiController {
 
   @Get('transitional/:id/parse')
   async parseTransitional(@Param('id', ParseIntPipe) id: number) {
-    const parsed = await this.apiService.parseTransitional(id);
+    const parsed = await this.apiService.parseTransitional(id) as any;
     if (!parsed || !parsed.found) {
         return { found: false };
     }
-    // console.log('Flattened rows:', parsed.rows);
-    // console.log('Columns:', parsed.columns);
     return { found: true, columns: parsed.columns, rows: parsed.rows };
   }
 
