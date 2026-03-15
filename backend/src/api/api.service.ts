@@ -1369,7 +1369,21 @@ export class ApiService {
       let createdDivisions = 0;
       let createdStandings = 0;
 
-      for (const r of rows) {
+      // Sort rows by round number ascending BEFORE processing.
+      // This is critical when a reserved/relocated match (e.g. a postponed game that was
+      // looked-up from a later position in the JSON) has a lower round number than the
+      // events that precede it in the array. Without this sort the standings calculator
+      // would see a later-round "previous" row as the base when computing the earlier round,
+      // producing impossible played-count values like 3 for round 2.
+      const sortedRows = [...rows].sort((a: any, b: any) => {
+        const ra = a['league.round'] != null ? Number(a['league.round']) : Infinity;
+        const rb = b['league.round'] != null ? Number(b['league.round']) : Infinity;
+        if (ra !== rb) return ra - rb;
+        // Within the same round preserve the original JSON order (stable secondary sort)
+        return 0;
+      });
+
+      for (const r of sortedRows) {
         try {
           const roundNumber = r['league.round'] ?? r['round'] ?? null;
           let roundId: number | null = null;

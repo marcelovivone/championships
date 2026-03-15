@@ -63,14 +63,10 @@ export default function GamesList({ games, isLoading, error, onRetry }: { games?
               </div>
 
               <div className="w-20 flex-shrink-0 text-center">
-                {g.score ? (
                   <div>
-                    <div className="text-gray-800 font-semibold">{g.score}</div>
+                    <div className="text-gray-800 font-semibold">{g.status === 'Finished' ? g.score : '-'}</div>
                     {g.status && <div className="text-xs text-gray-500">{g.status}</div>}
                   </div>
-                ) : (
-                  <div className="text-gray-400">X</div>
-                )}
               </div>
 
               <div className="flex items-center gap-3 justify-end flex-1 min-w-0">

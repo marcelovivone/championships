@@ -220,7 +220,11 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
             try {
               if (inferredClubId) {
                 const clubId = Number(inferredClubId);
-                const hasScore = (m: any) => Number.isFinite(Number(m.homeScore)) && Number.isFinite(Number(m.awayScore));
+                const isFinished = (m: any) => {
+                  const s = String(m.status ?? m.matchStatus ?? '').toLowerCase();
+                  return s === 'finished' || s === 'ft' || s === 'complete' || s === 'completed';
+                };
+                const hasScore = (m: any) => isFinished(m) && Number.isFinite(Number(m.homeScore)) && Number.isFinite(Number(m.awayScore));
                 const combined: any[] = [];
                 if (Array.isArray(historicalMatches)) combined.push(...historicalMatches);
                 if (Array.isArray(currentMatches)) combined.push(...currentMatches);

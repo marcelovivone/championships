@@ -1,19 +1,35 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc, asc } from 'drizzle-orm';
+import { eq, and, desc, asc, lt } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { standings, seasons, leagues, groups, rounds, matches } from '../db/schema';
+import { standings, seasons, leagues, groups, rounds, matches, seasonClubs } from '../db/schema';
 import { CreateStandingDto } from '../common/dtos';
 import { StandingsCalculatorService } from './standings-calculator.service';
 
 @Injectable()
 export class StandingsService {
         /**
-         * Get standings by leagueId, seasonId, and roundId
+         * Get standings by leagueId, seasonId, and roundId.
+         * Clubs with postponed matches that have no row for this round are filled with
+         * either their most-recent previous-round row, or zeroed-out values when no
+         * earlier round row exists.
          */
         async findByLeagueIdAndSeasonIdAndRoundId(leagueId: number, seasonId: number, roundId: number, clubId?: number) {
             try {
-                return await this.db
+                // 1. Fetch the requested round to get its roundNumber
+                const [currentRound] = await this.db
+                    .select()
+                    .from(rounds)
+                    .where(eq(rounds.id, roundId))
+                    .limit(1);
+
+                if (!currentRound) {
+                    throw new BadRequestException(`Round with ID ${roundId} not found`);
+                }
+                const currentRoundNumber = currentRound.roundNumber;
+
+                // 2. Fetch actual standing rows for this round
+                const existing = await this.db
                     .select()
                     .from(standings)
                     .where(
@@ -25,9 +41,118 @@ export class StandingsService {
                         )
                     )
                     .orderBy(desc(standings.points), asc(standings.goalsFor));
+
+                // 3. Determine the full set of clubs for this league+season
+                const allSeasonClubs = await this.db
+                    .select()
+                    .from(seasonClubs)
+                    .where(
+                        and(
+                            eq(seasonClubs.leagueId, leagueId),
+                            eq(seasonClubs.seasonId, seasonId),
+                            clubId ? eq(seasonClubs.clubId, clubId) : undefined
+                        )
+                    );
+
+                if (allSeasonClubs.length === 0) {
+                    return existing;
+                }
+
+                // Build a set of clubIds that already have a row for this round
+                const presentIds = new Set(existing.map(r => r.clubId));
+
+                // 4. For each missing club, find most-recent earlier-round standing or zero-fill
+                const fallbacks: (typeof existing[number])[] = [];
+
+                for (const sc of allSeasonClubs) {
+                    if (presentIds.has(sc.clubId)) continue;
+
+                    if (currentRoundNumber <= 1) {
+                        fallbacks.push(this.buildZeroRow(leagueId, seasonId, roundId, sc.clubId, sc.sportId, sc.groupId ?? null));
+                        continue;
+                    }
+
+                    // Query the standing for the highest round < currentRoundNumber for this club.
+                    // Using lt(rounds.roundNumber, currentRoundNumber) directly in the WHERE clause
+                    // ensures we never accidentally pick up any rows from the current round.
+                    const prevRows = await this.db
+                        .select({ standing: standings, roundNumber: rounds.roundNumber })
+                        .from(standings)
+                        .innerJoin(rounds, eq(standings.roundId, rounds.id))
+                        .where(
+                            and(
+                                eq(standings.leagueId, leagueId),
+                                eq(standings.seasonId, seasonId),
+                                eq(standings.clubId, sc.clubId),
+                                lt(rounds.roundNumber, currentRoundNumber)
+                            )
+                        )
+                        .orderBy(desc(rounds.roundNumber))
+                        .limit(1);
+
+                    if (prevRows.length > 0) {
+                        fallbacks.push(prevRows[0].standing);
+                    } else {
+                        fallbacks.push(this.buildZeroRow(leagueId, seasonId, roundId, sc.clubId, sc.sportId, sc.groupId ?? null));
+                    }
+                }
+
+                // 5. Merge and sort by points desc, then goalsFor asc
+                const merged = [...existing, ...fallbacks];
+                merged.sort((a, b) => {
+                    if ((b.points ?? 0) !== (a.points ?? 0)) return (b.points ?? 0) - (a.points ?? 0);
+                    return (a.goalsFor ?? 0) - (b.goalsFor ?? 0);
+                });
+                return merged;
             } catch (error) {
+                if (error instanceof BadRequestException) throw error;
                 throw new BadRequestException('Failed to fetch standings by league, season, and round');
             }
+        }
+
+        /** Build a zeroed-out in-memory standing row for a club with no data yet */
+        private buildZeroRow(leagueId: number, seasonId: number, roundId: number, clubId: number, sportId: number, groupId: number | null) {
+            const now = new Date();
+            return {
+                id: 0,
+                sportId,
+                leagueId,
+                seasonId,
+                roundId,
+                matchDate: null,
+                groupId,
+                clubId,
+                matchId: null,
+                points: 0,
+                played: 0,
+                wins: 0,
+                draws: 0,
+                losses: 0,
+                goalsFor: 0,
+                goalsAgainst: 0,
+                overtimeWins: 0,
+                overtimeLosses: 0,
+                penaltyWins: 0,
+                penaltyLosses: 0,
+                setsWon: 0,
+                setsLost: 0,
+                homeGamesPlayed: 0,
+                awayGamesPlayed: 0,
+                homePoints: 0,
+                awayPoints: 0,
+                homeWins: 0,
+                homeLosses: 0,
+                homeDraws: 0,
+                homeGoalsFor: 0,
+                homeGoalsAgainst: 0,
+                awayWins: 0,
+                awayLosses: 0,
+                awayDraws: 0,
+                awayGoalsFor: 0,
+                awayGoalsAgainst: 0,
+                createdAt: now,
+                updatedAt: now,
+            } as any;
         }
 
         /**

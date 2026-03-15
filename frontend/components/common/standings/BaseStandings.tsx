@@ -344,22 +344,48 @@ export default function BaseStandings({
                 if (!group || group === 'all') return true;
                 return String(s.groupId ?? s.group?.id ?? s.group_id ?? '') === String(group);
               });
-              // determine cutoff date for historical matches (use round/day)
+              // determine cutoff / historical-match set for Last-5 / Last-10 computation
               let cutoffDate: string | undefined = undefined;
+              let historicalMatchesForTable: any[] = (allMatchesQuery.data || []) as any[];
+
               if (scheduleIsDate) {
                 cutoffDate = String(roundOrDay);
               } else {
-                const srcMatches = matchesQuery.data !== undefined ? matchesQuery.data : games;
-                if (Array.isArray(srcMatches) && srcMatches.length > 0) {
-                  // use earliest date from current round/day matches as cutoff
-                  const dates = srcMatches.map((m: any) => m.date ?? m.matchDate ?? m.datetime ?? m.dateTime).filter(Boolean).map((d: any) => new Date(d).toISOString());
-                  if (dates.length > 0) cutoffDate = dates.sort()[0];
+                // For round-based schedules use round-number filtering instead of date
+                // filtering. A postponed game that was played AFTER a later round's
+                // calendar start still belongs to its own (earlier) round in the DB, so
+                // it must be included when the user views that later round. Date-based
+                // cuts would incorrectly exclude it.
+                const currentRoundNum = Number(debouncedRoundOrDay);
+                if (!isNaN(currentRoundNum) && Array.isArray(roundsQuery.data) && roundsQuery.data.length > 0) {
+                  // Build the set of roundIds whose roundNumber <= currentRoundNum
+                  const eligibleRoundIds = new Set(
+                    (roundsQuery.data as any[])
+                      .filter((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) <= currentRoundNum)
+                      .map((rr: any) => String(rr.id ?? rr.roundId ?? rr.round_id))
+                  );
+                  if (eligibleRoundIds.size > 0) {
+                    historicalMatchesForTable = historicalMatchesForTable.filter((m: any) => {
+                      const rid = String(m.roundId ?? m.round_id ?? m.round?.id ?? '');
+                      return eligibleRoundIds.has(rid);
+                    });
+                  }
+                  // cutoffDate stays undefined → StandingsTable won't apply date filtering
+                } else {
+                  // Fallback when rounds data is unavailable: use latest date in current round
+                  const srcMatches = matchesQuery.data !== undefined ? matchesQuery.data : games;
+                  if (Array.isArray(srcMatches) && srcMatches.length > 0) {
+                    const dates = srcMatches
+                      .map((m: any) => m.date ?? m.matchDate ?? m.datetime ?? m.dateTime)
+                      .filter(Boolean)
+                      .map((d: any) => new Date(d).toISOString());
+                    if (dates.length > 0) cutoffDate = dates.sort().at(-1); // latest, not earliest
+                  }
                 }
               }
 
               const currentMatches = (matchesQuery.data !== undefined ? matchesQuery.data : games) as any[];
-              const historicalMatches = (allMatchesQuery.data || []) as any[];
-              return <StandingsTable rows={filtered} clubsMap={clubsMap} historicalMatches={historicalMatches} cutoffDate={cutoffDate} currentMatches={currentMatches} viewType={viewType} />;
+              return <StandingsTable rows={filtered} clubsMap={clubsMap} historicalMatches={historicalMatchesForTable} cutoffDate={cutoffDate} currentMatches={currentMatches} viewType={viewType} />;
             })()
           )}
         </div>
