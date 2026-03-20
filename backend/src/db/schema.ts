@@ -224,7 +224,7 @@ export const matches = pgTable('matches', {
   status: matchStatusEnum('status').default('Scheduled').notNull(), // 'Scheduled', 'Finished', 'Postponed', 'Cancelled'
   homeScore: integer('home_score'), // Only set when match is finished
   awayScore: integer('away_score'), // Only set when match is finished
-  espnApiId: varchar('espn_api_id', { length: 50 }), // For integration with ESPN API (if needed)
+  originApiId: varchar('origin_api_id', { length: 50 }), // For integration with external API (if needed)
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

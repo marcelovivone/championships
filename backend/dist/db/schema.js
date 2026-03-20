@@ -152,7 +152,7 @@ exports.matches = (0, pg_core_1.pgTable)('matches', {
     status: (0, exports.matchStatusEnum)('status').default('Scheduled').notNull(),
     homeScore: (0, pg_core_1.integer)('home_score'),
     awayScore: (0, pg_core_1.integer)('away_score'),
-    espnApiId: (0, pg_core_1.varchar)('espn_api_id', { length: 50 }),
+    originApiId: (0, pg_core_1.varchar)('origin_api_id', { length: 50 }),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
     updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
 });

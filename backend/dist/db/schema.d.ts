@@ -2148,8 +2148,8 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
-        espnApiId: import("drizzle-orm/pg-core").PgColumn<{
-            name: "espn_api_id";
+        originApiId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "origin_api_id";
             tableName: "matches";
             dataType: "string";
             columnType: "PgVarchar";

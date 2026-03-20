@@ -47,4 +47,4 @@ TRANSFORM & LOAD
     the new json to can perform the same things.
 
     New feature:
-    - Save the event id in matches table. I have already created the new column.
+    - Save the event id in matches table. I have already created the new column in matches table and also a new column in sports table, identifiyng if the payload of ESPN comes or not with the partial scores.

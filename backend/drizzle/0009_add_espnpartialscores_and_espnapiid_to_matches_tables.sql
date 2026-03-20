@@ -8,13 +8,13 @@ ADD COLUMN IF NOT EXISTS flg_espn_api_partial_scores BOOLEAN DEFAULT FALSE;
 -- Comment for documentation
 COMMENT ON COLUMN sports.flg_espn_api_partial_scores IS 'Indicates if the first payload (scoreboard) contains the game partial scores: TRUE or FALSE';
 
--- Add espn_api_id column to matches table and create index for it
+-- Add origin_api_id column to matches table and create index for it
 
 ALTER TABLE matches
-ADD COLUMN IF NOT EXISTS espn_api_id VARCHAR(50) DEFAULT '';
+ADD COLUMN IF NOT EXISTS origin_api_id VARCHAR(50) DEFAULT '';
 
 -- Comment for documentation
-COMMENT ON COLUMN matches.espn_api_id IS 'ESPN API identifier for the match';
+COMMENT ON COLUMN matches.origin_api_id IS 'Origin API identifier for the match';
 
--- Create index for espn_api_id column
-CREATE INDEX IF NOT EXISTS idx_matches_espn_api_id ON matches(espn_api_id);
+-- Create index for origin_api_id column
+CREATE INDEX IF NOT EXISTS idx_matches_origin_api_id ON matches(origin_api_id);

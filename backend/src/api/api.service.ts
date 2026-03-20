@@ -508,7 +508,8 @@ export class ApiService {
 // console.log('Helper getTeamId defined');
       const getTeamName = (competitor: any) =>
         competitor?.team?.displayName ?? competitor?.team?.shortDisplayName ?? competitor?.team?.name ?? null;
-// console.log('Helper getTeamName defined');
+      const getTeamShortName = (competitor: any) =>
+        competitor?.team?.shortDisplayName ?? competitor?.team?.abbreviation ?? competitor?.team?.displayName ?? competitor?.team?.name ?? null;
       for (const event of items) {
         const competition = event?.competitions?.[0];
         const competitors = competition?.competitors ?? [];
@@ -574,6 +575,8 @@ export class ApiService {
             awayId: getTeamId(away),
             homeName: getTeamName(home),
             awayName: getTeamName(away),
+            homeShortName: getTeamShortName(home),
+            awayShortName: getTeamShortName(away),
           };
         })
         .filter((item) => item.date !== null)
@@ -709,6 +712,8 @@ export class ApiService {
             leagueLocalDate: formatLeagueLocalDate(entry.date ?? null),
             homeTeam: entry.homeName,
             awayTeam: entry.awayName,
+            homeShortName: entry.homeShortName,
+            awayShortName: entry.awayShortName,
             homeId: entry.homeId,
             awayId: entry.awayId,
             venueName: competition?.venue?.fullName ?? competition?.venue?.shortName ?? null,
@@ -765,6 +770,8 @@ export class ApiService {
                 date: currentEventItem.event?.date ?? currentEventItem.date?.toISOString() ?? null,
                 homeTeam: currentEventItem.homeName,
                 awayTeam: currentEventItem.awayName,
+                homeShortName: currentEventItem.homeShortName,
+                awayShortName: currentEventItem.awayShortName,
               }
             : null,
           reviewMatches,
@@ -777,6 +784,8 @@ export class ApiService {
             awayId: entry.awayId,
             homeName: entry.homeName,
             awayName: entry.awayName,
+            homeShortName: entry.homeShortName,
+            awayShortName: entry.awayShortName,
           })),
           roundAssignments: Array.from(roundByEventId.entries()).map(([evId, r]) => ({ eventId: evId, round: r })),
           reservedEventIds: Array.from(reservedEventIds),
@@ -1182,9 +1191,8 @@ if (!foundReplacement) {
         'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
         'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
         
-        // Additional ESPN-specific fields that might be useful
-        // expose a flat `espn_event_id` key so downstream loaders can easily persist it
-        'espn_event_id': event?.id != null ? Number(event.id) : null,
+        // Origin API identifier — persisted as origin_api_id in the matches table
+        'origin_api_id': event?.id != null ? String(event.id) : null,
       };
         // console.log('Mapping ESPN event id:', event?.id);
       rows.push(mapped);
@@ -1957,13 +1965,17 @@ if (!foundReplacement) {
         return 0;
       });
 
-      // Check whether `matches` table contains `espn_event_id` so we can conditionally include it
+      // Check whether `matches` table contains `origin_api_id` so we can conditionally include it
       const matchColsRes = await client.query(
         `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
         ['matches'],
       );
       const matchCols = matchColsRes.rows.map((c: any) => c.column_name);
-      const hasMatchesEspnEventCol = matchCols.includes('espn_event_id');
+      const hasOriginApiIdCol = matchCols.includes('origin_api_id');
+
+      // Counters for upsert tracking
+      let skippedUnchanged = 0;
+      let updatedMatches = 0;
 
       for (const r of sortedRows) {
         try {
@@ -2068,34 +2080,86 @@ if (!foundReplacement) {
           const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
           const homeScore = r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
           const awayScore = r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
-          const espnEventId =
-            r['espn_event_id'] != null && r['espn_event_id'] !== '' && Number.isFinite(Number(r['espn_event_id']))
-              ? Number(r['espn_event_id'])
+          // Resolve the origin API identifier from whichever key the parser emitted:
+          //   ESPN rows  -> 'origin_api_id' (new) or legacy 'espn_event_id'
+          //   Api-Football rows -> 'fixture.id' (produced by the generic flattener)
+          const originApiIdRaw = r['origin_api_id'] ?? r['espn_event_id'] ?? r['fixture.id'] ?? null;
+          const originApiId: string | null =
+            originApiIdRaw != null && String(originApiIdRaw).trim() !== ''
+              ? String(originApiIdRaw).trim()
               : null;
 
-          // Insert match
-          let matchRes;
-          if (hasMatchesEspnEventCol) {
-            //   console.log('Inserting match with espn_event_id:', { sportId, leagueId, seasonId, roundId, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, espnEventId });
-              matchRes = await client.query(
-                  `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, espn_event_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-                  [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, espnEventId],
-                );
-          } else {
-            //   console.log('Inserting match without espn_event_id:', { sportId, leagueId, seasonId, roundId, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore });
-              matchRes = await client.query(
-              `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-              [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
+          // ── Upsert logic ─────────────────────────────────────────────
+          // When origin_api_id is available, check whether this match already
+          // exists in the database for the same league/season.
+          //   • Already finished → skip entirely (no duplicates)
+          //   • Exists but not finished AND payload now has scores → UPDATE
+          //   • Does not exist → INSERT as usual
+          let matchId: number;
+          let isExistingMatch = false;
+
+          if (hasOriginApiIdCol && originApiId) {
+            const existingRes = await client.query(
+              `SELECT id, status, home_score, away_score FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
+              [originApiId, leagueId, seasonId],
             );
+            if (existingRes.rows.length > 0) {
+              const existing = existingRes.rows[0];
+              if (existing.status === 'Finished') {
+                // Match already fully loaded — nothing to do
+                skippedUnchanged += 1;
+                applied += 1;
+                continue;
+              }
+              // Match exists but is not finished yet
+              if (status === 'Finished' && homeScore != null && awayScore != null) {
+                // Payload now has scores → update the match
+                await client.query(
+                  `UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), updated_at = now() WHERE id = $6`,
+                  [status, homeScore, awayScore, roundId, dateVal, existing.id],
+                );
+                matchId = existing.id;
+                isExistingMatch = true;
+                updatedMatches += 1;
+                // Recreate match_divisions for the now-finished match
+                await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [matchId]);
+                try {
+                  const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
+                  if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
+                } catch (e) {
+                  throw e;
+                }
+              } else {
+                // Still not finished in the payload either — skip
+                skippedUnchanged += 1;
+                applied += 1;
+                continue;
+              }
+            }
           }
-          const matchId = matchRes.rows[0].id;
-          // create match_divisions rows according to sport defaults and parsed row data
-          try {
-            const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
-            if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
-          } catch (e) {
-            // if creating divisions fails, treat as fatal for this transaction
-            throw e;
+
+          if (!isExistingMatch) {
+            // Insert new match
+            let matchRes;
+            if (hasOriginApiIdCol) {
+              matchRes = await client.query(
+                `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, originApiId],
+              );
+            } else {
+              matchRes = await client.query(
+                `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
+              );
+            }
+            matchId = matchRes.rows[0].id;
+            // create match_divisions rows for NEW matches
+            try {
+              const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
+              if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
+            } catch (e) {
+              throw e;
+            }
           }
 
           // Build standings only for finished matches: fetch previous standings and match_divisions, compute stats, insert two rows
@@ -2375,7 +2439,7 @@ if (!foundReplacement) {
           [
             id,
             options.dryRun ? 'dry_run' : 'applied',
-            { applied, createdClubs, createdRounds, createdDivisions, createdStandings, clubsIncluded, dryRun: !!options.dryRun },
+            { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun },
           ],
         );
       } catch (e) {
@@ -2390,7 +2454,7 @@ if (!foundReplacement) {
         await this.deleteRoundReview(id);
       }
 
-      return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, clubsIncluded, dryRun: !!options.dryRun };
+      return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun };
     } catch (e) {
       const snapshotSql = lastSqlAll;
       const snapshotParams = lastParamsAll;

@@ -213,15 +213,15 @@ export default function EtlPage() {
                 setSelected({ id, parseError: 'needs_round_review', parseDetails: payload?.details ?? null });
                 const derivedRows = reviewMatches.map((match: any) => ({
                     'league.round': match.assignedRound ?? null,
-                    'espn_event_id': match.eventId ?? null,
+                    'origin_api_id': match.eventId ?? null,
                     'fixture.date': match.leagueLocalDate ?? match.date ?? null,
-                    'teams.home.name': match.homeTeam ?? null,
-                    'teams.away.name': match.awayTeam ?? null,
+                    'teams.home.name': match.homeShortName ?? match.homeTeam ?? null,
+                    'teams.away.name': match.awayShortName ?? match.awayTeam ?? null,
                     'fixture.venue.name': match.venueName ?? null,
                     'fixture.venue.city': match.venueCity ?? null,
                     'assignment.source': match.assignmentSource ?? null,
                 }));
-                setParsedColumns(['league.round','espn_event_id','fixture.date','teams.home.name','teams.away.name','fixture.venue.name','fixture.venue.city','assignment.source']);
+                setParsedColumns(['league.round','origin_api_id','fixture.date','teams.home.name','teams.away.name','fixture.venue.name','fixture.venue.city','assignment.source']);
                 setParsedRowsData(derivedRows);
             } else {
                 // Parsing failed: show only the reason/error (and any details) to avoid loading huge payloads
@@ -240,14 +240,14 @@ export default function EtlPage() {
                     }, {} as Record<string, any>);
                     const derivedRows = (payload.details.partialEvents || []).map((pe: any) => ({
                         'league.round': roundMap[String(pe.eventId)] ?? null,
-                        'espn_event_id': pe.eventId ?? null,
+                        'origin_api_id': pe.eventId ?? null,
                         'fixture.date': pe.date ?? null,
-                        'teams.home.name': pe.homeName ?? null,
-                        'teams.away.name': pe.awayName ?? null,
+                        'teams.home.name': pe.homeShortName ?? pe.homeName ?? null,
+                        'teams.away.name': pe.awayShortName ?? pe.awayName ?? null,
                         'home_id': pe.homeId ?? null,
                         'away_id': pe.awayId ?? null,
                     }));
-                    setParsedColumns(['league.round','espn_event_id','fixture.date','teams.home.name','teams.away.name','home_id','away_id']);
+                    setParsedColumns(['league.round','origin_api_id','fixture.date','teams.home.name','teams.away.name','home_id','away_id']);
                     setParsedRowsData(derivedRows);
                     setSelected({ id, parseError: reason, parseDetails: payload?.details ?? null });
                 } else {
@@ -619,6 +619,10 @@ export default function EtlPage() {
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="text-lg font-semibold">Available API Loads</h2>
                     <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center text-sm mr-2">
+                            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mr-2" />
+                            Dry run
+                        </label>
                         <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
                         <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
                     </div>
@@ -682,10 +686,6 @@ export default function EtlPage() {
                                     <button disabled={runningLoad} onClick={() => selected && handleToDbTables(selected.id)} className={`px-3 py-2 rounded text-sm ${runningLoad ? 'bg-gray-400 text-gray-800' : 'bg-green-600 text-white'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>
                                         {runningLoad ? 'Running...' : (dryRun ? 'Transform & Load (Dry run)' : 'Transform & Load')}
                                     </button>
-                                    <label className="inline-flex items-center text-sm ml-1">
-                                        <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mr-2" />
-                                        Dry run
-                                    </label>
                                 </div>
 
                                 {/* Center: view toggles */}
@@ -770,7 +770,7 @@ export default function EtlPage() {
                                                                             />
                                                                         </td>
                                                                         <td className="px-3 py-2">{formatLeagueDate(match.date)}</td>
-                                                                        <td className="px-3 py-2" colSpan={2}>{match.homeTeam} vs {match.awayTeam}</td>
+                                                                        <td className="px-3 py-2" colSpan={2}>{match.homeShortName ?? match.homeTeam} vs {match.awayShortName ?? match.awayTeam}</td>
                                                                         <td className="px-3 py-2">{match.venueCity ?? '-'}</td>
                                                                         <td className="px-3 py-2">{scoreLabel}</td>
                                                                         <td className="px-3 py-2" colSpan={2}>{match.statusShort ?? match.statusLong ?? '-'}</td>
@@ -819,7 +819,7 @@ export default function EtlPage() {
                                                             />
                                                         </td>
                                                         <td className="px-3 py-2 align-top">{dateLabel}</td>
-                                                        <td className="px-3 py-2 align-top">{match.homeTeam} vs {match.awayTeam}</td>
+                                                        <td className="px-3 py-2 align-top">{match.homeShortName ?? match.homeTeam} vs {match.awayShortName ?? match.awayTeam}</td>
                                                         <td className="px-3 py-2 align-top">{match.venueName ?? '-'}</td>
                                                         <td className="px-3 py-2 align-top">{match.venueCity ?? '-'}</td>
                                                         <td className="px-3 py-2 align-top">{scoreLabel}</td>
