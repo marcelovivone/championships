@@ -2382,17 +2382,37 @@ if (!foundReplacement) {
               applied += 1;
               continue;
             }
-            // fetch latest standings entries for both clubs
-            const latestHomeRes = await client.query(
-              `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
-            //   match_date, sport_id, match_id, group_id, club_id, points, played, wins, draws, losses, goals_for, goals_against, updated_at, league_id, season_id, round_id, overtime_wins, overtime_losses, penalty_wins, penalty_losses, sets_won, sets_lost
-              [homeClubId, leagueId, seasonId],
-            );
+            // fetch the standings row with the highest round LOWER than the
+            // current round for each club.  Using "ORDER BY id DESC" would
+            // incorrectly pick an early-played future round (e.g. round 31)
+            // as the base when inserting round 30.
+            const latestHomeRes = roundId
+              ? await client.query(
+                  `SELECT s.* FROM standings s
+                     JOIN rounds r ON r.id = s.round_id
+                    WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
+                      AND r.round_number < (SELECT round_number FROM rounds WHERE id = $4)
+                    ORDER BY r.round_number DESC LIMIT 1`,
+                  [homeClubId, leagueId, seasonId, roundId],
+                )
+              : await client.query(
+                  `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
+                  [homeClubId, leagueId, seasonId],
+                );
 
-            const latestAwayRes = await client.query(
-              `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
-              [awayClubId, leagueId, seasonId],
-            );
+            const latestAwayRes = roundId
+              ? await client.query(
+                  `SELECT s.* FROM standings s
+                     JOIN rounds r ON r.id = s.round_id
+                    WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
+                      AND r.round_number < (SELECT round_number FROM rounds WHERE id = $4)
+                    ORDER BY r.round_number DESC LIMIT 1`,
+                  [awayClubId, leagueId, seasonId, roundId],
+                )
+              : await client.query(
+                  `SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`,
+                  [awayClubId, leagueId, seasonId],
+                );
 
             const latestHomeStanding = latestHomeRes.rows[0] ?? null;
             const latestAwayStanding = latestAwayRes.rows[0] ?? null;
@@ -2572,6 +2592,128 @@ if (!foundReplacement) {
               await client.query(standingsSql, standingsParams);
             }
             createdStandings += 2;
+
+            // ── Cascade recalculation for future rounds ─────────────────
+            // When a club already has standings rows for rounds AFTER the
+            // current one (early-played matches), those rows were computed
+            // without this round's result.  Recalculate them in ascending
+            // round order so the cumulative totals cascade correctly.
+            const cascadeClub = async (clubId: number) => {
+              if (!roundId) return; // can't cascade without knowing the current round
+              // Get current round number
+              const curRndRes = await client.query(
+                `SELECT round_number FROM rounds WHERE id = $1 LIMIT 1`,
+                [roundId],
+              );
+              const currentRoundNumber = curRndRes.rows[0]?.round_number;
+              if (currentRoundNumber == null) return;
+
+              // Find all standings rows for this club in higher rounds
+              const futureRes = await client.query(
+                `SELECT s.id AS standings_id, s.match_id, s.round_id, r.round_number,
+                        m.home_club_id, m.away_club_id, m.home_score, m.away_score, m.date
+                   FROM standings s
+                   JOIN rounds r ON r.id = s.round_id
+                   JOIN matches m ON m.id = s.match_id
+                  WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
+                    AND r.round_number > $4
+                  ORDER BY r.round_number ASC`,
+                [clubId, leagueId, seasonId, currentRoundNumber],
+              );
+              if (futureRes.rows.length === 0) return;
+
+              for (const futureRow of futureRes.rows) {
+                // Fetch the standings row immediately BEFORE this future row for this club
+                const prevRes = await client.query(
+                  `SELECT s.* FROM standings s
+                     JOIN rounds r ON r.id = s.round_id
+                    WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
+                      AND r.round_number < $4
+                    ORDER BY r.round_number DESC LIMIT 1`,
+                  [clubId, leagueId, seasonId, futureRow.round_number],
+                );
+                const prevStanding = mapRowToStanding(prevRes.rows[0] ?? null);
+
+                // Determine if this club was home or away in the future match
+                const isHome = futureRow.home_club_id === clubId;
+                const opponentClubId = isHome ? futureRow.away_club_id : futureRow.home_club_id;
+
+                // Fetch opponent's standings row immediately before the future round
+                const opPrevRes = await client.query(
+                  `SELECT s.* FROM standings s
+                     JOIN rounds r ON r.id = s.round_id
+                    WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
+                      AND r.round_number < $4
+                    ORDER BY r.round_number DESC LIMIT 1`,
+                  [opponentClubId, leagueId, seasonId, futureRow.round_number],
+                );
+                const opPrevStanding = mapRowToStanding(opPrevRes.rows[0] ?? null);
+
+                // Fetch match_divisions for the future match
+                const fmd = await client.query(
+                  `SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`,
+                  [futureRow.match_id],
+                );
+
+                const fMatchData = {
+                  sportId,
+                  leagueId,
+                  seasonId,
+                  roundId: futureRow.round_id,
+                  matchDate: futureRow.date,
+                  groupId: null,
+                  homeClubId: futureRow.home_club_id,
+                  awayClubId: futureRow.away_club_id,
+                  homeScore: Number(futureRow.home_score ?? 0),
+                  awayScore: Number(futureRow.away_score ?? 0),
+                  matchId: futureRow.match_id,
+                  matchDivisions: fmd.rows.map((d: any) => ({ id: d.id, divisionNumber: d.division_number, divisionType: d.division_type, homeScore: d.home_score, awayScore: d.away_score })),
+                };
+
+                const { home: fHomeStats, away: fAwayStats } = standingsCalculator.calculate(
+                  sportName,
+                  fMatchData,
+                  isHome ? prevStanding : opPrevStanding,
+                  isHome ? opPrevStanding : prevStanding,
+                );
+
+                // Pick the stats that correspond to this club
+                const clubStats = isHome ? fHomeStats : fAwayStats;
+
+                // Update the existing standings row
+                await client.query(
+                  `UPDATE standings SET
+                     points = $1, played = $2, wins = $3, draws = $4, losses = $5,
+                     goals_for = $6, goals_against = $7, sets_won = $8, sets_lost = $9,
+                     home_games_played = $10, away_games_played = $11,
+                     home_points = $12, away_points = $13,
+                     home_wins = $14, home_draws = $15, home_losses = $16,
+                     home_goals_for = $17, home_goals_against = $18,
+                     away_wins = $19, away_draws = $20, away_losses = $21,
+                     away_goals_for = $22, away_goals_against = $23,
+                     overtime_wins = $24, overtime_losses = $25,
+                     penalty_wins = $26, penalty_losses = $27,
+                     updated_at = now()
+                   WHERE id = $28`,
+                  [
+                    clubStats.points, clubStats.played, clubStats.wins, clubStats.draws, clubStats.losses,
+                    clubStats.goalsFor, clubStats.goalsAgainst, clubStats.setsWon, clubStats.setsLost,
+                    clubStats.homeGamesPlayed, clubStats.awayGamesPlayed,
+                    clubStats.homePoints, clubStats.awayPoints,
+                    clubStats.homeWins, clubStats.homeDraws, clubStats.homeLosses,
+                    clubStats.homeGoalsFor, clubStats.homeGoalsAgainst,
+                    clubStats.awayWins, clubStats.awayDraws, clubStats.awayLosses,
+                    clubStats.awayGoalsFor, clubStats.awayGoalsAgainst,
+                    clubStats.overtimeWins, clubStats.overtimeLosses,
+                    clubStats.penaltyWins, clubStats.penaltyLosses,
+                    futureRow.standings_id,
+                  ],
+                );
+              }
+            };
+
+            await cascadeClub(homeClubId);
+            await cascadeClub(awayClubId);
           } catch (e) {
             throw e;
           }
