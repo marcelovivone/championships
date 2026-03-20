@@ -11,27 +11,32 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StandingResponseDto = exports.UpdateStandingDto = exports.CreateStandingDto = void 0;
 const class_validator_1 = require("class-validator");
+const match_division_dto_1 = require("./match-division.dto");
 const swagger_1 = require("@nestjs/swagger");
 const swagger_2 = require("@nestjs/swagger");
 const class_transformer_1 = require("class-transformer");
 class CreateStandingDto {
     constructor() {
-        this.points = 0;
         this.played = 0;
         this.wins = 0;
         this.draws = 0;
         this.losses = 0;
         this.goalsFor = 0;
         this.goalsAgainst = 0;
-        this.goalDifference = 0;
         this.homeGamesPlayed = 0;
         this.awayGamesPlayed = 0;
+        this.homePoints = 0;
+        this.awayPoints = 0;
         this.homeWins = 0;
         this.homeLosses = 0;
         this.homeDraws = 0;
+        this.homeGoalsFor = 0;
+        this.homeGoalsAgainst = 0;
         this.awayWins = 0;
         this.awayLosses = 0;
         this.awayDraws = 0;
+        this.awayGoalsFor = 0;
+        this.awayGoalsAgainst = 0;
     }
 }
 exports.CreateStandingDto = CreateStandingDto;
@@ -52,12 +57,14 @@ __decorate([
 ], CreateStandingDto.prototype, "seasonId", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "roundId", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: '2023-01-01' }),
-    (0, class_validator_1.IsInt)(),
+    (0, swagger_2.ApiProperty)({ example: '2023-01-01', type: String }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], CreateStandingDto.prototype, "matchDate", void 0);
 __decorate([
@@ -67,20 +74,39 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "groupId", void 0);
 __decorate([
+    (0, swagger_2.ApiProperty)({ example: 123, required: true }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "matchId", void 0);
+__decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateStandingDto.prototype, "clubId", void 0);
+], CreateStandingDto.prototype, "homeClubId", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 2 }),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "awayClubId", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 2, required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "homeScore", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1, required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "awayScore", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 3 }),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateStandingDto.prototype, "points", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "played", void 0);
 __decorate([
@@ -113,12 +139,6 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "goalsAgainst", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 1 }),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateStandingDto.prototype, "goalDifference", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 0, required: false }),
     (0, class_validator_1.IsOptional)(),
@@ -162,20 +182,6 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "setsLost", void 0);
 __decorate([
-    (0, swagger_2.ApiProperty)({ example: 0, required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateStandingDto.prototype, "divisionsWon", void 0);
-__decorate([
-    (0, swagger_2.ApiProperty)({ example: 0, required: false }),
-    (0, class_validator_1.IsOptional)(),
-    (0, class_transformer_1.Type)(() => Number),
-    (0, class_validator_1.IsInt)(),
-    __metadata("design:type", Number)
-], CreateStandingDto.prototype, "divisionsLost", void 0);
-__decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
@@ -187,6 +193,18 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "awayGamesPlayed", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "homePoints", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "awayPoints", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: 1 }),
     (0, class_transformer_1.Type)(() => Number),
@@ -206,6 +224,18 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "homeDraws", void 0);
 __decorate([
+    (0, swagger_2.ApiProperty)({ example: 2 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "homeGoalsFor", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "homeGoalsAgainst", void 0);
+__decorate([
     (0, swagger_2.ApiProperty)({ example: 0 }),
     (0, class_transformer_1.Type)(() => Number),
     (0, class_validator_1.IsInt)(),
@@ -223,6 +253,23 @@ __decorate([
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], CreateStandingDto.prototype, "awayDraws", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 2 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "awayGoalsFor", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ example: 1 }),
+    (0, class_transformer_1.Type)(() => Number),
+    (0, class_validator_1.IsInt)(),
+    __metadata("design:type", Number)
+], CreateStandingDto.prototype, "awayGoalsAgainst", void 0);
+__decorate([
+    (0, swagger_2.ApiProperty)({ type: () => [match_division_dto_1.CreateMatchDivisionDto], required: false }),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Array)
+], CreateStandingDto.prototype, "matchDivisions", void 0);
 class UpdateStandingDto extends (0, swagger_1.PartialType)(CreateStandingDto) {
 }
 exports.UpdateStandingDto = UpdateStandingDto;

@@ -56,6 +56,7 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     findAllByLeague(leagueId: number): Promise<{
@@ -93,7 +94,7 @@ export declare class SeasonsService {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;
@@ -119,6 +120,7 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }[]>;
     findDefaultSeasonByLeague(leagueId: number, excludeSeasonId?: number): Promise<{
@@ -130,6 +132,7 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     create(createSeasonDto: CreateSeasonDto): Promise<{
@@ -142,6 +145,7 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
     }>;
     update(id: number, updateSeasonDto: UpdateSeasonDto): Promise<{
         id: number;
@@ -152,6 +156,7 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     changeDefaultSeason(currentDefaultId: number, newDefaultId: number): Promise<{
@@ -163,6 +168,7 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     remove(id: number): Promise<{
@@ -175,5 +181,6 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
     }>;
 }

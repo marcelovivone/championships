@@ -21,23 +21,69 @@ let StandingsController = class StandingsController {
     constructor(standingsService) {
         this.standingsService = standingsService;
     }
-    async findAll(leagueId, roundId) {
-        if (roundId && leagueId) {
-            return this.standingsService.findByLeagueAndRound(parseInt(leagueId, 10), parseInt(roundId, 10));
+    toStandingResponseDto(standing) {
+        let matchDateValue = standing.matchDate;
+        if (standing.matchDate instanceof Date) {
+            matchDateValue = !isNaN(standing.matchDate.getTime())
+                ? standing.matchDate.toISOString()
+                : null;
         }
-        if (leagueId) {
-            return this.standingsService.findByLeague(parseInt(leagueId, 10));
+        else if (typeof standing.matchDate === 'string') {
+            const parsed = new Date(standing.matchDate);
+            matchDateValue = !isNaN(parsed.getTime()) ? parsed.toISOString() : null;
         }
-        return this.standingsService.findAll();
+        else if (!standing.matchDate) {
+            matchDateValue = null;
+        }
+        return {
+            ...standing,
+            matchDate: matchDateValue,
+        };
+    }
+    async getByLeagueSeasonRoundOrMatchDate(leagueId, seasonId, roundId, matchDate, clubId) {
+        if (leagueId && seasonId && roundId) {
+            const standings = await this.standingsService.findByLeagueIdAndSeasonIdAndRoundId(parseInt(leagueId, 10), parseInt(seasonId, 10), parseInt(roundId, 10), clubId ? parseInt(clubId, 10) : undefined);
+            return standings.map(this.toStandingResponseDto);
+        }
+        if (leagueId && seasonId && matchDate) {
+            const standings = await this.standingsService.findByLeagueIdAndSeasonIdAndMatchDate(parseInt(leagueId, 10), parseInt(seasonId, 10), matchDate, clubId ? parseInt(clubId, 10) : undefined);
+            return standings.map(this.toStandingResponseDto);
+        }
+        return this.findAll(undefined, undefined);
+    }
+    async findAll(roundId, matchDate) {
+        if (roundId && matchDate) {
+            throw new Error('Provide only one filter: either roundId or matchDate, not both.');
+        }
+        if (roundId) {
+            const standings = await this.standingsService.findByRound(parseInt(roundId, 10));
+            return standings.map(this.toStandingResponseDto);
+        }
+        if (matchDate) {
+            const standings = await this.standingsService.findByMatchDate(matchDate);
+            return standings.map(this.toStandingResponseDto);
+        }
+        const standings = await this.standingsService.findAll();
+        return standings.map(this.toStandingResponseDto);
     }
     async findOne(id) {
-        return this.standingsService.findOne(id);
+        const standing = await this.standingsService.findOne(id);
+        return this.toStandingResponseDto(standing);
     }
     async create(createStandingDto) {
-        return this.standingsService.create(createStandingDto);
+        const standing = await this.standingsService.create(createStandingDto);
+        return this.toStandingResponseDto(standing);
     }
-    async update(id, updateStandingDto) {
-        return this.standingsService.update(id, updateStandingDto);
+    async strictRemove(matchId, standingId) {
+        if (matchId) {
+            await this.standingsService.removeByMatchId(matchId);
+        }
+        else if (standingId) {
+            await this.standingsService.removeByClubLeagueSeason(0, 0, 0, standingId);
+        }
+        else {
+            throw new common_1.BadRequestException('matchId or standingId required');
+        }
     }
     async remove(id) {
         await this.standingsService.remove(id);
@@ -45,11 +91,22 @@ let StandingsController = class StandingsController {
 };
 exports.StandingsController = StandingsController;
 __decorate([
+    (0, common_1.Get)(),
+    __param(0, (0, common_1.Query)('leagueId')),
+    __param(1, (0, common_1.Query)('seasonId')),
+    __param(2, (0, common_1.Query)('roundId')),
+    __param(3, (0, common_1.Query)('matchDate')),
+    __param(4, (0, common_1.Query)('clubId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String, String]),
+    __metadata("design:returntype", Promise)
+], StandingsController.prototype, "getByLeagueSeasonRoundOrMatchDate", null);
+__decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Retrieve standings' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'List of standings' }),
     (0, common_1.Get)(),
-    __param(0, (0, common_1.Query)('leagueId')),
-    __param(1, (0, common_1.Query)('roundId')),
+    __param(0, (0, common_1.Query)('roundId')),
+    __param(1, (0, common_1.Query)('matchDate')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
@@ -75,16 +132,18 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], StandingsController.prototype, "create", null);
 __decorate([
-    (0, swagger_1.ApiOperation)({ summary: 'Update a standing entry' }),
-    (0, swagger_1.ApiResponse)({ status: 200, description: 'The standing has been successfully updated.' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Strict delete: only if no later standing exists for club/league/season' }),
+    (0, swagger_1.ApiResponse)({ status: 204, description: 'Standing deleted' }),
+    (0, swagger_1.ApiResponse)({ status: 400, description: 'Cannot delete: later standing exists' }),
     (0, swagger_1.ApiResponse)({ status: 404, description: 'Standing not found' }),
-    (0, common_1.Put)(':id'),
-    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
-    __param(1, (0, common_1.Body)()),
+    (0, common_1.Delete)('strict'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.NO_CONTENT),
+    __param(0, (0, common_1.Query)('matchId')),
+    __param(1, (0, common_1.Query)('standingId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, dtos_1.UpdateStandingDto]),
+    __metadata("design:paramtypes", [Number, Number]),
     __metadata("design:returntype", Promise)
-], StandingsController.prototype, "update", null);
+], StandingsController.prototype, "strictRemove", null);
 __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Delete a standing entry' }),
     (0, swagger_1.ApiResponse)({ status: 204, description: 'The standing has been successfully deleted.' }),

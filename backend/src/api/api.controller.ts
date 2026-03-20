@@ -54,10 +54,20 @@ export class ApiController {
   }
 
   @Get('transitional/:id/parse')
-  async parseTransitional(@Param('id', ParseIntPipe) id: number) {
-    const parsed = await this.apiService.parseTransitional(id) as any;
+  async parseTransitional(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('roundOverrides') roundOverridesJson?: string,
+  ) {
+    let roundOverrides: Record<string, number> | undefined;
+    if (roundOverridesJson) {
+      try { roundOverrides = JSON.parse(roundOverridesJson); } catch { /* ignore malformed input */ }
+    }
+    const parsed = await this.apiService.parseTransitional(id, roundOverrides) as any;
     if (!parsed || !parsed.found) {
-        return { found: false };
+      const reason = parsed?.reason ?? 'parse_failed';
+      const error = parsed?.error ?? parsed?.details?.message ?? null;
+      const details = parsed?.details ?? null;
+      return { found: false, reason, error, details };
     }
     return { found: true, columns: parsed.columns, rows: parsed.rows };
   }
@@ -69,6 +79,27 @@ export class ApiController {
     return { found: true, firstRow: res.firstRow, matches: res.matches };
   }
 
+  @Get('transitional/:id/round-review')
+  async getRoundReview(@Param('id', ParseIntPipe) id: number) {
+    const review = await this.apiService.getRoundReview(id);
+    return { found: !!review, item: review };
+  }
+
+  @Patch('transitional/:id/round-review')
+  async patchRoundReview(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { overrides?: Record<string, number> },
+  ) {
+    const review = await this.apiService.saveRoundReview(id, body?.overrides ?? {});
+    return { success: true, item: review };
+  }
+
+  @Delete('transitional/:id/round-review')
+  async deleteRoundReview(@Param('id', ParseIntPipe) id: number) {
+    const result = await this.apiService.deleteRoundReview(id);
+    return { success: !!result?.deleted };
+  }
+
   @Post('transitional/:id/apply-first-row')
   async applyFirstRow(@Param('id', ParseIntPipe) id: number, @Body() body: { sportId?: number }) {
     const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
@@ -78,9 +109,9 @@ export class ApiController {
   @Post('transitional/:id/apply-all-rows')
   async applyAllRows(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { sportId?: number; dryRun?: boolean },
+    @Body() body: { sportId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> },
   ) {
-    const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun });
+    const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides });
     return result;
   }
 

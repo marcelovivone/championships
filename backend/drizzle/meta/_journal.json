@@ -57,6 +57,20 @@
       "when": 1772874587465,
       "tag": "0007_add_home_away_to_standings_table",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1773739523279,
+      "tag": "0008_add_origin_to_api_transation_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1773739640567,
+      "tag": "0009_add_espnpartialscores_and_espnapiid_to_matches_tables",
+      "breakpoints": true
     }
   ]
 }

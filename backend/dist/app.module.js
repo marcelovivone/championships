@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const db_module_1 = require("./db/db.module");
+const api_module_1 = require("./api/api.module");
 const countries_module_1 = require("./countries/countries.module");
 const sports_module_1 = require("./sports/sports.module");
 const cities_module_1 = require("./cities/cities.module");
@@ -32,6 +33,8 @@ const permissions_module_1 = require("./permissions/permissions.module");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
+    configure(consumer) {
+    }
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
@@ -39,9 +42,10 @@ exports.AppModule = AppModule = __decorate([
         imports: [
             throttler_1.ThrottlerModule.forRoot([{
                     ttl: 60000,
-                    limit: 20,
+                    limit: 300,
                 }]),
             db_module_1.DbModule,
+            api_module_1.ApiModule,
             countries_module_1.CountriesModule,
             sports_module_1.SportsModule,
             cities_module_1.CitiesModule,

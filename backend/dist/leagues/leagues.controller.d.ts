@@ -15,7 +15,7 @@ export declare class LeaguesController {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -70,7 +70,7 @@ export declare class LeaguesController {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;

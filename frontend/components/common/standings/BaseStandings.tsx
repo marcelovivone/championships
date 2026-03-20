@@ -35,6 +35,11 @@ export default function BaseStandings({
   );
   const [roundOrDay, setRoundOrDay] = React.useState<number | string>(1);
   const [debouncedRoundOrDay, setDebouncedRoundOrDay] = React.useState<number | string>(roundOrDay);
+  // The value shown next to the STANDING header. Only update this when the
+  // selected round/day actually has rows in the standings table. If the user
+  // selects a round/day with no standings rows, keep the previous displayed
+  // value unchanged.
+  const [displayRoundForStandings, setDisplayRoundForStandings] = React.useState<number | string>(roundOrDay);
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
 
@@ -45,6 +50,8 @@ export default function BaseStandings({
     enabled: Boolean(league),
     staleTime: 1000 * 60 * 5,
   });
+  
+  
 
   const seasons = seasonsData || [];
   // Fetch rounds for the selected league+season once and cache via React Query
@@ -126,6 +133,21 @@ export default function BaseStandings({
     },
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
+
+  // Update the displayed round/day for the standings header only when the
+  // standings result contains rows for the current selection. This keeps the
+  // STANDING header stable when the user picks a round/day that has no rows.
+  React.useEffect(() => {
+    const src = standingsQuery.data !== undefined ? standingsQuery.data : standings;
+    const filtered = (Array.isArray(src) ? src : []).filter((s: any) => {
+      if (!group || group === 'all') return true;
+      return String(s.groupId ?? s.group?.id ?? s.group_id ?? '') === String(group);
+    });
+    if (Array.isArray(filtered) && filtered.length > 0) {
+      setDisplayRoundForStandings(debouncedRoundOrDay);
+    }
+    // Intentionally do not change the displayed value when there are no rows.
+  }, [standingsQuery.data, standings, debouncedRoundOrDay, group]);
 
   const matchesQuery = useQuery({
     queryKey: ['matches', sportId, league, season, String(debouncedRoundOrDay), group, viewType],
@@ -333,7 +355,7 @@ export default function BaseStandings({
                 />
               </div>
             </div>
-            <div className="mt-2 text-sm text-gray-500 whitespace-nowrap">{scheduleIsDate ? 'Day' : 'Round'}: {roundOrDay}</div>
+            <div className="mt-2 text-sm text-gray-500 whitespace-nowrap">{scheduleIsDate ? 'Day' : 'Round'}: {displayRoundForStandings}</div>
           </div>
           {standingsQuery.isLoading ? (
             <div className="bg-white rounded-lg shadow p-4">Loading standings...</div>

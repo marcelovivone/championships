@@ -21,6 +21,7 @@ export declare class GroupsService {
             status: string;
             flgDefault: boolean;
             numberOfGroups: number;
+            flgEspnApiPartialScores: boolean;
             createdAt: Date;
         };
         sport: {
@@ -49,7 +50,7 @@ export declare class GroupsService {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;

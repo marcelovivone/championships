@@ -60,7 +60,8 @@ let MatchDivisionsService = class MatchDivisionsService {
             return await this.db
                 .select()
                 .from(schema_1.matchDivisions)
-                .where((0, drizzle_orm_1.eq)(schema_1.matchDivisions.matchId, matchId));
+                .where((0, drizzle_orm_1.eq)(schema_1.matchDivisions.matchId, matchId))
+                .orderBy(schema_1.matchDivisions.id);
         }
         catch (error) {
             if (error instanceof common_1.NotFoundException)

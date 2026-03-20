@@ -155,6 +155,7 @@ export const seasons = pgTable('seasons', {
   status: varchar('status', { length: 20 }).default('planned').notNull(), // 'planned', 'ongoing', 'finished'
   flgDefault: boolean('flg_default').default(false).notNull(),
   numberOfGroups: integer('number_of_groups').default(0).notNull(),
+  flgEspnApiPartialScores: boolean('flg_default').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -223,6 +224,7 @@ export const matches = pgTable('matches', {
   status: matchStatusEnum('status').default('Scheduled').notNull(), // 'Scheduled', 'Finished', 'Postponed', 'Cancelled'
   homeScore: integer('home_score'), // Only set when match is finished
   awayScore: integer('away_score'), // Only set when match is finished
+  espnApiId: varchar('espn_api_id', { length: 50 }), // For integration with ESPN API (if needed)
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

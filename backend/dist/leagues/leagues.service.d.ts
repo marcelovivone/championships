@@ -17,7 +17,7 @@ export declare class LeaguesService {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;
@@ -52,7 +52,7 @@ export declare class LeaguesService {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -78,7 +78,7 @@ export declare class LeaguesService {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;
@@ -107,7 +107,7 @@ export declare class LeaguesService {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -152,6 +152,7 @@ export declare class LeaguesService {
     }[]>;
     create(createLeagueDto: CreateLeagueDto): Promise<{
         id: number;
+        divisionTime: number;
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
@@ -163,7 +164,6 @@ export declare class LeaguesService {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -185,7 +185,7 @@ export declare class LeaguesService {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -202,6 +202,7 @@ export declare class LeaguesService {
     }>;
     remove(id: number): Promise<{
         id: number;
+        divisionTime: number;
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
@@ -213,7 +214,6 @@ export declare class LeaguesService {
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionsTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;

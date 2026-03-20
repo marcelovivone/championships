@@ -22,7 +22,6 @@ let MatchesController = class MatchesController {
         this.matchesService = matchesService;
     }
     async create(createMatchDto) {
-        console.log('createMatchDto', createMatchDto);
         return this.matchesService.create(createMatchDto);
     }
     async findAll(groupId, roundId, sportId, leagueId, seasonId, date, page, limit, sortBy, sortOrder) {

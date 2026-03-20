@@ -220,6 +220,103 @@ export class ApiService {
     }
   }
 
+  private async ensureRoundReviewTable(pool: Pool) {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_transitional_round_review (
+        id SERIAL PRIMARY KEY,
+        transitional_id INTEGER UNIQUE NOT NULL,
+        overrides JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now(),
+        resolved_at TIMESTAMPTZ NULL
+      );
+    `);
+  }
+
+  async getRoundReview(id: number) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await this.ensureRoundReviewTable(pool);
+      const res = await pool.query(
+        `SELECT * FROM api_transitional_round_review WHERE transitional_id = $1 ORDER BY id DESC LIMIT 1`,
+        [id],
+      );
+      return res.rows[0] || null;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  async saveRoundReview(id: number, overrides: Record<string, number>) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await this.ensureRoundReviewTable(pool);
+      const normalizedOverrides = Object.fromEntries(
+        Object.entries(overrides || {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
+      );
+      const res = await pool.query(
+        `INSERT INTO api_transitional_round_review (transitional_id, overrides, status, updated_at, resolved_at)
+         VALUES ($1, $2, 'draft', now(), NULL)
+         ON CONFLICT (transitional_id)
+         DO UPDATE SET overrides = EXCLUDED.overrides, status = 'draft', updated_at = now(), resolved_at = NULL
+         RETURNING *`,
+        [id, normalizedOverrides],
+      );
+      return res.rows[0] || null;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  async resolveRoundReview(id: number, overrides?: Record<string, number>) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await this.ensureRoundReviewTable(pool);
+      const normalizedOverrides = Object.fromEntries(
+        Object.entries(overrides || {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
+      );
+      const res = await pool.query(
+        `INSERT INTO api_transitional_round_review (transitional_id, overrides, status, updated_at, resolved_at)
+         VALUES ($1, $2, 'resolved', now(), now())
+         ON CONFLICT (transitional_id)
+         DO UPDATE SET overrides = EXCLUDED.overrides, status = 'resolved', updated_at = now(), resolved_at = now()
+         RETURNING *`,
+        [id, normalizedOverrides],
+      );
+      return res.rows[0] || null;
+    } finally {
+      await pool.end();
+    }
+  }
+
+  async deleteRoundReview(id: number) {
+    if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      await this.ensureRoundReviewTable(pool);
+      const res = await pool.query(
+        `DELETE FROM api_transitional_round_review WHERE transitional_id = $1 RETURNING transitional_id`,
+        [id],
+      );
+      return { deleted: !!res.rows[0] };
+    } finally {
+      await pool.end();
+    }
+  }
+
+  private async getDraftRoundOverrides(id: number): Promise<Record<string, number>> {
+    const review = await this.getRoundReview(id);
+    if (!review || review.status !== 'draft') return {};
+    const raw = review.overrides && typeof review.overrides === 'object' ? review.overrides : {};
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
+    );
+  }
+
   // Delete a transitional row by id
   async deleteTransitional(id: number) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
@@ -275,16 +372,17 @@ export class ApiService {
   }
 
   // Parse a transitional payload into tabular rows/columns
-  async parseTransitional(id: number) {
+  async parseTransitional(id: number, roundOverrides?: Record<string, number>) {
     const row = await this.getTransitional(id);
     if (!row) return { found: false };
-    
+    const savedOverrides = await this.getDraftRoundOverrides(id);
+    const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
+    // console.log('Parsing transitional id=', id, 'origin=', row.origin);
     // Check the origin and route to appropriate parser
     const origin = row.origin ?? 'Api-Football';
     if (origin === 'Api-Espn') {
-      return this.parseTransitionalEspn(row);
+      return this.parseTransitionalEspn(row, effectiveRoundOverrides);
     }
-    
     // Default: Api-Football parsing
 // console.log('Parsing transitional id=', id, 'payload=', row.payload);
     const payload = row.payload ?? row;
@@ -318,6 +416,21 @@ export class ApiService {
       }
     }
 // console.log('Final array to parse:', arr);
+    // Helper to safely get nested paths
+    const get = (obj: any, path: string) => {
+      if (!obj) return null;
+      return path.split('.').reduce((acc: any, key: string) => (acc && acc[key] !== undefined ? acc[key] : null), obj);
+    };
+
+    // Prepare first-row metadata: prefer top-level league info from the first fixture or payload
+    let firstRow: Record<string, any> = {};
+    const sample = (Array.isArray(arr) && arr.length) ? arr[0] : payload;
+    if (sample) {
+      firstRow['league.name'] = get(sample, 'league.name') ?? get(payload, 'league.name') ?? null;
+      firstRow['league.season'] = get(sample, 'league.season') ?? get(payload, 'league.season') ?? null;
+      firstRow['league.country'] = get(sample, 'league.country') ?? get(payload, 'league.country') ?? null;
+      firstRow['league.flag'] = get(sample, 'league.flag') ?? get(payload, 'league.flag') ?? null;
+    }
     // If still no array, fall back to single-row table from payload
     let rows: any[];
 // console.log('Preparing rows for flattening...');
@@ -369,33 +482,33 @@ export class ApiService {
 
   // Parse ESPN API response into tabular format
   // ESPN structure: events[] -> competitions[0] -> competitors[], venue, status
-  private parseTransitionalEspn(row: any) {
+  private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>) {
     const payload = row.payload ?? row;
-    
+    // console.log('Parsing ESPN transitional id=', row.id, 'payload=', payload);
     // ESPN data structure: { events: [...] }
     const events = payload?.events ?? [];
     if (!Array.isArray(events) || events.length === 0) {
       return { found: false, reason: 'no_events_array' };
     }
-    
+    // console.log(`Found ${events.length} events in ESPN payload`);
     // Extract league info from the first event's season
     const firstEvent = events[0];
     const seasonInfo = firstEvent?.season ?? {};
     const leagueInfo = payload?.leagues?.[0] ?? {};
-
-    const getEspnRoundNumbers = (items: any[]) => {
+// console.log('Extracted league info:', leagueInfo, 'season info:', seasonInfo);
+    const getEspnRoundNumbers = (items: any[], overrides: Map<string, number> = new Map()) => {
       const roundByEventId = new Map<string, number>();
       const uniqueClubIds = new Set<string>();
       const reservedEventIds = new Set<string>();
-
+// console.log('Deriving round numbers for ESPN events...');
       const getTeamId = (competitor: any) => {
         const teamId = competitor?.team?.id ?? competitor?.id;
         return teamId !== undefined && teamId !== null ? String(teamId) : null;
       };
-
+// console.log('Helper getTeamId defined');
       const getTeamName = (competitor: any) =>
         competitor?.team?.displayName ?? competitor?.team?.shortDisplayName ?? competitor?.team?.name ?? null;
-
+// console.log('Helper getTeamName defined');
       for (const event of items) {
         const competition = event?.competitions?.[0];
         const competitors = competition?.competitors ?? [];
@@ -404,10 +517,47 @@ export class ApiService {
           if (teamId) uniqueClubIds.add(teamId);
         }
       }
-
+// console.log('Unique club IDs found:', uniqueClubIds);
       const allTeamIds = Array.from(uniqueClubIds);
       const maxMatchesPerRound = uniqueClubIds.size >= 2 ? Math.floor(uniqueClubIds.size / 2) : null;
       const toUtcDay = (date: Date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+      // Use league-local day boundaries when clustering rounds.  ESPN provides
+      // timestamps in UTC; clustering by UTC can split matches that share the
+      // same local calendar day (e.g. Brasilia UTC-3) across two days. Prefer
+      // the Brazil timezone for Brasileirão payloads so matches on the same
+      // local date are grouped together. If Intl timeZone formatting isn't
+      // available, fall back to UTC-based day calculation.
+      const LEAGUE_TIMEZONE = 'America/Sao_Paulo';
+      const toLocalDay = (date: Date) => {
+        try {
+          const parts = new Intl.DateTimeFormat('en-GB', {
+            timeZone: LEAGUE_TIMEZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).formatToParts(date);
+          const year = Number(parts.find((p) => p.type === 'year')?.value ?? date.getUTCFullYear());
+          const month = Number(parts.find((p) => p.type === 'month')?.value ?? (date.getUTCMonth() + 1));
+          const day = Number(parts.find((p) => p.type === 'day')?.value ?? date.getUTCDate());
+          return Date.UTC(year, month - 1, day);
+        } catch (err) {
+          return toUtcDay(date);
+        }
+      };
+      const formatLeagueLocalDate = (date: Date | null) => {
+        if (!date) return null;
+        try {
+          return new Intl.DateTimeFormat('en-CA', {
+            timeZone: LEAGUE_TIMEZONE,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          }).format(date);
+        } catch (err) {
+          return date.toISOString().slice(0, 10);
+        }
+      };
+//  console.log('Calculated max matches per round:', maxMatchesPerRound);
       const sortableEvents = items
         .map((event: any, index: number) => {
           const competition = event?.competitions?.[0];
@@ -428,30 +578,349 @@ export class ApiService {
         })
         .filter((item) => item.date !== null)
         .sort((left, right) => left.date!.getTime() - right.date!.getTime());
+      const expectedRoundCount = maxMatchesPerRound !== null
+        ? Math.max(1, Math.ceil(sortableEvents.length / maxMatchesPerRound))
+        : null;
+      const buildRoundSummary = (assignmentMap: Map<string, number>) => {
+        const summaryByRound = new Map<number, {
+          round: number;
+          assignedMatches: number;
+          teamIds: Set<string>;
+          duplicateTeamIds: Set<string>;
+          eventIds: string[];
+          minDate: Date | null;
+          maxDate: Date | null;
+        }>();
 
+        for (const entry of sortableEvents) {
+          const eventId = entry.event?.id !== undefined && entry.event?.id !== null ? String(entry.event.id) : null;
+          if (!eventId) continue;
+          const assignedRound = assignmentMap.get(eventId);
+          if (assignedRound === undefined || assignedRound === null) continue;
+
+          let bucket = summaryByRound.get(assignedRound);
+          if (!bucket) {
+            bucket = {
+              round: assignedRound,
+              assignedMatches: 0,
+              teamIds: new Set<string>(),
+              duplicateTeamIds: new Set<string>(),
+              eventIds: [],
+              minDate: null,
+              maxDate: null,
+            };
+            summaryByRound.set(assignedRound, bucket);
+          }
+
+          bucket.assignedMatches += 1;
+          bucket.eventIds.push(eventId);
+          if (entry.date) {
+            if (!bucket.minDate || entry.date.getTime() < bucket.minDate.getTime()) bucket.minDate = entry.date;
+            if (!bucket.maxDate || entry.date.getTime() > bucket.maxDate.getTime()) bucket.maxDate = entry.date;
+          }
+          for (const teamId of [entry.homeId, entry.awayId]) {
+            if (!teamId) continue;
+            if (bucket.teamIds.has(teamId)) bucket.duplicateTeamIds.add(teamId);
+            bucket.teamIds.add(teamId);
+          }
+        }
+
+        const highestAssignedRound = Math.max(0, ...Array.from(summaryByRound.keys()));
+        const inferredRoundCount = expectedRoundCount !== null
+          ? expectedRoundCount
+          : highestAssignedRound;
+
+        const roundSummary = Array.from({ length: inferredRoundCount }, (_, idx) => {
+          const round = idx + 1;
+          const bucket = summaryByRound.get(round);
+          const assignedMatches = bucket?.assignedMatches ?? 0;
+          const duplicateTeamIds = bucket?.duplicateTeamIds ?? new Set<string>();
+          const missingMatches = maxMatchesPerRound !== null ? Math.max(maxMatchesPerRound - assignedMatches, 0) : 0;
+          const status = duplicateTeamIds.size > 0
+            ? 'conflict'
+            : maxMatchesPerRound !== null && assignedMatches === maxMatchesPerRound
+              ? 'complete'
+              : assignedMatches > 0
+                ? 'incomplete'
+                : 'empty';
+
+          return {
+            round,
+            assignedMatches,
+            expectedMatches: maxMatchesPerRound,
+            missingMatches,
+            duplicateTeamIds: Array.from(duplicateTeamIds),
+            eventIds: bucket?.eventIds ?? [],
+            startDate: formatLeagueLocalDate(bucket?.minDate ?? null),
+            endDate: formatLeagueLocalDate(bucket?.maxDate ?? null),
+            dateRange: bucket?.minDate
+              ? bucket?.maxDate && formatLeagueLocalDate(bucket.maxDate) !== formatLeagueLocalDate(bucket.minDate)
+                ? `${formatLeagueLocalDate(bucket.minDate)} to ${formatLeagueLocalDate(bucket.maxDate)}`
+                : `${formatLeagueLocalDate(bucket.minDate)}`
+              : null,
+            status,
+          };
+        });
+
+        return { roundSummary, summaryByRound, inferredRoundCount };
+      };
+      const buildReviewDetails = (
+        message: string,
+        currentEventItem: (typeof sortableEvents)[number] | null,
+        highlightedEventIds: string[] = [],
+      ) => {
+        const { roundSummary, summaryByRound, inferredRoundCount } = buildRoundSummary(roundByEventId);
+        const teamNamesById = new Map<string, string>();
+        for (const entry of sortableEvents) {
+          if (entry.homeId && entry.homeName && !teamNamesById.has(entry.homeId)) teamNamesById.set(entry.homeId, entry.homeName);
+          if (entry.awayId && entry.awayName && !teamNamesById.has(entry.awayId)) teamNamesById.set(entry.awayId, entry.awayName);
+        }
+
+        const maxCandidateRound = expectedRoundCount ?? inferredRoundCount;
+        const highlightedSet = new Set(highlightedEventIds);
+
+        const reviewMatches = sortableEvents.map((entry) => {
+          const eventId = entry.event?.id !== undefined && entry.event?.id !== null ? String(entry.event.id) : null;
+          const competition = entry.event?.competitions?.[0];
+          const competitors: any[] = competition?.competitors ?? [];
+          const home = competitors.find((c: any) => c.homeAway === 'home') ?? competitors[0] ?? null;
+          const away = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1] ?? null;
+          const status = competition?.status?.type ?? {};
+          const assignedRound = eventId ? roundByEventId.get(eventId) ?? null : null;
+          const isOutOfRangeAssignment = assignedRound !== null && expectedRoundCount !== null && assignedRound > expectedRoundCount;
+          const candidateRounds: number[] = [];
+
+          if (maxMatchesPerRound !== null && entry.homeId && entry.awayId) {
+            for (let round = 1; round <= maxCandidateRound; round++) {
+              const bucket = summaryByRound.get(round);
+              const teamIds = bucket?.teamIds ?? new Set<string>();
+              const assignedMatches = bucket?.assignedMatches ?? 0;
+              const currentAssignment = assignedRound === round;
+              const canFitTeams = currentAssignment || (!teamIds.has(entry.homeId) && !teamIds.has(entry.awayId));
+              const canFitSize = currentAssignment || assignedMatches < maxMatchesPerRound;
+              if (canFitTeams && canFitSize) candidateRounds.push(round);
+            }
+          }
+
+          return {
+            id: eventId,
+            eventId,
+            date: competition?.date ?? entry.date?.toISOString() ?? null,
+            leagueLocalDate: formatLeagueLocalDate(entry.date ?? null),
+            homeTeam: entry.homeName,
+            awayTeam: entry.awayName,
+            homeId: entry.homeId,
+            awayId: entry.awayId,
+            venueName: competition?.venue?.fullName ?? competition?.venue?.shortName ?? null,
+            venueCity: competition?.venue?.address?.city ?? null,
+            homeScore: home?.score != null ? Number(home.score) : null,
+            awayScore: away?.score != null ? Number(away.score) : null,
+            isCompleted: status?.completed ?? false,
+            statusLong: status?.description ?? null,
+            statusShort: status?.shortDetail ?? status?.detail ?? null,
+            assignedRound,
+            candidateRounds,
+            needsReview: assignedRound === null || isOutOfRangeAssignment || (eventId ? highlightedSet.has(eventId) : true),
+            assignmentSource: eventId && overrides.has(eventId) ? 'manual' : assignedRound !== null ? 'automatic' : 'unassigned',
+          };
+        });
+
+        const validationErrors: Array<{ code: string; message: string; round?: number }> = [];
+        const unassignedCount = reviewMatches.filter((match) => match.assignedRound === null).length;
+        if (unassignedCount > 0) {
+          validationErrors.push({
+            code: 'unassigned_matches',
+            message: `${unassignedCount} matches still do not have a round assignment.`,
+          });
+        }
+        const outOfRangeCount = reviewMatches.filter((match) => match.assignedRound !== null && expectedRoundCount !== null && match.assignedRound > expectedRoundCount).length;
+        if (outOfRangeCount > 0 && expectedRoundCount !== null) {
+          validationErrors.push({
+            code: 'round_overflow',
+            message: `${outOfRangeCount} matches were pushed beyond round ${expectedRoundCount}. They must be reassigned to one of the real league rounds.`,
+          });
+        }
+        for (const summary of roundSummary) {
+          if (summary.duplicateTeamIds.length > 0) {
+            validationErrors.push({
+              code: 'duplicate_team_in_round',
+              round: summary.round,
+              message: `Round ${summary.round} has teams assigned more than once.`,
+            });
+          }
+          if (summary.assignedMatches > 0 && summary.expectedMatches !== null && summary.assignedMatches !== summary.expectedMatches) {
+            validationErrors.push({
+              code: 'incomplete_round',
+              round: summary.round,
+              message: `Round ${summary.round} has ${summary.assignedMatches} of ${summary.expectedMatches} matches assigned.`,
+            });
+          }
+        }
+
+        return {
+          message,
+          currentEvent: currentEventItem
+            ? {
+                id: currentEventItem.event?.id ?? null,
+                date: currentEventItem.event?.date ?? currentEventItem.date?.toISOString() ?? null,
+                homeTeam: currentEventItem.homeName,
+                awayTeam: currentEventItem.awayName,
+              }
+            : null,
+          reviewMatches,
+          roundSummary,
+          validationErrors,
+          partialEvents: sortableEvents.map((entry) => ({
+            eventId: entry.event?.id ?? null,
+            date: entry.date ? entry.date.toISOString() : null,
+            homeId: entry.homeId,
+            awayId: entry.awayId,
+            homeName: entry.homeName,
+            awayName: entry.awayName,
+          })),
+          roundAssignments: Array.from(roundByEventId.entries()).map(([evId, r]) => ({ eventId: evId, round: r })),
+          reservedEventIds: Array.from(reservedEventIds),
+          allTeamIds: allTeamIds.map((teamId) => ({ id: teamId, name: teamNamesById.get(teamId) ?? teamId })),
+        };
+      };
+      const buildReviewConflict = (
+        message: string,
+        currentEventItem: (typeof sortableEvents)[number] | null,
+        highlightedEventIds: string[] = [],
+      ) => {
+        // NOTE: pruneSparseAutomaticRounds + compactAssignedRounds are called once
+        // after the main loop (before overrides are applied).  Do NOT call them here
+        // again — doing so would mutate the round map a second time and corrupt
+        // manually-overridden assignments.
+
+        const details = buildReviewDetails(message, currentEventItem, highlightedEventIds);
+        if (details.validationErrors.length === 0 && details.reviewMatches.every((match) => match.assignedRound !== null)) {
+          return null;
+        }
+
+        return {
+          reason: 'needs_round_review',
+          message,
+          details,
+        };
+      };
+
+      const ROUND_BOUNDARY_GAP_DAYS = 1;
+      const SPARSE_ROUND_MATCH_THRESHOLD = 3;
+      const openIncompleteRounds: Array<{ round: number; missingTeamIds: Set<string> }> = [];
+      const reviewEventIds = new Set<string>();
+      const addOpenIncompleteRound = (round: number, teamIdsInRound: Set<string>) => {
+        const missingTeamIds = new Set(allTeamIds.filter((teamId) => !teamIdsInRound.has(teamId)));
+        // Only keep a round open for automatic backfill when exactly one match is missing.
+        // If more than one match is missing, later delayed fixtures must go to manual review.
+        if (missingTeamIds.size !== 2) return;
+        const existing = openIncompleteRounds.find((entry) => entry.round === round);
+        if (existing) {
+          existing.missingTeamIds = missingTeamIds;
+          return;
+        }
+        openIncompleteRounds.push({ round, missingTeamIds });
+      };
+
+      const allEventIds = sortableEvents
+        .map((entry) => (entry.event?.id !== undefined && entry.event?.id !== null ? String(entry.event.id) : null))
+        .filter((eventId): eventId is string => !!eventId);
+      const hasAuthoritativeOverrides = allEventIds.length > 0 && allEventIds.every((eventId) => overrides.has(eventId));
+      if (hasAuthoritativeOverrides) {
+        for (const eventId of allEventIds) {
+          roundByEventId.set(eventId, Number(overrides.get(eventId)));
+        }
+
+        const reviewDetails = buildReviewDetails(
+          'The provided round assignments need review before the import can continue.',
+          null,
+        );
+
+        if (reviewDetails.validationErrors.length > 0) {
+          return {
+            roundByEventId,
+            reservedEventIds,
+            conflict: {
+              reason: 'needs_round_review',
+              message: 'The provided round assignments are still invalid. Adjust the table and try again.',
+              details: reviewDetails,
+            },
+          };
+        }
+
+        return { roundByEventId, reservedEventIds, conflict: null };
+      }
+
+      const pruneSparseAutomaticRounds = () => {
+        const { roundSummary, summaryByRound } = buildRoundSummary(roundByEventId);
+        const prunedEventIds: string[] = [];
+
+        for (const summary of roundSummary) {
+          if (summary.assignedMatches === 0 || summary.assignedMatches > SPARSE_ROUND_MATCH_THRESHOLD) continue;
+          const bucket = summaryByRound.get(summary.round);
+          if (!bucket?.eventIds?.length) continue;
+
+          const autoAssignedEventIds = bucket.eventIds.filter((eventId) => !overrides.has(eventId));
+          if (autoAssignedEventIds.length === 0) continue;
+
+
+          for (const eventId of autoAssignedEventIds) {
+            roundByEventId.delete(eventId);
+            reservedEventIds.delete(eventId);
+            reviewEventIds.add(eventId);
+            prunedEventIds.push(eventId);
+          }
+        }
+
+        return prunedEventIds;
+      };
+
+      const compactAssignedRounds = () => {
+        const orderedRounds = Array.from(new Set(Array.from(roundByEventId.values()))).sort((left, right) => left - right);
+        const remappedRounds = new Map<number, number>();
+
+        orderedRounds.forEach((roundNumber, index) => {
+          remappedRounds.set(roundNumber, index + 1);
+        });
+
+        if (orderedRounds.every((roundNumber, index) => roundNumber === index + 1)) return;
+
+        for (const [eventId, roundNumber] of Array.from(roundByEventId.entries())) {
+          const compactedRound = remappedRounds.get(roundNumber);
+          if (compactedRound !== undefined) {
+            roundByEventId.set(eventId, compactedRound);
+          }
+        }
+      };
+// console.log('Events sorted by date:', sortableEvents);
       let currentRound = 1;
       let previousDate: Date | null = null;
       let matchesInCurrentRound = 0;
       let currentRoundTeamIds = new Set<string>();
       let index = 0;
-
+// console.log('Beginning round assignment loop...');
+// console.log('Total sortable events:', sortableEvents.length);
       while (index < sortableEvents.length) {
         const item = sortableEvents[index];
         const currentDate = item.date!;
         const eventId = item.event?.id !== undefined && item.event?.id !== null ? String(item.event.id) : null;
-
+// console.log(`Processing event id ${eventId} at index ${index} with date ${currentDate.toISOString()}`);
         if (!item.homeId || !item.awayId) {
           previousDate = currentDate;
           index += 1;
           continue;
         }
-
+// console.log(`Event ${eventId} has homeId ${item.homeId} and awayId ${item.awayId}`);
         if (eventId && reservedEventIds.has(eventId)) {
           previousDate = currentDate;
           index += 1;
           continue;
         }
-
+        if (eventId && overrides.has(eventId)) {
+          index += 1;
+          continue;
+        }
+// console.log(`Event ${eventId} is not reserved. Checking round assignment...`);
         const roundReachedExpectedSize = maxMatchesPerRound !== null && matchesInCurrentRound >= maxMatchesPerRound;
         if (roundReachedExpectedSize) {
           currentRound += 1;
@@ -460,9 +929,8 @@ export class ApiService {
           previousDate = null;
           continue;
         }
-
         if (previousDate) {
-          const diffInDays = Math.floor((toUtcDay(currentDate) - toUtcDay(previousDate)) / (24 * 60 * 60 * 1000));
+          const diffInDays = Math.floor((toLocalDay(currentDate) - toLocalDay(previousDate)) / (24 * 60 * 60 * 1000));
           const hasRestDayBetweenMatches = diffInDays > 1;
           const shouldSplitByGap = maxMatchesPerRound === null && hasRestDayBetweenMatches;
           if (shouldSplitByGap) {
@@ -472,8 +940,41 @@ export class ApiService {
             previousDate = null;
             continue;
           }
+
+          const hasStrongRoundBoundary = maxMatchesPerRound !== null && diffInDays > ROUND_BOUNDARY_GAP_DAYS;
+          if (hasStrongRoundBoundary && matchesInCurrentRound > 0) {
+            if (matchesInCurrentRound < (maxMatchesPerRound ?? 0)) {
+              addOpenIncompleteRound(currentRound, currentRoundTeamIds);
+            }
+            currentRound += 1;
+            matchesInCurrentRound = 0;
+            currentRoundTeamIds = new Set<string>();
+            previousDate = null;
+            continue;
+          }
         }
 
+        const compatibleOpenRounds = openIncompleteRounds.filter((entry) => entry.missingTeamIds.has(item.homeId) && entry.missingTeamIds.has(item.awayId));
+        if (compatibleOpenRounds.length > 1) {
+          if (eventId) reviewEventIds.add(eventId);
+          previousDate = currentDate;
+          index += 1;
+          continue;
+        }
+        if (compatibleOpenRounds.length === 1 && eventId) {
+          const targetRound = compatibleOpenRounds[0];
+          roundByEventId.set(eventId, targetRound.round);
+          targetRound.missingTeamIds.delete(item.homeId);
+          targetRound.missingTeamIds.delete(item.awayId);
+          if (targetRound.missingTeamIds.size === 0) {
+            const roundIndex = openIncompleteRounds.findIndex((entry) => entry.round === targetRound.round);
+            if (roundIndex >= 0) openIncompleteRounds.splice(roundIndex, 1);
+          }
+          index += 1;
+          continue;
+        }
+// console.log(`Checking for team conflicts in round ${currentRound}...`);
+// console.log('666');
         const teamAlreadyInRound = currentRoundTeamIds.has(item.homeId) || currentRoundTeamIds.has(item.awayId);
         if (teamAlreadyInRound && maxMatchesPerRound !== null) {
           const missingTeamIds = allTeamIds.filter((teamId) => !currentRoundTeamIds.has(teamId));
@@ -482,32 +983,63 @@ export class ApiService {
             if (entry.homeId && entry.homeName && !teamNamesById.has(entry.homeId)) teamNamesById.set(entry.homeId, entry.homeName);
             if (entry.awayId && entry.awayName && !teamNamesById.has(entry.awayId)) teamNamesById.set(entry.awayId, entry.awayName);
           }
-
+// console.log(`Round ${currentRound} is missing teams:`, missingTeamIds);
+// console.log('777');
           if (missingTeamIds.length > 2) {
-            return {
-              roundByEventId,
-              reservedEventIds,
-              conflict: {
-                reason: 'round_assignment_conflict',
-                message: `Round ${currentRound} is missing ${missingTeamIds.length / 2} matches; automatic lookup only supports one missing match.`,
-                details: {
-                  round: currentRound,
-                  expectedMatches: maxMatchesPerRound,
-                  assignedMatches: matchesInCurrentRound,
-                  currentEvent: {
-                    id: item.event?.id ?? null,
-                    date: item.event?.date ?? currentDate.toISOString(),
-                    homeTeam: item.homeName,
-                    awayTeam: item.awayName,
-                  },
-                  missingTeams: missingTeamIds.map((teamId) => ({ id: teamId, name: teamNamesById.get(teamId) ?? teamId })),
-                },
-              },
-            };
-          }
+            // Before declaring a fatal conflict, attempt to detect and unassign a
+            // "stray" event from the current round.  A stray is a rescheduled /
+            // makeup fixture that was greedily absorbed into the round because it
+            // happened to fall between two proper game-weeks (e.g. a midweek
+            // rescheduled match played 4+ days before the actual game-week cluster).
+            // Heuristic: if an already-assigned event for this round has a date
+            // that is strictly more than STRAY_THRESHOLD_DAYS before the current
+            // conflicting event's date, it is likely a stray.  Unassign it and
+            // retry the current loop iteration — all other logic is untouched.
+            const STRAY_THRESHOLD_DAYS = 3;
+            let strayCandidateId: string | null = null;
+            let strayCandidateItem: (typeof sortableEvents)[0] | null = null;
+            const currentRoundEntries = Array.from(roundByEventId.entries())
+              .filter(([, r]) => r === currentRound);
+            for (const [assignedEventId] of currentRoundEntries) {
+              const assignedItem = sortableEvents.find(
+                (se) => se.event?.id != null && String(se.event.id) === assignedEventId,
+              );
+              if (!assignedItem?.date) continue;
+              const daysBefore = Math.floor(
+                (toLocalDay(currentDate) - toLocalDay(assignedItem.date)) / (24 * 60 * 60 * 1000),
+              );
+              if (daysBefore > STRAY_THRESHOLD_DAYS) {
+                strayCandidateId = assignedEventId;
+                strayCandidateItem = assignedItem;
+                break;
+              }
+            }
+            if (strayCandidateId && strayCandidateItem) {
+              // Remove the stray from the current round regardless of whether we have an override
+              roundByEventId.delete(strayCandidateId);
+              if (strayCandidateItem.homeId) currentRoundTeamIds.delete(strayCandidateItem.homeId);
+              if (strayCandidateItem.awayId) currentRoundTeamIds.delete(strayCandidateItem.awayId);
+              matchesInCurrentRound -= 1;
+              const overrideRound = overrides.get(strayCandidateId);
+              if (overrideRound !== undefined) {
+                // Caller supplied a manual round assignment — apply it and retry
+                roundByEventId.set(strayCandidateId, overrideRound);
+                continue;
+              }
+              if (strayCandidateId) reviewEventIds.add(strayCandidateId);
+              continue;
+            }
 
+            if (eventId) reviewEventIds.add(eventId);
+            previousDate = currentDate;
+            index += 1;
+            continue;
+          }
+// console.log(`Attempting to find replacement match for round ${currentRound} with missing teams...`);
+// console.log('888');
           if (missingTeamIds.length === 2) {
             const [missingHomeId, missingAwayId] = missingTeamIds;
+
             const foundReplacement = sortableEvents.find((candidate, candidateIndex) => {
               if (candidateIndex <= index) return false;
               const candidateEventId = candidate.event?.id !== undefined && candidate.event?.id !== null ? String(candidate.event.id) : null;
@@ -517,30 +1049,19 @@ export class ApiService {
                 (candidate.homeId === missingAwayId && candidate.awayId === missingHomeId)
               );
             });
-
-            if (!foundReplacement) {
-              return {
-                roundByEventId,
-                reservedEventIds,
-                conflict: {
-                  reason: 'round_assignment_conflict',
-                  message: `Round ${currentRound} is missing one postponed match, but no future fixture was found for the two missing teams.`,
-                  details: {
-                    round: currentRound,
-                    expectedMatches: maxMatchesPerRound,
-                    assignedMatches: matchesInCurrentRound,
-                    currentEvent: {
-                      id: item.event?.id ?? null,
-                      date: item.event?.date ?? currentDate.toISOString(),
-                      homeTeam: item.homeName,
-                      awayTeam: item.awayName,
-                    },
-                    missingTeams: missingTeamIds.map((teamId) => ({ id: teamId, name: teamNamesById.get(teamId) ?? teamId })),
-                  },
-                },
-              };
+// console.log(`Replacement match ${foundReplacement ? `found with event id ${foundReplacement.event?.id}` : 'not found'} for missing teams ${missingTeamIds.join(', ')}`);
+// console.log('999');
+if (!foundReplacement) {
+                console.log('000');
+// console.log(`No replacement match found for round ${currentRound} with missing teams ${missingTeamIds.join(', ')}. This may indicate an unplayed/postponed match or a data inconsistency.`);
+              addOpenIncompleteRound(currentRound, currentRoundTeamIds);
+              currentRound += 1;
+              matchesInCurrentRound = 0;
+              currentRoundTeamIds = new Set<string>();
+              previousDate = null;
+              continue;
             }
-
+// console.log(`Assigning replacement event id ${foundReplacement.event?.id} to round ${currentRound} for missing teams ${missingTeamIds.join(', ')}`);
             const replacementEventId = String(foundReplacement.event.id);
             roundByEventId.set(replacementEventId, currentRound);
             reservedEventIds.add(replacementEventId);
@@ -554,19 +1075,51 @@ export class ApiService {
             continue;
           }
         }
-
+// console.log(`Assigning event id ${eventId} to round ${currentRound}`);
         if (eventId) roundByEventId.set(eventId, currentRound);
+// console.log(`Incrementing matches in current round: ${matchesInCurrentRound + 1}`);
         matchesInCurrentRound += 1;
         currentRoundTeamIds.add(item.homeId);
         currentRoundTeamIds.add(item.awayId);
         previousDate = currentDate;
         index += 1;
+// console.log('Current round team IDs:', Array.from(currentRoundTeamIds));
+      }
+      // Prune sparse auto-only clusters and compact round numbering BEFORE
+      // applying manual overrides.  This keeps round numbers deterministic
+      // across reparses (the same data + same overrides = same mapping).
+      // Run multiple passes: after prune+compact, previously-non-sparse rounds
+      // may now be sparse (their events were unaffected but the round number
+      // shifted into a slot that used to hold a pruned cluster).
+      let totalPrunedEventIds: string[] = [];
+      for (let pass = 0; pass < 5; pass++) {
+        const pruned = pruneSparseAutomaticRounds();
+        if (pruned.length === 0) break;
+        totalPrunedEventIds = totalPrunedEventIds.concat(pruned);
+        compactAssignedRounds();
+
+      }
+      const prunedSparseRoundEventIds = totalPrunedEventIds;
+
+      // Overlay manual overrides AFTER prune+compact so they target stable
+      // round numbers.  buildReviewConflict must NOT call prune+compact again.
+      for (const [eventId, overrideRound] of overrides.entries()) {
+        roundByEventId.set(eventId, Number(overrideRound));
       }
 
-      return { roundByEventId, reservedEventIds, conflict: null };
+      const finalConflict = buildReviewConflict(
+        prunedSparseRoundEventIds.length > 0
+          ? 'Automatic round derivation ignored isolated clusters of 1 to 3 games because they likely belong to other rounds. Review those fixtures manually.'
+          : 'Automatic round derivation completed as far as it could. Review only the remaining unresolved or ambiguous fixtures.',
+        null,
+        Array.from(reviewEventIds),
+      );
+// console.log('Round assignment complete. Result:', { roundByEventId, reservedEventIds });
+      return { roundByEventId, reservedEventIds, conflict: finalConflict };
     };
 
-    const roundResult = getEspnRoundNumbers(events);
+    const overridesMap = new Map<string, number>(Object.entries(roundOverrides ?? {}));
+    const roundResult = getEspnRoundNumbers(events, overridesMap);
     if (roundResult.conflict) {
       return {
         found: false,
@@ -630,11 +1183,10 @@ export class ApiService {
         'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
         
         // Additional ESPN-specific fields that might be useful
-        'espn.event.id': event?.id ?? null,
-        'espn.competition.id': competition?.id ?? null,
-        'espn.attendance': competition?.attendance ?? null,
+        // expose a flat `espn_event_id` key so downstream loaders can easily persist it
+        'espn_event_id': event?.id != null ? Number(event.id) : null,
       };
-      
+        // console.log('Mapping ESPN event id:', event?.id);
       rows.push(mapped);
     }
     
@@ -688,12 +1240,12 @@ export class ApiService {
 
       const parsed = await this.parseTransitional(id) as any;
       if (!parsed || !parsed.found) {
-        if (parsed?.reason === 'round_assignment_conflict') {
+        if (parsed?.reason === 'round_assignment_conflict' || parsed?.reason === 'needs_round_review') {
           const details = parsed?.details ?? {};
-          const message = parsed?.error ?? 'Round assignment conflict while deriving ESPN rounds';
+          const message = parsed?.error ?? 'Round assignment review required while deriving ESPN rounds';
           const logRes = await client.query(
             `INSERT INTO api_import_log (transitional_id, message, details) VALUES ($1,$2,$3) RETURNING id`,
-            [id, 'round_assignment_conflict', { message, ...details }],
+            [id, parsed?.reason ?? 'round_assignment_conflict', { message, ...details }],
           );
           return { applied: 0, reason: parsed.reason, error: message, details, logId: logRes.rows[0]?.id ?? null };
         }
@@ -878,17 +1430,19 @@ export class ApiService {
   ) {
     // Read sport defaults
     const sp = await client.query(
-      `SELECT min_match_divisions_number AS min_divisions, max_match_divisions_number AS max_divisions, has_overtime, has_penalties FROM sports WHERE id = $1 LIMIT 1`,
+      `SELECT min_match_divisions_number AS min_divisions, max_match_divisions_number AS max_divisions, has_overtime, has_penalties, flg_espn_api_partial_scores FROM sports WHERE id = $1 LIMIT 1`,
       [sportId],
     );
     let maxDivisions = 2;
     let hasOvertime = false;
     let hasPenalties = false;
+    let hasEspnPartialScores = false;
     if (sp.rows && sp.rows.length) {
       const r = sp.rows[0];
       if (r.max_divisions !== undefined && r.max_divisions !== null) maxDivisions = Number(r.max_divisions) || maxDivisions;
       hasOvertime = !!r.has_overtime;
       hasPenalties = !!r.has_penalties;
+      hasEspnPartialScores = !!r.flg_espn_api_partial_scores;
     }
 
     // Parse numeric scores (tolerate nulls) and guard against NaN
@@ -926,9 +1480,15 @@ export class ApiService {
         awayScore = 0;
       }
 
-      // Ensure integers and guard against NaN by coercing non-finite values to 0
-      homeScore = homeScore == null || !Number.isFinite(Number(homeScore)) ? 0 : Math.max(0, Math.trunc(Number(homeScore)));
-      awayScore = awayScore == null || !Number.isFinite(Number(awayScore)) ? 0 : Math.max(0, Math.trunc(Number(awayScore)));
+      // If the sport does not provide partial scores via ESPN API, zero-out division scores
+      if (!hasEspnPartialScores) {
+        homeScore = 0;
+        awayScore = 0;
+      } else {
+        // Ensure integers and guard against NaN by coercing non-finite values to 0
+        homeScore = homeScore == null || !Number.isFinite(Number(homeScore)) ? 0 : Math.max(0, Math.trunc(Number(homeScore)));
+        awayScore = awayScore == null || !Number.isFinite(Number(awayScore)) ? 0 : Math.max(0, Math.trunc(Number(awayScore)));
+      }
 
       await client.query(
         `INSERT INTO match_divisions (match_id, division_number, division_type, home_score, away_score) VALUES ($1,$2,$3,$4,$5)`,
@@ -941,7 +1501,7 @@ export class ApiService {
   }
 
   // Apply first-row processing: upsert country, league, season based on parsed first row
-  async applyFirstRowToApp(id: number, options: { sportId?: number } = {}) {
+  async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number> } = {}) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
@@ -957,8 +1517,15 @@ export class ApiService {
         );
       `);
 
-      const parsed = await this.parseTransitional(id) as any;
-      if (!parsed || !parsed.found) return { applied: false, reason: 'not_found' };
+      const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
+      if (!parsed || !parsed.found) {
+        return {
+          applied: false,
+          reason: parsed?.reason ?? 'not_found',
+          error: parsed?.error ?? null,
+          details: parsed?.details ?? null,
+        };
+      }
       const rows = parsed.rows || [];
       if (!rows.length) return { applied: false, reason: 'no_rows' };
 
@@ -1111,7 +1678,7 @@ export class ApiService {
   }
 
   // Apply all rows: create rounds, clubs, and matches (atomic)
-  async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean } = {}) {
+  async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> } = {}) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     const client = await pool.connect();
@@ -1145,8 +1712,15 @@ export class ApiService {
         );
       `);
 
-      const parsed = await this.parseTransitional(id) as any;
-      if (!parsed || !parsed.found) return { applied: 0, reason: 'not_found' };
+      const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
+      if (!parsed || !parsed.found) {
+        return {
+          applied: 0,
+          reason: parsed?.reason ?? 'not_found',
+          error: parsed?.error ?? null,
+          details: parsed?.details ?? null,
+        };
+      }
       const rows = parsed.rows || [];
       if (!rows.length) return { applied: 0, reason: 'no_rows' };
 
@@ -1155,7 +1729,7 @@ export class ApiService {
       let seasonId = options.seasonId ?? null;
       const sportId = options.sportId ?? 36;
       if (!leagueId || !seasonId) {
-        const firstRowResult = await this.applyFirstRowToApp(id, { sportId });
+        const firstRowResult = await this.applyFirstRowToApp(id, { sportId, roundOverrides: options.roundOverrides });
         if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
         leagueId = firstRowResult.leagueId;
         seasonId = firstRowResult.seasonId;
@@ -1383,6 +1957,14 @@ export class ApiService {
         return 0;
       });
 
+      // Check whether `matches` table contains `espn_event_id` so we can conditionally include it
+      const matchColsRes = await client.query(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+        ['matches'],
+      );
+      const matchCols = matchColsRes.rows.map((c: any) => c.column_name);
+      const hasMatchesEspnEventCol = matchCols.includes('espn_event_id');
+
       for (const r of sortedRows) {
         try {
           const roundNumber = r['league.round'] ?? r['round'] ?? null;
@@ -1486,12 +2068,26 @@ export class ApiService {
           const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
           const homeScore = r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
           const awayScore = r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+          const espnEventId =
+            r['espn_event_id'] != null && r['espn_event_id'] !== '' && Number.isFinite(Number(r['espn_event_id']))
+              ? Number(r['espn_event_id'])
+              : null;
 
           // Insert match
-          const matchRes = await client.query(
-            `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-            [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
-          );
+          let matchRes;
+          if (hasMatchesEspnEventCol) {
+            //   console.log('Inserting match with espn_event_id:', { sportId, leagueId, seasonId, roundId, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, espnEventId });
+              matchRes = await client.query(
+                  `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, espn_event_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                  [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, espnEventId],
+                );
+          } else {
+            //   console.log('Inserting match without espn_event_id:', { sportId, leagueId, seasonId, roundId, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore });
+              matchRes = await client.query(
+              `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+              [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
+            );
+          }
           const matchId = matchRes.rows[0].id;
           // create match_divisions rows according to sport defaults and parsed row data
           try {
@@ -1791,6 +2387,7 @@ export class ApiService {
         await client.query('ROLLBACK');
       } else {
         await client.query('COMMIT');
+        await this.deleteRoundReview(id);
       }
 
       return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, clubsIncluded, dryRun: !!options.dryRun };

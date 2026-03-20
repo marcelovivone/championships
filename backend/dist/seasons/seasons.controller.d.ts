@@ -37,7 +37,7 @@ export declare class SeasonsController {
             numberOfRoundsMatches: number;
             minDivisionsNumber: number;
             maxDivisionsNumber: number;
-            divisionsTime: number;
+            divisionTime: number;
             hasOvertimeOverride: boolean;
             hasPenaltiesOverride: boolean;
             hasAscends: boolean;
@@ -86,6 +86,7 @@ export declare class SeasonsController {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     create(createDto: any): Promise<{
@@ -98,6 +99,7 @@ export declare class SeasonsController {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
     }>;
     update(id: number, updateDto: any): Promise<{
         id: number;
@@ -108,6 +110,7 @@ export declare class SeasonsController {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
     remove(id: number): Promise<{
@@ -120,5 +123,6 @@ export declare class SeasonsController {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgEspnApiPartialScores: boolean;
     }>;
 }

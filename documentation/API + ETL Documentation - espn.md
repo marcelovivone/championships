@@ -45,3 +45,6 @@ TRANSFORM & LOAD
     The process must be the same already developed. We should use, check and insert (if needed) the same tables, in the same order. The only thing who changes are the origin, which is a complete differen json file, with a different strucutre,
     elements and so on. You should get the elements used inside the code already done and find the corresponding element in
     the new json to can perform the same things.
+
+    New feature:
+    - Save the event id in matches table. I have already created the new column.

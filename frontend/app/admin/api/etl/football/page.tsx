@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useLayoutEffect } from 'react';
+import React, { Fragment, useEffect, useState, useRef, useLayoutEffect } from 'react';
 import DataTable from '@/components/ui/data-table';
 import { Table as TableIcon, Database, Trash2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
@@ -24,6 +24,44 @@ function toCSV(items: any[]) {
     return rows.join('\n');
 }
 
+function formatLeagueDate(dateValue: string | null | undefined) {
+    if (!dateValue) return '-';
+    try {
+        return new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'America/Sao_Paulo',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+        }).format(new Date(dateValue));
+    } catch {
+        return String(dateValue);
+    }
+}
+
+function collectManualRoundOverrides(
+    matches: any[],
+    inputs: Record<string, string>,
+    existingOverrides: Record<string, number>,
+) {
+    const manualOverrides: Record<string, number> = { ...existingOverrides };
+
+    for (const match of matches) {
+        const rawValue = inputs[match.id];
+        if (!rawValue || isNaN(Number(rawValue))) continue;
+        const parsedValue = Number(rawValue);
+        if (parsedValue < 1) continue;
+
+        const wasManuallyAssigned = match.assignmentSource === 'manual' || existingOverrides[match.id] != null;
+        const changedAutomaticAssignment = match.assignedRound == null || parsedValue !== Number(match.assignedRound);
+
+        if (wasManuallyAssigned || changedAutomaticAssignment) {
+            manualOverrides[match.id] = parsedValue;
+        }
+    }
+
+    return manualOverrides;
+}
+
 export default function EtlPage() {
     const [rows, setRows] = useState<any[]>([]);
     const [selected, setSelected] = useState<any | null>(null);
@@ -36,6 +74,12 @@ export default function EtlPage() {
     const [mappingInputs, setMappingInputs] = useState<Record<string, string>>({});
     const [loadResult, setLoadResult] = useState<any | null>(null);
     const [runningLoad, setRunningLoad] = useState(false);
+    const [pendingStrays, setPendingStrays] = useState<any[]>([]);
+    const [strayInputs, setStrayInputs] = useState<Record<string, string>>({});
+    const [accumulatedOverrides, setAccumulatedOverrides] = useState<Record<string, number>>({});
+    const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
+    const [roundReviewSummary, setRoundReviewSummary] = useState<any[]>([]);
+    const [expandedRoundDetails, setExpandedRoundDetails] = useState<Record<string, boolean>>({});
     const [targetColumns, setTargetColumns] = useState<string[] | null>(null);
     const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -121,13 +165,18 @@ export default function EtlPage() {
         loadRow(Number(id));
     }, [searchParams?.toString()]);
 
-    const loadRow = async (id: number) => {
+    const loadRow = async (id: number, overrides: Record<string, number> = {}) => {
         setLoadingRow(true);
         setParsedColumns(null);
         setParsedRowsData(null);
+        setRoundReviewSummary([]);
+        setExpandedRoundDetails({});
         try {
             // Fetch parsed tabular data from server-side parser
-            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse`);
+            const overridesParam = Object.keys(overrides).length > 0
+                ? `?roundOverrides=${encodeURIComponent(JSON.stringify(overrides))}`
+                : '';
+            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${overridesParam}`);
             console.log('Parse response:', pResp);
             const pJson = await pResp.json();
             console.log('parse body:', pJson);
@@ -139,13 +188,72 @@ export default function EtlPage() {
                 console.log('Columns:', payload.columns);
                 setParsedColumns(payload.columns || []);
                 setParsedRowsData(payload.rows || []);
-            }
+                setPendingStrays([]);
+                setStrayInputs({});
+                setRoundReviewSummary([]);
+                setExpandedRoundDetails({});
 
-            // Also fetch the raw item for preview
-            const rResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
-            const rJson = await rResp.json();
-            const item = rJson.item || rJson.data?.item || rJson.data || rJson;
-            setSelected(item || null);
+                // Also fetch the raw item for preview (only when parsing succeeded)
+                const rResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
+                const rJson = await rResp.json();
+                const item = rJson.item || rJson.data?.item || rJson.data || rJson;
+                setSelected(item || null);
+            } else if (payload?.reason === 'needs_round_review' && payload?.details?.reviewMatches?.length) {
+                setParsedColumns(null);
+                setParsedRowsData(null);
+                const reviewMatches = payload.details.reviewMatches || [];
+                setPendingStrays(reviewMatches);
+                setStrayInputs(
+                    Object.fromEntries(
+                        reviewMatches.map((match: any) => [match.id, match.assignedRound != null ? String(match.assignedRound) : ''])
+                    )
+                );
+                setRoundReviewSummary(payload.details.roundSummary || []);
+                setExpandedRoundDetails({});
+                setSelected({ id, parseError: 'needs_round_review', parseDetails: payload?.details ?? null });
+                const derivedRows = reviewMatches.map((match: any) => ({
+                    'league.round': match.assignedRound ?? null,
+                    'espn_event_id': match.eventId ?? null,
+                    'fixture.date': match.leagueLocalDate ?? match.date ?? null,
+                    'teams.home.name': match.homeTeam ?? null,
+                    'teams.away.name': match.awayTeam ?? null,
+                    'fixture.venue.name': match.venueName ?? null,
+                    'fixture.venue.city': match.venueCity ?? null,
+                    'assignment.source': match.assignmentSource ?? null,
+                }));
+                setParsedColumns(['league.round','espn_event_id','fixture.date','teams.home.name','teams.away.name','fixture.venue.name','fixture.venue.city','assignment.source']);
+                setParsedRowsData(derivedRows);
+            } else {
+                // Parsing failed: show only the reason/error (and any details) to avoid loading huge payloads
+                const reason = payload?.error ?? payload?.reason ?? 'parse_failed';
+                setParsedColumns(null);
+                setParsedRowsData(null);
+                setPendingStrays([]);
+                setStrayInputs({});
+                setRoundReviewSummary([]);
+                setExpandedRoundDetails({});
+                // If diagnostics contain partialEvents, show them as a tabular preview instead of raw JSON
+                if (payload?.details?.partialEvents) {
+                    const roundMap = (payload.details.roundAssignments || []).reduce((acc: any, cur: any) => {
+                        if (cur && cur.eventId != null) acc[String(cur.eventId)] = cur.round;
+                        return acc;
+                    }, {} as Record<string, any>);
+                    const derivedRows = (payload.details.partialEvents || []).map((pe: any) => ({
+                        'league.round': roundMap[String(pe.eventId)] ?? null,
+                        'espn_event_id': pe.eventId ?? null,
+                        'fixture.date': pe.date ?? null,
+                        'teams.home.name': pe.homeName ?? null,
+                        'teams.away.name': pe.awayName ?? null,
+                        'home_id': pe.homeId ?? null,
+                        'away_id': pe.awayId ?? null,
+                    }));
+                    setParsedColumns(['league.round','espn_event_id','fixture.date','teams.home.name','teams.away.name','home_id','away_id']);
+                    setParsedRowsData(derivedRows);
+                    setSelected({ id, parseError: reason, parseDetails: payload?.details ?? null });
+                } else {
+                    setSelected({ id, parseError: reason, parseDetails: payload?.details ?? null });
+                }
+            }
         } catch (e) {
             console.error(e);
             setSelected(null);
@@ -155,6 +263,11 @@ export default function EtlPage() {
     };
 
     const handleSelect = (id: number) => {
+        setPendingStrays([]);
+        setStrayInputs({});
+        setRoundReviewSummary([]);
+        setAccumulatedOverrides({});
+        setExpandedRoundDetails({});
         loadRow(id);
     };
 
@@ -170,7 +283,46 @@ export default function EtlPage() {
         }, 200);
     };
 
-    const handleToDbTables = async (id: number) => {
+    const handleToDbTables = async (id: number, overridesArg?: Record<string, number>) => {
+        const effectiveOverrides = overridesArg ?? accumulatedOverrides;
+
+        // Pre-check: parse the row to detect if round assignment input is needed before confirming
+        try {
+            const overridesParam = Object.keys(effectiveOverrides).length > 0
+                ? `?roundOverrides=${encodeURIComponent(JSON.stringify(effectiveOverrides))}`
+                : '';
+            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${overridesParam}`);
+            const pJson = await pResp.json();
+            const pPayload = pJson?.data ?? pJson;
+            if (pPayload?.reason === 'needs_round_review' && pPayload?.details?.reviewMatches?.length) {
+                // Round input needed — show the stray UI and remember to apply after resolution
+                const reviewMatches = pPayload.details.reviewMatches || [];
+                setPendingStrays(reviewMatches);
+                setStrayInputs(
+                    Object.fromEntries(
+                        reviewMatches.map((match: any) => [match.id, match.assignedRound != null ? String(match.assignedRound) : ''])
+                    )
+                );
+                setRoundReviewSummary(pPayload.details.roundSummary || []);
+                setExpandedRoundDetails({});
+                setAccumulatedOverrides(effectiveOverrides);
+                const rResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
+                const rJson = await rResp.json();
+                const item = rJson.item || rJson.data?.item || rJson.data || rJson;
+                setSelected({ ...(item || { id }), parseError: 'needs_round_review', parseDetails: pPayload?.details ?? null });
+                setPendingApplyId(id);
+                setViewMode('table');
+                setTimeout(() => {
+                    const el = document.querySelector('[data-round-review-section]');
+                    if (el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth' });
+                }, 200);
+                return;
+            }
+        } catch (e) {
+            // If pre-check fails, proceed — the apply endpoint will surface the error
+            console.warn('[ETL] pre-check parse failed, proceeding with apply', e);
+        }
+
         // Fetch the transitional row to check status before processing
         let transitionalRow: any = null;
         try {
@@ -194,7 +346,7 @@ export default function EtlPage() {
             const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-all-rows`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sportId: 36, dryRun: !!dryRun }),
+                body: JSON.stringify({ sportId: 36, dryRun: !!dryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
             });
             const j = await resp.json();
             const payload = j?.data ?? j;
@@ -228,9 +380,18 @@ export default function EtlPage() {
 
                     // Update local UI optimistically and then refresh from server
                     setRows((s) => s.map((r) => (r.id === id ? { ...r, status: true } : r)));
-                    setSelected((s: any) => (s && s.id === id ? { ...s, status: true } : s));
                     await reloadRows();
-                    loadRow(id);
+                    // Clear the parse/review UI and the selected row — the row is
+                    // fully loaded, no need to show the large raw payload again.
+                    setSelected(null);
+                    setParsedColumns(null);
+                    setParsedRowsData(null);
+                    setRoundReviewSummary([]);
+                    setAccumulatedOverrides({});
+                    setPendingStrays([]);
+                    setStrayInputs({});
+                    setPendingApplyId(null);
+                    setExpandedRoundDetails({});
                 }
             }
         } catch (e) {
@@ -248,6 +409,12 @@ export default function EtlPage() {
         setParsedRowsData(null);
         setSelected(null);
         setLoadResult(null);
+        setPendingStrays([]);
+        setStrayInputs({});
+        setRoundReviewSummary([]);
+        setAccumulatedOverrides({});
+        setPendingApplyId(null);
+        setExpandedRoundDetails({});
         setViewMode('table');
         // Scroll up to top of page
         setTimeout(() => {
@@ -451,7 +618,10 @@ export default function EtlPage() {
             <section className="mb-6">
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="text-lg font-semibold">Available API Loads</h2>
-                    <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
+                        <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
+                    </div>
                 </div>
                 <DataTable
                     columns={[
@@ -494,12 +664,12 @@ export default function EtlPage() {
             )}
 
             <section>
+                {(selected || loadingRow) && (
                 <div className="flex justify-between items-center mb-2">
                     <h2 className="text-lg font-semibold">Result</h2>
-                    <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
                 </div>
+                )}
                 {loadingRow && <div>Loading selected row...</div>}
-                {!selected && !loadingRow && <div>Select an API load above to preview its payload and export.</div>}
                 {selected && (
                     <div>
                         <div className="mb-4">
@@ -533,6 +703,162 @@ export default function EtlPage() {
                                 </div>
                             </div>
                         </div>
+                        {selected.parseError === 'needs_round_review' && pendingStrays.length > 0 && (
+                            <div data-round-review-section className="mb-4 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+                                <div className="mb-2 text-base font-semibold">Round review required</div>
+                                <p className="mb-4 max-w-5xl">
+                                    Automatic import stopped because the round distribution is ambiguous. First review the round summary below. Each round can expand to show the games already assigned to it. Then fill only the games that are still unassigned and process again.
+                                </p>
+
+                                {roundReviewSummary.length > 0 && (
+                                    <div className="mb-4 overflow-auto rounded border bg-white">
+                                        <table className="min-w-full table-auto border-collapse text-xs sm:text-sm">
+                                            <thead className="bg-amber-100">
+                                                <tr>
+                                                    <th className="border-b px-3 py-2 text-left">Round</th>
+                                                    <th className="border-b px-3 py-2 text-left">Date Range</th>
+                                                    <th className="border-b px-3 py-2 text-left">Assigned</th>
+                                                    <th className="border-b px-3 py-2 text-left">Expected</th>
+                                                    <th className="border-b px-3 py-2 text-left">Missing</th>
+                                                    <th className="border-b px-3 py-2 text-left">Status</th>
+                                                    <th className="border-b px-3 py-2 text-left">Games</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {roundReviewSummary.map((summary: any) => {
+                                                    const roundMatches = pendingStrays.filter((match: any) => Number(match.assignedRound) === Number(summary.round));
+                                                    const isExpanded = !!expandedRoundDetails[String(summary.round)];
+                                                    return (
+                                                        <Fragment key={summary.round}>
+                                                            <tr key={summary.round} className="border-t bg-white">
+                                                                <td className="px-3 py-2">{summary.round}</td>
+                                                                <td className="px-3 py-2">{summary.dateRange ?? '-'}</td>
+                                                                <td className="px-3 py-2">{summary.assignedMatches}</td>
+                                                                <td className="px-3 py-2">{summary.expectedMatches ?? '-'}</td>
+                                                                <td className="px-3 py-2">{summary.missingMatches ?? '-'}</td>
+                                                                <td className="px-3 py-2 capitalize">{summary.status}</td>
+                                                                <td className="px-3 py-2">
+                                                                    {roundMatches.length > 0 ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="rounded border border-amber-300 px-2 py-1 text-xs hover:bg-amber-50"
+                                                                            onClick={() => setExpandedRoundDetails((prev) => ({
+                                                                                ...prev,
+                                                                                [String(summary.round)]: !prev[String(summary.round)],
+                                                                            }))}
+                                                                        >
+                                                                            {isExpanded ? 'Hide games' : 'Show games'}
+                                                                        </button>
+                                                                    ) : (
+                                                                        '-'
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                            {isExpanded && roundMatches.map((match: any) => {
+                                                                const scoreLabel = match.isCompleted && match.homeScore != null && match.awayScore != null
+                                                                    ? `${match.homeScore}-${match.awayScore}`
+                                                                    : '-';
+                                                                return (
+                                                                    <tr key={`${summary.round}-${match.id}`} className="border-t bg-amber-50/40">
+                                                                        <td className="px-3 py-2">
+                                                                            <input
+                                                                                type="number"
+                                                                                min={1}
+                                                                                className="w-20 rounded border border-amber-300 bg-white px-2 py-1"
+                                                                                value={strayInputs[match.id] ?? (match.assignedRound != null ? String(match.assignedRound) : '')}
+                                                                                onChange={(e) => setStrayInputs((prev) => ({ ...prev, [match.id]: e.target.value }))}
+                                                                            />
+                                                                        </td>
+                                                                        <td className="px-3 py-2">{formatLeagueDate(match.date)}</td>
+                                                                        <td className="px-3 py-2" colSpan={2}>{match.homeTeam} vs {match.awayTeam}</td>
+                                                                        <td className="px-3 py-2">{match.venueCity ?? '-'}</td>
+                                                                        <td className="px-3 py-2">{scoreLabel}</td>
+                                                                        <td className="px-3 py-2" colSpan={2}>{match.statusShort ?? match.statusLong ?? '-'}</td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </Fragment>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+
+                                <div className="mb-4 overflow-auto rounded border bg-white">
+                                    <div className="border-b bg-amber-100 px-3 py-2 font-medium">
+                                        Games to assign/review ({pendingStrays.filter((match: any) => match.needsReview).length})
+                                    </div>
+                                    <table className="min-w-full table-auto border-collapse text-xs sm:text-sm">
+                                        <thead className="bg-amber-50">
+                                            <tr>
+                                                <th className="border-b px-3 py-2 text-left">Round</th>
+                                                <th className="border-b px-3 py-2 text-left">Date</th>
+                                                <th className="border-b px-3 py-2 text-left">Match</th>
+                                                <th className="border-b px-3 py-2 text-left">Venue</th>
+                                                <th className="border-b px-3 py-2 text-left">City</th>
+                                                <th className="border-b px-3 py-2 text-left">Score</th>
+                                                <th className="border-b px-3 py-2 text-left">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {pendingStrays.filter((match: any) => match.needsReview).map((match: any) => {
+                                                const dateLabel = formatLeagueDate(match.date);
+                                                const scoreLabel = match.isCompleted && match.homeScore != null && match.awayScore != null
+                                                    ? `${match.homeScore}-${match.awayScore}`
+                                                    : '-';
+                                                return (
+                                                    <tr key={`manual-${match.id}`} className={`border-t ${match.assignedRound == null ? 'bg-white' : 'bg-amber-50/40'}`}>
+                                                        <td className="px-3 py-2 align-top">
+                                                            <input
+                                                                type="number"
+                                                                min={1}
+                                                                className="w-20 rounded border border-amber-300 bg-white px-2 py-1"
+                                                                value={strayInputs[match.id] ?? ''}
+                                                                onChange={(e) => setStrayInputs((prev) => ({ ...prev, [match.id]: e.target.value }))}
+                                                            />
+                                                        </td>
+                                                        <td className="px-3 py-2 align-top">{dateLabel}</td>
+                                                        <td className="px-3 py-2 align-top">{match.homeTeam} vs {match.awayTeam}</td>
+                                                        <td className="px-3 py-2 align-top">{match.venueName ?? '-'}</td>
+                                                        <td className="px-3 py-2 align-top">{match.venueCity ?? '-'}</td>
+                                                        <td className="px-3 py-2 align-top">{scoreLabel}</td>
+                                                        <td className="px-3 py-2 align-top">{match.statusShort ?? match.statusLong ?? '-'}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <button
+                                    className="mt-1 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={Object.keys(collectManualRoundOverrides(pendingStrays, strayInputs, accumulatedOverrides)).length === 0}
+                                    onClick={async () => {
+                                        const merged = collectManualRoundOverrides(pendingStrays, strayInputs, accumulatedOverrides);
+                                        setAccumulatedOverrides(merged);
+                                        try {
+                                            await fetch(`${API_BASE}/v1/api/transitional/${selected.id}/round-review`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ overrides: merged }),
+                                            });
+                                        } catch (e) {
+                                            console.warn('[ETL] failed to save round review draft', e);
+                                        }
+                                        if (pendingApplyId !== null) {
+                                            const applyId = pendingApplyId;
+                                            setPendingApplyId(null);
+                                            handleToDbTables(applyId, merged);
+                                        } else {
+                                            loadRow(selected.id, merged);
+                                        }
+                                    }}
+                                >
+                                    {pendingApplyId !== null ? 'Process current assignments and apply' : 'Process current assignments'}
+                                </button>
+                            </div>
+                        )}
                         {/* <div className="mb-4 p-3 border rounded bg-gray-50">
                             <div>viewMode: {viewMode}</div>
                             <div>parsedRowsData.length: {parsedRowsData?.length ?? 0}</div>
@@ -555,11 +881,35 @@ export default function EtlPage() {
                                                 rows = rows || tbl.rows;
                                             }
 
+                                            // Hide JSON-stringified columns (arrays/objects) for table clarity
+                                            const isJsonString = (val: any) => {
+                                                if (val == null) return false;
+                                                if (typeof val !== 'string') return false;
+                                                const s = val.trim();
+                                                if (!s) return false;
+                                                if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+                                                    try { JSON.parse(s); return true; } catch { return false; }
+                                                }
+                                                return false;
+                                            };
+
+                                            // Prefer `league.round` (or `round`) as first column when present
+                                            let visibleCols = cols.filter((c) => {
+                                                // keep column if at least one row has a non-json displayable value
+                                                const sampleVal = rows.find((r) => r[c] !== undefined && r[c] !== null)?.[c];
+                                                return !isJsonString(sampleVal);
+                                            });
+                                            const preferRoundKeys = ['league.round', 'round'];
+                                            const foundRoundKey = preferRoundKeys.find((k) => visibleCols.includes(k));
+                                            if (foundRoundKey) {
+                                                visibleCols = [foundRoundKey, ...visibleCols.filter((c) => c !== foundRoundKey)];
+                                            }
+
                                             return (
                                                 <table className="min-w-max table-fixed border-collapse whitespace-nowrap">
                                                     <thead className="bg-gray-100">
                                                         <tr>
-                                                            {cols.map((c) => (
+                                                            {visibleCols.map((c) => (
                                                                 <th key={c} className="p-2 text-left text-sm border-b">{c}</th>
                                                             ))}
                                                         </tr>
@@ -567,7 +917,7 @@ export default function EtlPage() {
                                                     <tbody>
                                                         {rows.map((r, i) => (
                                                             <tr key={i} className="odd:bg-white even:bg-gray-50 border-t">
-                                                                {cols.map((c) => (
+                                                                {visibleCols.map((c) => (
                                                                     <td key={c} className="p-2 text-sm align-top border-r">{String(r[c] ?? '')}</td>
                                                                 ))}
                                                             </tr>
@@ -670,7 +1020,80 @@ export default function EtlPage() {
                         ) : (
                             <div className="mb-4">
                                 <h3 className="font-medium mb-2">Raw Payload</h3>
-                                <pre className="bg-gray-50 border p-3 rounded text-sm max-h-[60vh] overflow-auto">{JSON.stringify(selected.payload ?? selected, null, 2)}</pre>
+                                {selected.parseError ? (
+                                    <div>
+                                        {selected.parseError === 'needs_round_review' && pendingStrays.length > 0 ? null : (
+                                            <>
+                                                <div className="bg-red-50 border border-red-200 text-red-800 p-3 rounded text-sm mb-2">{String(selected.parseError)}</div>
+                                                {selected.parseDetails && (
+                                                    <div className="bg-yellow-50 border border-yellow-200 text-yellow-900 p-3 rounded text-sm">
+                                                        <div className="font-medium mb-1">Parse details</div>
+                                                        {selected.parseDetails.currentEvent ? (
+                                                            <div className="text-sm">
+                                                                <div><strong>Event id:</strong> {String(selected.parseDetails.currentEvent.id ?? '-')}</div>
+                                                                <div><strong>Date:</strong> {String(selected.parseDetails.currentEvent.date ?? '-')}</div>
+                                                                <div><strong>Home:</strong> {String(selected.parseDetails.currentEvent.homeTeam ?? '-')}</div>
+                                                                <div><strong>Away:</strong> {String(selected.parseDetails.currentEvent.awayTeam ?? '-')}</div>
+                                                            </div>
+                                                        ) : (
+                                                            <pre className="text-sm">{JSON.stringify(selected.parseDetails, null, 2)}</pre>
+                                                        )}
+                                                        {/* Show diagnostic partialEvents and roundAssignments when available */}
+                                                        {selected.parseDetails?.partialEvents && (
+                                                            <div className="mt-3">
+                                                                <div className="text-sm font-medium mb-1">Partial Events (diagnostic)</div>
+                                                                <div className="overflow-auto border rounded max-h-48">
+                                                                    <table className="min-w-max table-fixed border-collapse whitespace-nowrap text-sm">
+                                                                        <thead className="bg-gray-100">
+                                                                            <tr>
+                                                                                <th className="p-2 text-left border-b">eventId</th>
+                                                                                <th className="p-2 text-left border-b">date</th>
+                                                                                <th className="p-2 text-left border-b">round</th>
+                                                                                <th className="p-2 text-left border-b">homeId</th>
+                                                                                <th className="p-2 text-left border-b">awayId</th>
+                                                                                <th className="p-2 text-left border-b">homeName</th>
+                                                                                <th className="p-2 text-left border-b">awayName</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            {selected.parseDetails.partialEvents.map((pe: any, idx: number) => {
+                                                                                // annotate round from roundAssignments if present
+                                                                                const roundMap = (selected.parseDetails?.roundAssignments || []).reduce((acc: any, cur: any) => {
+                                                                                    if (cur && cur.eventId != null) acc[String(cur.eventId)] = cur.round;
+                                                                                    return acc;
+                                                                                }, {} as Record<string, any>);
+                                                                                const round = roundMap[String(pe.eventId)] ?? '';
+                                                                                return (
+                                                                                    <tr key={idx} className="odd:bg-white even:bg-gray-50 border-t">
+                                                                                        <td className="p-2">{String(pe.eventId ?? '')}</td>
+                                                                                        <td className="p-2">{String(pe.date ?? '')}</td>
+                                                                                        <td className="p-2">{String(round ?? '')}</td>
+                                                                                        <td className="p-2">{String(pe.homeId ?? '')}</td>
+                                                                                        <td className="p-2">{String(pe.awayId ?? '')}</td>
+                                                                                        <td className="p-2">{String(pe.homeName ?? '')}</td>
+                                                                                        <td className="p-2">{String(pe.awayName ?? '')}</td>
+                                                                                    </tr>
+                                                                                );
+                                                                            })}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {selected.parseDetails?.roundAssignments && (
+                                                            <div className="mt-3">
+                                                                <div className="text-sm font-medium mb-1">Derived Round Assignments</div>
+                                                                <pre className="bg-gray-50 border p-2 rounded text-sm max-h-40 overflow-auto">{JSON.stringify(selected.parseDetails.roundAssignments, null, 2)}</pre>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <pre className="bg-gray-50 border p-3 rounded text-sm max-h-[60vh] overflow-auto">{JSON.stringify(selected.payload ?? selected, null, 2)}</pre>
+                                )}
                             </div>
                         )}
                     </div>

@@ -18,6 +18,7 @@ export declare class MatchesController {
         awayClubId: number;
         homeScore: number;
         awayScore: number;
+        espnApiId: string;
         updatedAt: Date;
     }>;
     findAll(groupId?: string, roundId?: string, sportId?: string, leagueId?: string, seasonId?: string, date?: string, page?: string, limit?: string, sortBy?: string, sortOrder?: string): Promise<MatchResponseDto[]>;
@@ -37,6 +38,7 @@ export declare class MatchesController {
         status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         homeScore: number;
         awayScore: number;
+        espnApiId: string;
         createdAt: Date;
         updatedAt: Date;
     }>;
@@ -55,6 +57,7 @@ export declare class MatchesController {
         awayClubId: number;
         homeScore: number;
         awayScore: number;
+        espnApiId: string;
         updatedAt: Date;
     }>;
 }

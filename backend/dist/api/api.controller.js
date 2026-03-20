@@ -27,7 +27,7 @@ let ApiController = class ApiController {
         return { created: Array.isArray(created) ? created.length : 0, items: created };
     }
     async fetchAndStore(body) {
-        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport);
+        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate);
         return { stored: result };
     }
     async listTransitional(limit) {
@@ -41,10 +41,20 @@ let ApiController = class ApiController {
             return { found: false };
         return { found: true, item: row };
     }
-    async parseTransitional(id) {
-        const parsed = await this.apiService.parseTransitional(id);
+    async parseTransitional(id, roundOverridesJson) {
+        let roundOverrides;
+        if (roundOverridesJson) {
+            try {
+                roundOverrides = JSON.parse(roundOverridesJson);
+            }
+            catch { }
+        }
+        const parsed = await this.apiService.parseTransitional(id, roundOverrides);
         if (!parsed || !parsed.found) {
-            return { found: false };
+            const reason = parsed?.reason ?? 'parse_failed';
+            const error = parsed?.error ?? parsed?.details?.message ?? null;
+            const details = parsed?.details ?? null;
+            return { found: false, reason, error, details };
         }
         return { found: true, columns: parsed.columns, rows: parsed.rows };
     }
@@ -58,6 +68,10 @@ let ApiController = class ApiController {
         const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
         return result;
     }
+    async applyAllRows(id, body) {
+        const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides });
+        return result;
+    }
     async loadTransitional(id, body) {
         const result = await this.apiService.applyTransitional(id, {
             dryRun: !!body?.dryRun,
@@ -65,6 +79,18 @@ let ApiController = class ApiController {
             mapping: body?.mapping,
         });
         return { result };
+    }
+    async deleteTransitional(id) {
+        const res = await this.apiService.deleteTransitional(id);
+        if (!res || !res.deleted)
+            throw new common_1.NotFoundException('Transitional row not found');
+        return { success: true, id: res.id };
+    }
+    async patchTransitional(id, body) {
+        const res = await this.apiService.updateTransitional(id, body);
+        if (!res || !res.updated)
+            throw new common_1.NotFoundException('Transitional row not found');
+        return { success: true, id: res.id, status: res.status };
     }
     async getTargetColumns(table) {
         if (!table)
@@ -111,8 +137,9 @@ __decorate([
 __decorate([
     (0, common_1.Get)('transitional/:id/parse'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Query)('roundOverrides')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number]),
+    __metadata("design:paramtypes", [Number, String]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "parseTransitional", null);
 __decorate([
@@ -131,6 +158,14 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "applyFirstRow", null);
 __decorate([
+    (0, common_1.Post)('transitional/:id/apply-all-rows'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "applyAllRows", null);
+__decorate([
     (0, common_1.Post)('transitional/:id/load'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Body)()),
@@ -138,6 +173,21 @@ __decorate([
     __metadata("design:paramtypes", [Number, Object]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "loadTransitional", null);
+__decorate([
+    (0, common_1.Delete)('transitional/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "deleteTransitional", null);
+__decorate([
+    (0, common_1.Patch)('transitional/:id'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "patchTransitional", null);
 __decorate([
     (0, common_1.Get)('target-columns'),
     __param(0, (0, common_1.Query)('table')),
