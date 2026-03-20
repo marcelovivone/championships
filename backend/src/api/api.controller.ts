@@ -69,7 +69,7 @@ export class ApiController {
       const details = parsed?.details ?? null;
       return { found: false, reason, error, details };
     }
-    return { found: true, columns: parsed.columns, rows: parsed.rows };
+    return { found: true, columns: parsed.columns, rows: parsed.rows, isSubsequentLoad: !!parsed.isSubsequentLoad };
   }
 
   @Get('transitional/:id/structured')

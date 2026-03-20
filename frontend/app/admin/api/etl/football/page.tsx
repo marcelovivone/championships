@@ -78,6 +78,7 @@ export default function EtlPage() {
     const [strayInputs, setStrayInputs] = useState<Record<string, string>>({});
     const [accumulatedOverrides, setAccumulatedOverrides] = useState<Record<string, number>>({});
     const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
+    const [isSubsequentLoad, setIsSubsequentLoad] = useState(false);
     const [roundReviewSummary, setRoundReviewSummary] = useState<any[]>([]);
     const [expandedRoundDetails, setExpandedRoundDetails] = useState<Record<string, boolean>>({});
     const [targetColumns, setTargetColumns] = useState<string[] | null>(null);
@@ -192,6 +193,7 @@ export default function EtlPage() {
                 setStrayInputs({});
                 setRoundReviewSummary([]);
                 setExpandedRoundDetails({});
+                setIsSubsequentLoad(!!payload.isSubsequentLoad);
 
                 // Also fetch the raw item for preview (only when parsing succeeded)
                 const rResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
@@ -268,6 +270,7 @@ export default function EtlPage() {
         setRoundReviewSummary([]);
         setAccumulatedOverrides({});
         setExpandedRoundDetails({});
+        setIsSubsequentLoad(false);
         loadRow(id);
     };
 
@@ -286,8 +289,10 @@ export default function EtlPage() {
     const handleToDbTables = async (id: number, overridesArg?: Record<string, number>) => {
         const effectiveOverrides = overridesArg ?? accumulatedOverrides;
 
-        // Pre-check: parse the row to detect if round assignment input is needed before confirming
-        try {
+        // Pre-check: parse the row to detect if round assignment input is needed before confirming.
+        // Skip this entirely for subsequent loads — rounds already exist, no review needed.
+        if (!isSubsequentLoad) {
+          try {
             const overridesParam = Object.keys(effectiveOverrides).length > 0
                 ? `?roundOverrides=${encodeURIComponent(JSON.stringify(effectiveOverrides))}`
                 : '';
@@ -318,9 +323,10 @@ export default function EtlPage() {
                 }, 200);
                 return;
             }
-        } catch (e) {
+          } catch (e) {
             // If pre-check fails, proceed — the apply endpoint will surface the error
             console.warn('[ETL] pre-check parse failed, proceeding with apply', e);
+          }
         }
 
         // Fetch the transitional row to check status before processing
@@ -415,6 +421,7 @@ export default function EtlPage() {
         setAccumulatedOverrides({});
         setPendingApplyId(null);
         setExpandedRoundDetails({});
+        setIsSubsequentLoad(false);
         setViewMode('table');
         // Scroll up to top of page
         setTimeout(() => {

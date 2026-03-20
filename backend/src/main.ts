@@ -47,5 +47,9 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`✅ API running on http://localhost:${port}`);
   console.log(`📄 Swagger docs available at http://localhost:${port}/api`);
+
+  // Graceful shutdown: close the HTTP server immediately when ts-node-dev
+  // sends SIGTERM so the port is freed before the new process starts.
+  app.enableShutdownHooks();
 }
 bootstrap();

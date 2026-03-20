@@ -137,8 +137,8 @@ export class ApiService {
       if (effectiveOrigin === 'Api-Espn') {
         // ESPN API doesn't require API key for public endpoints
         // Build URL for ESPN scoreboard
-        // url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard');
-        url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard');
+        url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard');
+        // url = new URL('https://site.api.espn.com/apis/site/v2/sports/soccer/bra.1/scoreboard');
         // ESPN uses date range format: YYYYMMDD-YYYYMMDD
         if (startDate && endDate) {
           const normalizedStartDate = startDate.replace(/-/g, '');
@@ -375,11 +375,52 @@ export class ApiService {
   async parseTransitional(id: number, roundOverrides?: Record<string, number>) {
     const row = await this.getTransitional(id);
     if (!row) return { found: false };
+
+    // ── Subsequent-load detection ────────────────────────────────────────
+    // When rounds already exist for the league/season this payload belongs
+    // to, skip the heavyweight ESPN round inference entirely and return a
+    // lightweight extraction. The caller (frontend) will see found:true
+    // with rows and go straight to the data table / T&L button.
+    const origin = row.origin ?? 'Api-Football';
+    if (origin === 'Api-Espn') {
+      const meta = this.extractLeagueMetadata(row);
+      if (meta.leagueName && meta.leagueSeason) {
+        const sportId = 36; // football default
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        try {
+          const lRes = await pool.query(
+            `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1) AND sport_id = $2 LIMIT 1`,
+            [String(meta.leagueName).trim(), sportId],
+          );
+          if (lRes.rows.length) {
+            const sRes = await pool.query(
+              `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`,
+              [sportId, lRes.rows[0].id, meta.leagueSeason],
+            );
+            if (sRes.rows.length) {
+              const roundsRes = await pool.query(
+                `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
+                [lRes.rows[0].id, sRes.rows[0].id],
+              );
+              if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
+                // Rounds exist → subsequent load → use lightweight parser
+                const lightweight = this.parseTransitionalEspnLightweight(row);
+                if (lightweight.found) {
+                  return { ...lightweight, isSubsequentLoad: true };
+                }
+              }
+            }
+          }
+        } finally {
+          await pool.end();
+        }
+      }
+    }
+
     const savedOverrides = await this.getDraftRoundOverrides(id);
     const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
     // console.log('Parsing transitional id=', id, 'origin=', row.origin);
     // Check the origin and route to appropriate parser
-    const origin = row.origin ?? 'Api-Football';
     if (origin === 'Api-Espn') {
       return this.parseTransitionalEspn(row, effectiveRoundOverrides);
     }
@@ -1116,6 +1157,23 @@ if (!foundReplacement) {
         roundByEventId.set(eventId, Number(overrideRound));
       }
 
+      // After applying manual overrides, check if any previously-occupied round
+      // is now empty (all its games were moved elsewhere by the user).  When
+      // that happens, compact the round numbering so subsequent rounds slide
+      // down to fill the gap.  Only trigger this when manual overrides actually
+      // created a hole — not on the initial automatic pass.
+      if (overrides.size > 0) {
+        const occupiedRounds = new Set(roundByEventId.values());
+        const maxRound = Math.max(...occupiedRounds);
+        let hasGap = false;
+        for (let r = 1; r <= maxRound; r++) {
+          if (!occupiedRounds.has(r)) { hasGap = true; break; }
+        }
+        if (hasGap) {
+          compactAssignedRounds();
+        }
+      }
+
       const finalConflict = buildReviewConflict(
         prunedSparseRoundEventIds.length > 0
           ? 'Automatic round derivation ignored isolated clusters of 1 to 3 games because they likely belong to other rounds. Review those fixtures manually.'
@@ -1685,6 +1743,94 @@ if (!foundReplacement) {
     }
   }
 
+  // Extract basic league metadata from the raw api_transitional payload without
+  // running the heavy round-inference logic.  Used by the fast-path detection to
+  // look up an existing league/season in the database.
+  private extractLeagueMetadata(row: any): { leagueName: string | null; leagueSeason: any; leagueCountry: string | null } {
+    const payload = row.payload ?? row;
+    const origin = row.origin ?? 'Api-Football';
+
+    if (origin === 'Api-Espn') {
+      const events = payload?.events ?? [];
+      const firstEvent = events[0] ?? {};
+      const seasonInfo = firstEvent?.season ?? {};
+      const leagueInfo = payload?.leagues?.[0] ?? {};
+      const venue = firstEvent?.competitions?.[0]?.venue ?? {};
+      return {
+        leagueName: leagueInfo?.name ?? leagueInfo?.abbreviation ?? null,
+        leagueSeason: seasonInfo?.year ?? null,
+        leagueCountry: venue?.address?.country ?? null,
+      };
+    }
+
+    // Api-Football
+    const get = (obj: any, path: string) => path.split('.').reduce((acc: any, key: string) => (acc && acc[key] !== undefined ? acc[key] : null), obj);
+    let arr: any[] | null = null;
+    if (Array.isArray(payload)) arr = payload;
+    else if (payload?.response && Array.isArray(payload.response)) arr = payload.response;
+    else if (payload?.data && Array.isArray(payload.data)) arr = payload.data;
+    const sample = arr?.[0] ?? payload;
+
+    return {
+      leagueName: get(sample, 'league.name') ?? null,
+      leagueSeason: get(sample, 'league.season') ?? null,
+      leagueCountry: get(sample, 'league.country') ?? null,
+    };
+  }
+
+  // Lightweight ESPN event extraction that produces the same row format as
+  // parseTransitionalEspn but WITHOUT running round inference.  league.round is
+  // set to null for every row — the per-row processing loop will preserve the
+  // existing round_id via COALESCE when updating matches.
+  private parseTransitionalEspnLightweight(row: any) {
+    const payload = row.payload ?? row;
+    const events = payload?.events ?? [];
+    if (!Array.isArray(events) || events.length === 0) {
+      return { found: false, reason: 'no_events_array' };
+    }
+    const firstEvent = events[0];
+    const seasonInfo = firstEvent?.season ?? {};
+    const leagueInfo = payload?.leagues?.[0] ?? {};
+
+    const rows: any[] = [];
+    for (const event of events) {
+      const competition = event?.competitions?.[0];
+      if (!competition) continue;
+      const competitors = competition?.competitors ?? [];
+      const homeTeam = competitors.find((c: any) => c.homeAway === 'home');
+      const awayTeam = competitors.find((c: any) => c.homeAway === 'away');
+      if (!homeTeam || !awayTeam) continue;
+      const venue = competition?.venue ?? {};
+      const status = competition?.status?.type ?? {};
+
+      rows.push({
+        'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Unknown',
+        'league.season': seasonInfo?.year ?? new Date().getFullYear(),
+        'league.country': venue?.address?.country ?? 'England',
+        'league.flag': null,
+        'league.round': null,  // Skipped — rounds already exist in DB
+        'goals.home': homeTeam?.score ? Number(homeTeam.score) : null,
+        'goals.away': awayTeam?.score ? Number(awayTeam.score) : null,
+        'score.halftime.home': null,
+        'score.halftime.away': null,
+        'teams.home.name': homeTeam?.team?.displayName ?? homeTeam?.team?.name ?? null,
+        'teams.home.logo': homeTeam?.team?.logo ?? null,
+        'teams.away.name': awayTeam?.team?.displayName ?? awayTeam?.team?.name ?? null,
+        'teams.away.logo': awayTeam?.team?.logo ?? null,
+        'fixture.date': competition?.date ?? event?.date ?? null,
+        'fixture.venue.city': venue?.address?.city ?? null,
+        'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
+        'fixture.status.long': status?.description ?? null,
+        'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
+        'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
+        'origin_api_id': event?.id != null ? String(event.id) : null,
+      });
+    }
+    if (rows.length === 0) return { found: false, reason: 'no_valid_events' };
+    const columns = Array.from(new Set(rows.flatMap(Object.keys)));
+    return { found: true, columns, rows };
+  }
+
   // Apply all rows: create rounds, clubs, and matches (atomic)
   async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> } = {}) {
     if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
@@ -1720,28 +1866,82 @@ if (!foundReplacement) {
         );
       `);
 
-      const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
-      if (!parsed || !parsed.found) {
-        return {
-          applied: 0,
-          reason: parsed?.reason ?? 'not_found',
-          error: parsed?.error ?? null,
-          details: parsed?.details ?? null,
-        };
-      }
-      const rows = parsed.rows || [];
-      if (!rows.length) return { applied: 0, reason: 'no_rows' };
+      // ── Fast-path detection ───────────────────────────────────────────
+      // If rounds already exist for the league/season this is a subsequent
+      // load.  Skip the heavy round inference (especially ESPN) and just
+      // extract events with a lightweight parser.  The existing per-row
+      // upsert logic already handles skip / update / insert correctly.
+      const transitionalRow = await this.getTransitional(id);
+      if (!transitionalRow) return { applied: 0, reason: 'not_found' };
 
-      // Ensure we have leagueId & seasonId (use applyFirstRowToApp if necessary)
+      const sportId = options.sportId ?? 36;
       let leagueId = options.leagueId ?? null;
       let seasonId = options.seasonId ?? null;
-      const sportId = options.sportId ?? 36;
-      if (!leagueId || !seasonId) {
-        const firstRowResult = await this.applyFirstRowToApp(id, { sportId, roundOverrides: options.roundOverrides });
-        if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
-        leagueId = firstRowResult.leagueId;
-        seasonId = firstRowResult.seasonId;
+      let isSubsequentLoad = false;
+
+      const meta = this.extractLeagueMetadata(transitionalRow);
+      if (meta.leagueName && meta.leagueSeason) {
+        const lRes = await client.query(
+          `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1) AND sport_id = $2 LIMIT 1`,
+          [String(meta.leagueName).trim(), sportId],
+        );
+        if (lRes.rows.length) {
+          const possibleLeagueId = lRes.rows[0].id;
+          const sRes = await client.query(
+            `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`,
+            [sportId, possibleLeagueId, meta.leagueSeason],
+          );
+          if (sRes.rows.length) {
+            const possibleSeasonId = sRes.rows[0].id;
+            const roundsRes = await client.query(
+              `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
+              [possibleLeagueId, possibleSeasonId],
+            );
+            if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
+              isSubsequentLoad = true;
+              leagueId = possibleLeagueId;
+              seasonId = possibleSeasonId;
+            }
+          }
+        }
       }
+
+      let rows: any[];
+      if (isSubsequentLoad) {
+        // Fast path: skip round inference, only extract events
+        const origin = transitionalRow.origin ?? 'Api-Football';
+        let parsed: any;
+        if (origin === 'Api-Espn') {
+          parsed = this.parseTransitionalEspnLightweight(transitionalRow);
+        } else {
+          // Api-Football standard parse is already lightweight (just JSON flattening)
+          parsed = await this.parseTransitional(id);
+        }
+        if (!parsed || !parsed.found) {
+          return { applied: 0, reason: parsed?.reason ?? 'lightweight_parse_failed' };
+        }
+        rows = parsed.rows || [];
+      } else {
+        // Full path: run parseTransitional with round inference
+        const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
+        if (!parsed || !parsed.found) {
+          return {
+            applied: 0,
+            reason: parsed?.reason ?? 'not_found',
+            error: parsed?.error ?? null,
+            details: parsed?.details ?? null,
+          };
+        }
+        rows = parsed.rows || [];
+        // Resolve league/season if not already known
+        if (!leagueId || !seasonId) {
+          const firstRowResult = await this.applyFirstRowToApp(id, { sportId, roundOverrides: options.roundOverrides });
+          if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
+          leagueId = firstRowResult.leagueId;
+          seasonId = firstRowResult.seasonId;
+        }
+      }
+      if (!rows.length) return { applied: 0, reason: 'no_rows' };
 
       // In-memory caches
       const clubCache: Record<string, number> = {};
@@ -2078,8 +2278,8 @@ if (!foundReplacement) {
           const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
           const statusShort = r['fixture.status.short'] ?? null;
           const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
-          const homeScore = r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
-          const awayScore = r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+          const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+          const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
           // Resolve the origin API identifier from whichever key the parser emitted:
           //   ESPN rows  -> 'origin_api_id' (new) or legacy 'espn_event_id'
           //   Api-Football rows -> 'fixture.id' (produced by the generic flattener)
@@ -2100,11 +2300,15 @@ if (!foundReplacement) {
 
           if (hasOriginApiIdCol && originApiId) {
             const existingRes = await client.query(
-              `SELECT id, status, home_score, away_score FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
+              `SELECT id, status, home_score, away_score, round_id FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
               [originApiId, leagueId, seasonId],
             );
             if (existingRes.rows.length > 0) {
               const existing = existingRes.rows[0];
+              // On subsequent loads league.round is null → preserve the DB round_id
+              if (roundId == null && existing.round_id != null) {
+                roundId = existing.round_id;
+              }
               if (existing.status === 'Finished') {
                 // Match already fully loaded — nothing to do
                 skippedUnchanged += 1;
@@ -2166,6 +2370,15 @@ if (!foundReplacement) {
           try {
             if (status !== 'Finished') {
               // skip standings update for non-finished matches
+              applied += 1;
+              continue;
+            }
+            // Guard: skip if standings already exist for this match (e.g. re-run)
+            const existingStandingsRes = await client.query(
+              `SELECT COUNT(*)::int as cnt FROM standings WHERE match_id = $1`,
+              [matchId],
+            );
+            if (Number(existingStandingsRes.rows[0]?.cnt ?? 0) > 0) {
               applied += 1;
               continue;
             }
@@ -2454,7 +2667,7 @@ if (!foundReplacement) {
         await this.deleteRoundReview(id);
       }
 
-      return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun };
+      return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun, isSubsequentLoad };
     } catch (e) {
       const snapshotSql = lastSqlAll;
       const snapshotParams = lastParamsAll;
