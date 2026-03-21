@@ -352,7 +352,7 @@ export default function AdminApiPage() {
               onChange={(e) => setAddDivisions(e.target.checked)}
               className="h-4 w-4"
             />
-            <label htmlFor="md-add-divisions" className="text-sm text-gray-600">Add divisions</label>
+            <label htmlFor="md-add-divisions" className="text-sm text-gray-600">Has divisions</label>
           </div>
 
           <div className="flex items-center gap-2">

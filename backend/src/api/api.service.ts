@@ -31,7 +31,7 @@ export class ApiService {
                 flg_season_same_years BOOLEAN DEFAULT false,
                 league_schedule_type TEXT DEFAULT 'Round',
                 flg_League_default BOOLEAN DEFAULT false,
-                match_add_divisions BOOLEAN DEFAULT true,
+                flg_has_divisions BOOLEAN DEFAULT true,
                 flg_run_in_background BOOLEAN DEFAULT true
                 );
             `);
@@ -137,7 +137,7 @@ export class ApiService {
         sameYears?: boolean,
         scheduleType?: string,
         isLeagueDefault?: boolean,
-        addDivisions?: boolean,
+        hasDivisions?: boolean,
         runInBackground?: boolean,
     ) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
@@ -215,7 +215,7 @@ export class ApiService {
                 flg_season_same_years BOOLEAN DEFAULT false,
                 league_schedule_type TEXT DEFAULT 'Round',
                 flg_League_default BOOLEAN DEFAULT false,
-                match_add_divisions BOOLEAN DEFAULT true,
+                flg_has_divisions BOOLEAN DEFAULT true,
                 flg_run_in_background BOOLEAN DEFAULT true
                 );
             `);
@@ -224,11 +224,11 @@ export class ApiService {
                 `INSERT 
                         INTO api_transitional 
                              (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
-                              flg_season_same_years, league_schedule_type, flg_League_default, match_add_divisions, flg_run_in_background) 
+                              flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, flg_run_in_background) 
                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) 
                       RETURNING id, fetched_at;`,
                              [league || null, effectiveSeason || null, sport || null, url.toString(), json, effectiveOrigin, 
-                             seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, addDivisions, runInBackground],
+                             seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, runInBackground],
             );
         } finally {
             await pool.end();
@@ -254,7 +254,7 @@ export class ApiService {
                         flg_season_same_years,
                         league_schedule_type,
                         flg_League_default,
-                        match_add_divisions,
+                        flg_has_divisions,
                         flg_run_in_background
                  FROM api_transitional
                  ORDER BY fetched_at DESC LIMIT $1`,
@@ -1654,12 +1654,34 @@ export class ApiService {
             let transitionalDbRow: any = {};
             try {
                 const tRes = await client.query(
-                    `SELECT season_status, flg_season_default, flg_season_same_years, league_schedule_type, flg_League_default, match_add_divisions, flg_run_in_background FROM api_transitional WHERE id = $1 LIMIT 1`,
+                    `SELECT season_status, flg_season_default, flg_season_same_years, league_schedule_type, flg_league_default, flg_has_divisions, flg_run_in_background FROM api_transitional WHERE id = $1 LIMIT 1`,
                     [id],
                 );
-                if (tRes && tRes.rows && tRes.rows.length) transitionalDbRow = tRes.rows[0];
+                const defaults = {
+                    season_status: 'Finished',
+                    flg_season_default: false,
+                    flg_season_same_years: false,
+                    league_schedule_type: 'Round',
+                    flg_league_default: false,
+                    flg_has_divisions: true,
+                    flg_run_in_background: true,
+                };
+                const row = tRes && tRes.rows && tRes.rows.length ? tRes.rows[0] : {};
+                transitionalDbRow = { ...defaults, ...row };
+                // Backwards-compatible alias expected by code elsewhere
+                transitionalDbRow.sameYears = transitionalDbRow.sameYears ?? transitionalDbRow.flg_season_same_years;
             } catch (e) {
                 this.logger.debug(`Could not read api_transitional row id=${id}: ${String(e)}`);
+                transitionalDbRow = {
+                    season_status: 'Finished',
+                    flg_season_default: false,
+                    flg_season_same_years: false,
+                    league_schedule_type: 'Round',
+                    flg_league_default: false,
+                    flg_has_divisions: true,
+                    flg_run_in_background: true,
+                    sameYears: false,
+                };
             }
 
             const rows = parsed.rows || [];
@@ -1790,6 +1812,8 @@ export class ApiService {
                     const startYearNum = Number(leagueSeason);
                     const startYear = Number.isFinite(startYearNum) ? Math.trunc(startYearNum) : leagueSeason;
                     const endYear = transitionalDbRow.sameYears ? startYear : Number.isFinite(startYearNum) ? startYearNum + 1 : startYear;
+                    console.log('Inserting new season with start_year:', startYear, 'end_year:', endYear);
+                    console.log('TransitionalDbRow for season:', transitionalDbRow);
                     const ins = await client.query(
                         `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
                         [sportId, leagueId, transitionalDbRow.season_status, transitionalDbRow.flg_season_default, 0, startYear, endYear],

@@ -31,7 +31,7 @@ export class ApiController {
       sameYears?: boolean;
       scheduleType?: string;
       isLeagueDefault?: boolean;
-      addDivisions?: boolean;
+      hasDivisions?: boolean;
       runInBackground?: boolean;
     },
   ) {
@@ -47,7 +47,7 @@ export class ApiController {
       body.sameYears,
       body.scheduleType,
       body.isLeagueDefault,
-      body.addDivisions,
+      body.hasDivisions,
       body.runInBackground,
     );
     return { stored: result };
