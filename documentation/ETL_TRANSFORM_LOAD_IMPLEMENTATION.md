@@ -3,7 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-03-20
+> **Last updated**: 2026-03-21
 
 ---
 
@@ -28,7 +28,16 @@
 6. [Database Tables Involved](#6-database-tables-involved)
 7. [Frontend Pages](#7-frontend-pages)
 8. [Key Decisions & Edge Cases](#8-key-decisions--edge-cases)
-9. [Pending / Future Work](#9-pending--future-work)
+9. [Phase 4 — ESPN Partial-Score Enrichment](#9-phase-4--espn-partial-score-enrichment)
+   - 9.1 [Why enrichment is needed](#91-why-enrichment-is-needed)
+   - 9.2 [How enrichment is triggered](#92-how-enrichment-is-triggered)
+   - 9.3 [ESPN Summary endpoint — response structure](#93-espn-summary-endpoint--response-structure)
+   - 9.4 [`fetchEspnEventLinescores` — private helper](#94-fetchespneventlinescores--private-helper)
+   - 9.5 [`enrichMatchDivisionsFromEspn` — orchestrator](#95-enrichmatchdivisionsfromespn--orchestrator)
+   - 9.6 [Background vs. inline execution](#96-background-vs-inline-execution)
+   - 9.7 [Guards and safety conditions](#97-guards-and-safety-conditions)
+   - 9.8 [Return value and logging](#98-return-value-and-logging)
+10. [Pending / Future Work](#10-pending--future-work)
 
 ---
 
@@ -439,7 +448,206 @@ Scores are saved as `null` (not 0) for matches that aren't finished yet. This di
 
 ---
 
-## 9. Pending / Future Work
+## 9. Phase 4 — ESPN Partial-Score Enrichment
+
+This phase runs **after** the main transaction has committed. It fetches real per-period scores from the ESPN public API and writes them into the `match_divisions` rows that were created with zeroed-out scores during the Load phase.
+
+### 9.1 Why enrichment is needed
+
+The ESPN scoreboard endpoint (`/scoreboard`) used during Extract does not include per-period (halftime / linescore) data. For sports where `flg_espn_api_partial_scores = false` on the `sports` row, the Load phase creates `match_divisions` rows but intentionally sets `home_score = 0, away_score = 0` as placeholders. Enrichment corrects these to real values by making one additional API call per match to ESPN's `/summary` endpoint.
+
+**Trigger condition**: Only matches where **all three** of the following are true are queued for enrichment:
+- `flg_has_divisions = false` on the sport (i.e., ESPN does not include partial scores in the scoreboard payload)
+- `origin = 'Api-Espn'` — only ESPN data needs this second pass
+- `status = 'Finished'` — only completed matches have meaningful partial scores
+
+### 9.2 How enrichment is triggered
+
+At the very end of `applyAllRowsToApp()`, **after** `COMMIT`, the code checks whether any matches were collected:
+
+```typescript
+if (!options.dryRun && matchesForEnrichment.length > 0 && transitionalLeagueCode) {
+    // resolve ESPN-compatible sport name (football → soccer, etc.)
+    ...
+    if (flgRunInBackground) {
+        setImmediate(() => {
+            this.enrichMatchDivisionsFromEspn(sportN, leagueCode, matches).catch(...);
+        });
+    } else {
+        result.enrichment = await this.enrichMatchDivisionsFromEspn(espnSportName, transitionalLeagueCode, matchesForEnrichment);
+    }
+}
+```
+
+The queue (`matchesForEnrichment: Array<{ matchId: number; originApiId: string }>`) is populated during the per-row loop at two sites:
+
+1. **UPDATE path** — when an existing non-finished match becomes finished:
+   ```typescript
+   if (!flgHasDivisions && transitionalOrigin === 'Api-Espn' && originApiId && status === 'Finished') {
+       await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [matchId]);
+       matchesForEnrichment.push({ matchId, originApiId });
+   }
+   ```
+
+2. **INSERT path** — when a brand-new finished match is inserted:
+   ```typescript
+   if (!flgHasDivisions && transitionalOrigin === 'Api-Espn' && originApiId && status === 'Finished') {
+       await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [matchId]);
+       matchesForEnrichment.push({ matchId, originApiId });
+   }
+   ```
+
+The result object always includes `enrichmentQueued: matchesForEnrichment.length` so the frontend can display how many matches were queued.
+
+### 9.3 ESPN Summary endpoint — response structure
+
+**URL**:
+```
+https://site.api.espn.com/apis/site/v2/sports/{sportName}/{leagueCode}/summary?event={eventId}
+```
+
+Example for Premier League:
+```
+https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/summary?event=665869
+```
+
+**Response shape relevant to enrichment**:
+```jsonc
+{
+  "header": {
+    "competitions": [
+      {
+        "competitors": [
+          {
+            "homeAway": "home",
+            "linescores": [
+              { "displayValue": "1" },  // period 1 score
+              { "displayValue": "2" }   // period 2 score
+            ]
+          },
+          {
+            "homeAway": "away",
+            "linescores": [
+              { "displayValue": "0" },
+              { "displayValue": "1" }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Key points:
+- Linescores are **inline** in the response — no secondary `$ref` fetches needed
+- Each linescore object uses `displayValue` (a string like `"1"`) as the score field — not `value`
+- The competitors array has exactly two items, identified by `homeAway: "home"` or `"away"`
+- This is different from the older ESPN Core API (`sports.core.api.espn.com`), which used a paginated `{items: []}` structure and required secondary HTTP calls for each `$ref`
+
+### 9.4 `fetchEspnEventLinescores` — private helper
+
+```typescript
+private async fetchEspnEventLinescores(
+    sportName: string,
+    leagueCode: string,
+    eventId: string,
+): Promise<{ homeScores: number[]; awayScores: number[] } | null>
+```
+
+**Algorithm**:
+1. Constructs the `/summary?event={eventId}` URL
+2. Fetches it; returns `null` on HTTP error
+3. Extracts `json.header.competitions[0].competitors` (defaults to `[]` if missing)
+4. For each competitor:
+   - Reads `comp.homeAway` to determine home vs. away
+   - Reads `comp.linescores` — if not an array, treats as empty
+   - Maps each linescore to `Number(ls.displayValue ?? ls.value) || 0`
+5. Returns `{ homeScores, awayScores }` if at least one array is non-empty, otherwise `null`
+6. Any exception is caught, logged as a warning, and `null` is returned
+
+**Why it returns `null`** instead of throwing: The enrichment is best-effort. A `null` from this method causes `enrichMatchDivisionsFromEspn` to increment `skipped` and move on.
+
+### 9.5 `enrichMatchDivisionsFromEspn` — orchestrator
+
+```typescript
+async enrichMatchDivisionsFromEspn(
+    sportName: string,
+    leagueCode: string,
+    matchesForEnrichment: Array<{ matchId: number; originApiId: string }>,
+    rateMs = 200,
+): Promise<{ enriched: number; skipped: number; errors: number }>
+```
+
+**Key behaviors**:
+
+| Behavior | Detail |
+|---------|--------|
+| **Own connection pool** | Opens `new Pool({ connectionString: process.env.DATABASE_URL })` outside any transaction — safe to run after COMMIT or as a background task |
+| **Idempotent** | Before fetching ESPN, checks `SUM(home_score + away_score)` across all `match_divisions` for the match. If > 0, increments `skipped` and moves on — divisions are already enriched |
+| **Rate limiting** | Sleeps `rateMs` milliseconds (default 200 ms) between each match to avoid overwhelming the ESPN API |
+| **Division mapping** | Iterates `div = 1..maxDiv` and issues `UPDATE match_divisions SET home_score = $1, away_score = $2 WHERE match_id = $3 AND division_number = $4` for each period |
+| **Pool cleanup** | `pool.end()` is called in the `finally` block regardless of outcome |
+
+**Return shape**:
+```typescript
+{ enriched: number, skipped: number, errors: number }
+```
+- `enriched`: matches where divisions were successfully written
+- `skipped`: matches with already-populated divisions OR where ESPN returned no data
+- `errors`: individual match errors caught and logged
+
+### 9.6 Background vs. inline execution
+
+Execution mode is controlled by the `flg_run_in_background` flag stored on the `api_transitional` row (set during the Extract step in the UI):
+
+| Mode | Mechanism | HTTP response |
+|------|-----------|--------------|
+| **Background** (`flg_run_in_background = true`) | `setImmediate(() => enrichMatchDivisionsFromEspn(...).catch(...))` — fire-and-forget, logged on completion | Returns immediately; `result.enrichment` is not present |
+| **Inline** (`flg_run_in_background = false`) | `await enrichMatchDivisionsFromEspn(...)` — synchronous within the request | Returns only after all ESPN calls finish; `result.enrichment = { enriched, skipped, errors }` is included |
+
+In both modes, `result.enrichmentQueued` always reflects how many matches were queued before the decision was made.
+
+**Background mode log output** (Winston, stdout):
+```
+ESPN enrichment: 38 matches queued (background=true)
+ESPN enrichment complete: enriched=34, skipped=2, errors=2
+```
+
+### 9.7 Guards and safety conditions
+
+Three independent guards prevent enrichment from running at the wrong time:
+
+1. **Dry-run guard**: `if (!options.dryRun && ...)` — enrichment is completely skipped when the T&L page is running in dry-run mode. No internet traffic is generated and no divisions are modified.
+
+2. **Finished-status guard**: `&& status === 'Finished'` on both push sites — only matches that already have a final score are queued. `Scheduled` / `InProgress` matches have no meaningful partial scores.
+
+3. **Empty-queue guard**: `&& matchesForEnrichment.length > 0` before triggering — if nothing was queued (e.g., all matches were already enriched, or no ESPN origin matches were finished), the enrichment block is skipped entirely.
+
+### 9.8 Return value and logging
+
+`applyAllRowsToApp` always returns `enrichmentQueued` in the result:
+
+```typescript
+{
+  applied: number,
+  createdClubs: number,
+  createdRounds: number,
+  createdDivisions: number,
+  createdStandings: number,
+  skippedUnchanged: number,
+  updatedMatches: number,
+  clubsIncluded: string[],
+  dryRun: boolean,
+  isSubsequentLoad: boolean,
+  enrichmentQueued: number,
+  enrichment?: { enriched: number, skipped: number, errors: number }  // inline mode only
+}
+```
+
+---
+
+## 10. Pending / Future Work
 
 The following items are known areas that still need implementation or refinement:
 
@@ -450,3 +658,5 @@ The following items are known areas that still need implementation or refinement
 - **Error recovery**: If a load fails partway through, the transaction rolls back completely. There's no partial-apply or resume capability.
 - **Performance**: The per-row processing loop makes many individual DB queries (club lookup, city lookup, etc.). For very large payloads this could be optimized with batch operations.
 - **ESPN league-specific timezone config**: The `LEAGUE_TIMEZONE` is hardcoded to `America/Sao_Paulo`. For other ESPN league endpoints (e.g., MLS, La Liga) this should become configurable.
+- **Enrichment standings update**: After ESPN enrichment writes real partial scores into `match_divisions`, the standings rows already in the DB were calculated with `home_score = 0, away_score = 0` for those divisions. If the standings calculator relies on division data (e.g., overtime wins from `match_divisions`), those standings rows may be slightly incorrect. A post-enrichment standings recalculation step is not yet implemented.
+- **Enrichment retry on partial failure**: If enrichment fails for a subset of matches (e.g., ESPN rate-limits mid-batch), there is no automatic retry. Re-running the full T&L load would skip already-finished matches (upsert guard), so the only current workaround is to manually trigger enrichment or re-run after clearing the affected division scores.

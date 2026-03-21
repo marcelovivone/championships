@@ -1624,6 +1624,109 @@ export class ApiService {
         return { created: maxDivisions };
     }
 
+    /**
+     * Fetch linescores for a single ESPN event.
+     * Returns per-period home/away scores extracted from competitors[].linescores.
+     */
+    private async fetchEspnEventLinescores(
+        sportName: string,
+        leagueCode: string,
+        eventId: string,
+    ): Promise<{ homeScores: number[]; awayScores: number[] } | null> {
+        // const url = `https://sports.core.api.espn.com/v2/sports/${sportName}/leagues/${leagueCode}/events/${eventId}/competitions/${eventId}/competitors`;
+        const url = `https://site.api.espn.com/apis/site/v2/sports/${sportName}/${leagueCode}/summary?event=${eventId}`;
+        try {
+            console.log(`Fetching ESPN linescores for event ${eventId} from URL: ${url}`);
+            const resp = await fetch(url);
+            if (!resp.ok) {
+                this.logger.warn(`ESPN event fetch failed (${resp.status}) for event ${eventId}`);
+                return null;
+            }
+            const json = await resp.json();
+            // The /summary endpoint returns linescores inside:
+            //   header.competitions[0].competitors[x].linescores  (inline array)
+            // Each linescore has { displayValue: "1" } — one entry per period.
+            const competitors: any[] = json?.header?.competitions?.[0]?.competitors ?? [];
+            let homeScores: number[] = [];
+            let awayScores: number[] = [];
+            for (const comp of competitors) {
+                const homeAway: string = comp?.homeAway ?? '';
+                const linescouresRaw = comp?.linescores;
+                const linescores: any[] = Array.isArray(linescouresRaw) ? linescouresRaw : [];
+                const scores: number[] = linescores.map((ls: any) => {
+                    // displayValue is the canonical text score ("1", "0", …)
+                    const raw = ls?.displayValue ?? ls?.value;
+                    return Number(raw) || 0;
+                });
+                if (homeAway === 'home') homeScores = scores;
+                else if (homeAway === 'away') awayScores = scores;
+            }
+            if (!homeScores.length && !awayScores.length) return null;
+            return { homeScores, awayScores };
+        } catch (e) {
+            this.logger.warn(`ESPN event linescores error for event ${eventId}: ${String(e)}`);
+            return null;
+        }
+    }
+
+    /**
+     * Enrich match_divisions rows with real partial scores fetched from ESPN.
+     * Runs outside the main transaction with its own connection pool.
+     * Sequential with a configurable delay between requests for rate-limiting.
+     */
+    async enrichMatchDivisionsFromEspn(
+        sportName: string,
+        leagueCode: string,
+        matchesForEnrichment: Array<{ matchId: number; originApiId: string }>,
+        rateMs = 200,
+    ): Promise<{ enriched: number; skipped: number; errors: number }> {
+        if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        let enriched = 0;
+        let skipped = 0;
+        let errors = 0;
+        const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+        try {
+            for (const m of matchesForEnrichment) {
+                try {
+                    // Check if divisions already have non-zero scores (idempotent)
+                    const existing = await pool.query(
+                        `SELECT COALESCE(SUM(home_score + away_score), 0)::int AS total FROM match_divisions WHERE match_id = $1`,
+                        [m.matchId],
+                    );
+                    if (Number(existing.rows[0]?.total ?? 0) > 0) {
+                        skipped++;
+                        continue;
+                    }//mjv
+                    const linescores = await this.fetchEspnEventLinescores(sportName, leagueCode, m.originApiId);
+                    if (!linescores) {
+                        skipped++;
+                        await sleep(rateMs);
+                        continue;
+                    }
+                    const maxDiv = Math.max(linescores.homeScores.length, linescores.awayScores.length);
+                    for (let div = 1; div <= maxDiv; div++) {
+                        const homeScore = linescores.homeScores[div - 1] ?? 0;
+                        const awayScore = linescores.awayScores[div - 1] ?? 0;
+                        await pool.query(
+                            `UPDATE match_divisions SET home_score = $1, away_score = $2 WHERE match_id = $3 AND division_number = $4`,
+                            [homeScore, awayScore, m.matchId, div],
+                        );
+                    }
+                    enriched++;
+                } catch (e) {
+                    this.logger.warn(`ESPN enrichment error for match ${m.matchId}: ${String(e)}`);
+                    errors++;
+                }
+                await sleep(rateMs);
+            }
+            this.logger.log(`ESPN enrichment complete: enriched=${enriched}, skipped=${skipped}, errors=${errors}`);
+        } finally {
+            await pool.end();
+        }
+        return { enriched, skipped, errors };
+    }
+
     // Apply first-row processing: upsert country, league, season based on parsed first row
     async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number> } = {}) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
@@ -1812,8 +1915,6 @@ export class ApiService {
                     const startYearNum = Number(leagueSeason);
                     const startYear = Number.isFinite(startYearNum) ? Math.trunc(startYearNum) : leagueSeason;
                     const endYear = transitionalDbRow.sameYears ? startYear : Number.isFinite(startYearNum) ? startYearNum + 1 : startYear;
-                    console.log('Inserting new season with start_year:', startYear, 'end_year:', endYear);
-                    console.log('TransitionalDbRow for season:', transitionalDbRow);
                     const ins = await client.query(
                         `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
                         [sportId, leagueId, transitionalDbRow.season_status, transitionalDbRow.flg_season_default, 0, startYear, endYear],
@@ -1967,6 +2068,14 @@ export class ApiService {
             // upsert logic already handles skip / update / insert correctly.
             const transitionalRow = await this.getTransitional(id);
             if (!transitionalRow) return { applied: 0, reason: 'not_found' };
+
+            // Read ESPN enrichment flags from the transitional row
+            const flgHasDivisions = transitionalRow.flg_has_divisions !== false;
+            const flgRunInBackground = transitionalRow.flg_run_in_background !== false;
+            const transitionalLeagueCode: string | null = transitionalRow.league ?? null;
+            const transitionalOrigin: string = transitionalRow.origin ?? 'Api-Football';
+            // Collect matches needing ESPN partial-score enrichment (when flg_has_divisions is false)
+            const matchesForEnrichment: Array<{ matchId: number; originApiId: string }> = [];
 
             const sportId = options.sportId ?? 36;
             let leagueId = options.leagueId ?? null;
@@ -2424,6 +2533,12 @@ export class ApiService {
                                 try {
                                     const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
                                     if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
+                                    // When flg_has_divisions is false, zero-out scores and queue for ESPN enrichment
+                                    // Only queue finished matches — unfinished ones have no partial scores to fetch
+                                    if (!flgHasDivisions && transitionalOrigin === 'Api-Espn' && originApiId && status === 'Finished') {
+                                        await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [matchId]);
+                                        matchesForEnrichment.push({ matchId, originApiId });
+                                    }
                                 } catch (e) {
                                     throw e;
                                 }
@@ -2455,6 +2570,12 @@ export class ApiService {
                         try {
                             const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
                             if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
+                            // When flg_has_divisions is false, zero-out scores and queue for ESPN enrichment
+                            // Only queue finished matches — unfinished ones have no partial scores to fetch
+                            if (!flgHasDivisions && transitionalOrigin === 'Api-Espn' && originApiId && status === 'Finished') {
+                                await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [matchId]);
+                                matchesForEnrichment.push({ matchId, originApiId });
+                            }
                         } catch (e) {
                             throw e;
                         }
@@ -2903,7 +3024,41 @@ export class ApiService {
                 await this.deleteRoundReview(id);
             }
 
-            return { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun, isSubsequentLoad };
+            const result: any = { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun, isSubsequentLoad, enrichmentQueued: matchesForEnrichment.length };
+
+            // ── ESPN partial-score enrichment ─────────────────────────────
+            // When flg_has_divisions is false, divisions were created with zero scores.
+            // Now that the transaction is committed, fetch real partial scores from ESPN.
+            // Skip entirely on dry runs — no real data was saved, no internet traffic needed.
+            if (!options.dryRun && matchesForEnrichment.length > 0 && transitionalLeagueCode) {
+                // Resolve ESPN-compatible sport name
+                let espnSportName = 'soccer';
+                try {
+                    const spRes = await pool.query(`SELECT name FROM sports WHERE id = $1 LIMIT 1`, [sportId]);
+                    if (spRes.rows.length) {
+                        const sn = (spRes.rows[0].name ?? 'football').toLowerCase();
+                        espnSportName = (sn === 'football' || sn === 'footaball') ? 'soccer' : sn;
+                    }
+                } catch { /* default to soccer */ }
+
+                this.logger.log(`ESPN enrichment: ${matchesForEnrichment.length} matches queued (background=${flgRunInBackground})`);
+                if (flgRunInBackground) {
+                    // Fire-and-forget: run outside the request lifecycle
+                    const leagueCode = transitionalLeagueCode;
+                    const matches = [...matchesForEnrichment];
+                    const sportN = espnSportName;
+                    setImmediate(() => {
+                        this.enrichMatchDivisionsFromEspn(sportN, leagueCode, matches).catch((e) =>
+                            this.logger.error(`Background ESPN enrichment failed: ${String(e)}`),
+                        );
+                    });
+                } else {
+                    // Inline: wait for enrichment to finish before returning
+                    result.enrichment = await this.enrichMatchDivisionsFromEspn(espnSportName, transitionalLeagueCode, matchesForEnrichment);
+                }
+            }
+
+            return result;
         } catch (e) {
             const snapshotSql = lastSqlAll;
             const snapshotParams = lastParamsAll;
