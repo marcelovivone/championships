@@ -20,12 +20,19 @@ export class ApiController {
   async fetchAndStore(
     @Body()
     body: {
-      league: number;
+      league: string;
       season: number;
       sport?: number;
       origin?: string;
       startDate?: string;
       endDate?: string;
+      seasonStatus?: string;
+      isSeasonDefault?: boolean;
+      sameYears?: boolean;
+      scheduleType?: string;
+      isLeagueDefault?: boolean;
+      addDivisions?: boolean;
+      runInBackground?: boolean;
     },
   ) {
     const result = await this.apiService.fetchAndStore(
@@ -35,6 +42,13 @@ export class ApiController {
       body.origin,
       body.startDate,
       body.endDate,
+      body.seasonStatus,
+      body.isSeasonDefault,
+      body.sameYears,
+      body.scheduleType,
+      body.isLeagueDefault,
+      body.addDivisions,
+      body.runInBackground,
     );
     return { stored: result };
   }

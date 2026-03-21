@@ -57,19 +57,19 @@ const menuItems: MenuItem[] = [
                     {
                         label: 'Extract',
                         icon: <ClipboardList size={16} />,
-                        href: '/admin/api'
+                        href: '/admin/api/etl/extract'
                     },
                     {
                         label: 'Transform & Load',
                         icon: <ClipboardList size={16} />,
                         href: '',
                         children: [
-                            { label: 'Basketball', icon: <span style={{ fontSize: 18 }}>🏀</span>, href: '/admin/api/etl/basketball' },
-                            { label: 'Football', icon: <span style={{ fontSize: 18 }}>⚽</span>, href: '/admin/api/etl/football' },
-                            { label: 'Futsal', icon: <span style={{ fontSize: 18 }}>🥅</span>, href: '/admin/api/etl/futsal' },
-                            { label: 'Handball', icon: <span style={{ fontSize: 18 }}>🤾</span>, href: '/admin/api/etl/handball' },
-                            { label: 'Ice Hockey', icon: <span style={{ fontSize: 18 }}>🏒</span>, href: '/admin/api/etl/ice-hockey' },
-                            { label: 'Volleyball', icon: <span style={{ fontSize: 18 }}>🏐</span>, href: '/admin/api/etl/volleyball' }
+                            { label: 'Basketball', icon: <span style={{ fontSize: 18 }}>🏀</span>, href: '/admin/api/etl/transform-load/basketball' },
+                            { label: 'Football', icon: <span style={{ fontSize: 18 }}>⚽</span>, href: '/admin/api/etl/transform-load/football' },
+                            { label: 'Futsal', icon: <span style={{ fontSize: 18 }}>🥅</span>, href: '/admin/api/etl/transform-load/futsal' },
+                            { label: 'Handball', icon: <span style={{ fontSize: 18 }}>🤾</span>, href: '/admin/api/etl/transform-load/handball' },
+                            { label: 'Ice Hockey', icon: <span style={{ fontSize: 18 }}>🏒</span>, href: '/admin/api/etl/transform-load/ice-hockey' },
+                            { label: 'Volleyball', icon: <span style={{ fontSize: 18 }}>🏐</span>, href: '/admin/api/etl/transform-load/volleyball' }
                         ]
                     }
                 ]

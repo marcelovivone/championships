@@ -638,7 +638,7 @@ export default function EtlPage() {
                     columns={[
                         { header: 'Origin', accessor: (r: any) => r.origin ?? 'Api-Football' },
                         { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px' },
-                        { header: 'Season', accessor: 'season' },
+                        { header: 'Season', accessor: (r: any) => (r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-') },
                         { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div> },
                         { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at) },
                         { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded') },

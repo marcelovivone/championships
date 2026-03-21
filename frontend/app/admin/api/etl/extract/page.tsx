@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { sportsApi } from '@/lib/api/entities';
+import { STATIC_STATUS_PAGE_GET_INITIAL_PROPS_ERROR } from 'next/dist/lib/constants';
 
 export default function AdminApiPage() {
   const [payload, setPayload] = useState('');
@@ -13,9 +14,16 @@ export default function AdminApiPage() {
   const [season, setSeason] = useState('2025');
   const [startDate, setStartDate] = useState('2025-08-01');
   const [endDate, setEndDate] = useState('2026-05-31');
+  const [sameYears, setSameYears] = useState<boolean>(false);
+  const [seasonStatus, setSeasonStatus] = useState<string>('Finished');
+  const [isSeasonDefault, setIsSeasonDefault] = useState<boolean>(false);
+  const [isLeagueDefault, setIsLeagueDefault] = useState<boolean>(false);
+  const [scheduleType, setScheduleType] = useState<string>('Date');
+  const [addDivisions, setAddDivisions] = useState<boolean>(true);
+  const [runInBackground, setRunInBackground] = useState<boolean>(true);
   const [sports, setSports] = useState<any[]>([]);
   const [sportId, setSportId] = useState<number>(36);
-  const [origin, setOrigin] = useState<string>('Api-Football');
+  const [origin, setOrigin] = useState<string>('Api-Espn');
   const [minBtnWidth, setMinBtnWidth] = useState<number | null>(() => {
     try {
       if (typeof window === 'undefined') return 100;
@@ -47,6 +55,17 @@ export default function AdminApiPage() {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // default scheduleType to 'Round' when the selected sport looks like football
+  useEffect(() => {
+    try {
+      const sp = sports.find((s: any) => s.id === sportId);
+      const isFootball = !!(sp && typeof sp.name === 'string' && sp.name.toLowerCase().includes('football'));
+      setScheduleType(isFootball ? 'Round' : 'Date');
+    } catch (e) {
+      // noop
+    }
+  }, [sports, sportId]);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -114,12 +133,19 @@ export default function AdminApiPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          league: Number(league),
+          league: league,
           season: Number(season),
           sport: Number(sportId),
           origin,
           startDate,
           endDate,
+          seasonStatus,
+          isSeasonDefault,
+          sameYears,
+          scheduleType,
+          isLeagueDefault,
+          addDivisions,
+          runInBackground,
         }),
         signal: controllerRef.current.signal,
       });
@@ -156,7 +182,14 @@ export default function AdminApiPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Extract from API</h1>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-4">
+      {/* Top row: only Origin, Sport, Fetch & Store */}
+      <div className="w-full my-4" aria-hidden>
+        <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
+        <div className="mt-3 mb-4 text-sm text-gray-600 flex items-center gap-3">
+          <span className="text-gray-700 text-lg">Main Information</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4 items-end">
         <div>
           <label className="block text-sm text-gray-600">Origin</label>
           <select value={origin} onChange={(e) => setOrigin(e.target.value)} className="w-full p-2 border rounded">
@@ -172,13 +205,36 @@ export default function AdminApiPage() {
             ) : (null)}
           </select>
         </div>
-        <div>
-          <label className="block text-sm text-gray-600">League (used by the API server originally)</label>
-          <input className="w-full p-2 border rounded" value={league} onChange={(e) => setLeague(e.target.value)} />
+        <div className="flex items-end justify-end gap-2">
+          <button
+            onClick={handleFetchAndStore}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading && (
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+              </svg>
+            )}
+            <span>{loading ? 'Fetching...' : 'Fetch & Store'}</span>
+          </button>
         </div>
+      </div>
+
+      {/* Decorative separator between top controls and secondary inputs */}
+      <div className="w-full my-4" aria-hidden>
+        <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
+        <div className="mt-3 mb-4 text-sm text-gray-600 flex items-center gap-3">
+          <span className="text-gray-700 text-lg">Season/Date Information</span>
+        </div>
+      </div>
+
+      {/* Secondary row: remaining fields (moved below) */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mt-2 mb-6">
         {origin !== 'Api-Espn' && (
           <div>
-            <label className="block text-sm text-gray-600">Season (used by the API server originally)</label>
+            <label className="block text-sm text-gray-600">Season</label>
             <input className="w-full p-2 border rounded" value={season} onChange={(e) => setSeason(e.target.value)} />
           </div>
         )}
@@ -211,20 +267,104 @@ export default function AdminApiPage() {
             </div>
           </>
         )}
-        <div className="flex items-end justify-end gap-2">
-          <button
-            onClick={handleFetchAndStore}
-            disabled={loading}
-            className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading && (
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-              </svg>
-            )}
-            <span>{loading ? 'Fetching...' : 'Fetch & Store'}</span>
-          </button>
+
+        <div className="flex items-center gap-2 ml-10 mt-2">
+          <input
+            id="etl-same-years-checkbox"
+            type="checkbox"
+            checked={sameYears}
+            onChange={(e) => setSameYears(e.target.checked)}
+            className="h-4 w-4"
+          />
+          <label htmlFor="etl-same-years-checkbox" className="text-sm text-gray-600">Same Start and End Years?</label>
+        </div>
+
+        <div>
+          <label className="block text-sm text-gray-600">Status</label>
+          <select value={seasonStatus} onChange={(e) => setSeasonStatus(e.target.value)} className="w-full p-2 border rounded">
+            <option value="Active">Active</option>
+            <option value="Planned">Planned</option>
+            <option value="Finished">Finished</option>
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2 ml-10 mt-2">
+          <input
+            id="etl-season-default-checkbox"
+            type="checkbox"
+            checked={isSeasonDefault}
+            onChange={(e) => setIsSeasonDefault(e.target.checked)}
+            className="h-4 w-4"
+          />
+          <label htmlFor="etl-season-default-checkbox" className="text-sm text-gray-600">Default</label>
+        </div>
+      </div>
+
+      {/* Decorative separator between the input logical sections */}
+      <div className="w-full my-4" aria-hidden>
+        <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
+        <div className="mt-3 mb-4 text-sm text-gray-600 flex items-center gap-3">
+          <span className="text-gray-700 text-lg">League Infomation</span>
+        </div>
+      </div>
+
+      {/* League section: league input moved here and visible only for Api-Football */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-6">
+        <div>
+            <label className="block text-sm text-gray-600">League (used by the API server originally)</label>
+            <input className="w-full p-2 border rounded" value={league} onChange={(e) => setLeague(e.target.value)} />
+        </div>
+
+        <div>
+            <label className="block text-sm text-gray-600">Schedule</label>
+            <select value={scheduleType} onChange={(e) => setScheduleType(e.target.value)} className="w-full p-2 border rounded">
+            <option value="Date">Date</option>
+            <option value="Round">Round</option>
+            </select>
+        </div>
+
+        <div className="flex items-center gap-2 ml-10 mt-6 md:mt-0">
+            <input
+            id="league-default-checkbox"
+            type="checkbox"
+            checked={isLeagueDefault}
+            onChange={(e) => setIsLeagueDefault(e.target.checked)}
+            className="h-4 w-4"
+            />
+            <label htmlFor="league-default-checkbox" className="text-sm text-gray-600">Default</label>
+        </div>
+      </div>
+
+
+
+      <div className="w-full my-4" aria-hidden>
+        <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
+        <div className="mt-3 mb-4 text-sm text-gray-600 flex items-center gap-3">
+          <span className="text-gray-700 text-lg">Match Division Information</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center gap-2">
+            <input
+              id="md-add-divisions"
+              type="checkbox"
+              checked={addDivisions}
+              onChange={(e) => setAddDivisions(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="md-add-divisions" className="text-sm text-gray-600">Add divisions</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              id="md-run-background"
+              type="checkbox"
+              checked={runInBackground}
+              onChange={(e) => setRunInBackground(e.target.checked)}
+              className="h-4 w-4"
+            />
+            <label htmlFor="md-run-background" className="text-sm text-gray-600">Run in background</label>
+          </div>
         </div>
       </div>
 
