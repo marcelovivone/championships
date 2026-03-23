@@ -67,8 +67,9 @@ export class MatchDivisionsService {
         .where(eq(matchDivisions.matchId, matchId))
         .orderBy(matchDivisions.id);
     } catch (error) {
+      console.error('findByMatch error:', error);
       if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException('Failed to fetch divisions by match');
+      throw new BadRequestException(`Failed to fetch divisions by match: ${error?.message || JSON.stringify(error)}`);
     }
   }
 

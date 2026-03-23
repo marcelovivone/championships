@@ -46,6 +46,14 @@ export default function FilterBar({
         if (!l) return undefined;
         return Number(l.number_of_rounds_matches ?? l.numberOfRoundsMatches ?? l.numberOfRounds ?? l.number_of_rounds ?? l.numberOfRoundsMatches ?? 0) || undefined;
     };
+    // Ensure seasons list is presented in descending order (by start year or id fallback)
+    const seasonsDesc = Array.isArray(seasons)
+        ? [...seasons].sort((a: any, b: any) => {
+            const aStart = Number(a.startYear ?? a.start_year ?? a.start ?? a.id ?? 0);
+            const bStart = Number(b.startYear ?? b.start_year ?? b.start ?? b.id ?? 0);
+            return bStart - aStart;
+        })
+        : [];
     const commitRoundInput = (rawValue?: string) => {
         const v = (rawValue ?? inputRoundValue).trim();
         const min = 1;
@@ -93,8 +101,8 @@ export default function FilterBar({
             <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto">
                 <label className="text-sm text-gray-600">Season</label>
                 <select value={season} onChange={(e) => setSeason(e.target.value)} className="ml-0 xs:ml-2 px-2 py-1 border rounded w-full xs:w-32">
-                    {Array.isArray(seasons) && seasons.length > 0 ? (
-                        seasons.map((s: any) => (
+                    {Array.isArray(seasonsDesc) && seasonsDesc.length > 0 ? (
+                        seasonsDesc.map((s: any) => (
                             <option key={s.id} value={String(s.id)}>{`${s.startYear}/${s.endYear}`}</option>
                         ))
                     ) : (
@@ -257,13 +265,15 @@ export default function FilterBar({
         );
     };
 
-    // When league changes, initialize roundOrDay depending on schedule type
+    // When league (or season) changes, initialize roundOrDay depending on schedule type.
+    // Guard: only run when both league AND season are set; if season is empty the
+    // parent (BaseStandings) is still loading seasons and will set the round itself.
     React.useEffect(() => {
         let mounted = true;
         const isIsoDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
         const init = async () => {
-            if (!league) return;
+            if (!league || !season) return;  // wait until both are ready
 
             if (scheduleIsDate) {
                 // If current value is not an ISO date, or it's a numeric round, set to today
@@ -324,13 +334,13 @@ export default function FilterBar({
         return () => {
             mounted = false;
         };
-    }, [league, scheduleIsDate]);
+    }, [league, season, scheduleIsDate]);
 
     // When season changes, determine if it has groups and fetch them
     React.useEffect(() => {
         let mounted = true;
 
-        const sel = Array.isArray(seasons) ? seasons.find((s: any) => String(s.id) === String(season)) : null;
+        const sel = Array.isArray(seasonsDesc) ? seasonsDesc.find((s: any) => String(s.id) === String(season)) : null;
         const num = sel ? Number(sel.numberOfGroups ?? sel.number_of_groups ?? 0) : 0;
         if (!mounted) return;
         if (num && num > 0) {

@@ -65,6 +65,11 @@ function collectManualRoundOverrides(
 export default function EtlPage() {
     const [rows, setRows] = useState<any[]>([]);
     const [selected, setSelected] = useState<any | null>(null);
+    const [page, setPage] = useState(1);
+    const [limit] = useState(10);
+    const [pageInput, setPageInput] = useState('1');
+    const [sortBy, setSortBy] = useState<string>('fetched_at');
+    const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('desc');
     const [parsedColumns, setParsedColumns] = useState<string[] | null>(null);
     const [parsedRowsData, setParsedRowsData] = useState<any[] | null>(null);
     const [loadingRows, setLoadingRows] = useState(false);
@@ -146,6 +151,11 @@ export default function EtlPage() {
             .catch((e) => console.error(e))
             .finally(() => setLoadingRows(false));
     }, []);
+
+    // keep page input in sync with page
+    useEffect(() => {
+        setPageInput(page.toString());
+    }, [page]);
 
     const reloadRows = async () => {
         setLoadingRows(true);
@@ -634,35 +644,146 @@ export default function EtlPage() {
                         <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
                     </div>
                 </div>
-                <DataTable
-                    columns={[
-                        { header: 'Origin', accessor: (r: any) => r.origin ?? 'Api-Football' },
-                        { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px' },
-                        { header: 'Season', accessor: (r: any) => (r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-') },
-                        { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div> },
-                        { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at) },
-                        { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded') },
-                        {
-                            header: 'Actions',
-                            accessor: (r: any) => (
-                                <div className="flex items-center gap-3 justify-end">
-                                    <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="Table/Json View">
-                                        <TableIcon size={18} />
-                                    </button>
-                                    <button onClick={() => handleToDbTables(r.id)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
-                                        <Database size={18} />
-                                    </button>
-                                    <button onClick={() => handleDeleteRow(r.id)} className="text-red-600 hover:text-red-900" title="Delete">
-                                        <Trash2 size={18} />
-                                    </button>
-                                </div>
-                            ),
-                        },
-                    ]}
-                    data={rows}
-                    isLoading={loadingRows}
-                    emptyMessage="No API loads found."
-                />
+                {/* slice rows for pagination */}
+                {(() => {
+                    // apply client-side sorting
+                    const sortedRows = [...rows].sort((a: any, b: any) => {
+                        const key = sortBy;
+                        const va = a?.[key];
+                        const vb = b?.[key];
+                        // handle dates
+                        if (key === 'fetched_at') {
+                            const da = va ? new Date(va).getTime() : 0;
+                            const db = vb ? new Date(vb).getTime() : 0;
+                            return sortOrder === 'asc' ? da - db : db - da;
+                        }
+                        // handle strings and numbers
+                        if (va == null && vb == null) return 0;
+                        if (va == null) return sortOrder === 'asc' ? -1 : 1;
+                        if (vb == null) return sortOrder === 'asc' ? 1 : -1;
+                        const sa = String(va).toLowerCase();
+                        const sb = String(vb).toLowerCase();
+                        if (sa < sb) return sortOrder === 'asc' ? -1 : 1;
+                        if (sa > sb) return sortOrder === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                    const total = sortedRows.length;
+                    const totalPages = Math.max(1, Math.ceil(total / limit));
+                    const displayRows = sortedRows.slice((page - 1) * limit, page * limit);
+                    return (
+                        <>
+                            <DataTable
+                                columns={[
+                                    { header: 'Origin', accessor: (r: any) => r.origin ?? 'Api-Football', sortKey: 'origin', sortable: true },
+                                    { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px', sortKey: 'league', sortable: true },
+                                    { header: 'Season', accessor: (r: any) => (r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-'), width: '140px', sortKey: 'season', sortable: true },
+                                    { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div>, sortKey: 'source_url', sortable: true },
+                                    { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at), sortKey: 'fetched_at', sortable: true },
+                                    { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded'), sortKey: 'status', sortable: true },
+                                    {
+                                        header: 'Actions',
+                                        accessor: (r: any) => (
+                                            <div className="flex items-center gap-3 justify-end">
+                                                <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="Table/Json View">
+                                                    <TableIcon size={18} />
+                                                </button>
+                                                <button onClick={() => handleToDbTables(r.id)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
+                                                    <Database size={18} />
+                                                </button>
+                                                <button onClick={() => handleDeleteRow(r.id)} className="text-red-600 hover:text-red-900" title="Delete">
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        ),
+                                    },
+                                ]}
+                                data={displayRows}
+                                isLoading={loadingRows}
+                                emptyMessage="No API loads found."
+                                sortBy={sortBy}
+                                sortOrder={sortOrder}
+                                onSort={(key: string) => {
+                                    if (sortBy === key) {
+                                        setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                                    } else {
+                                        setSortBy(key);
+                                        setSortOrder('asc');
+                                    }
+                                    setPage(1);
+                                }}
+                            />
+
+                {/* Pagination Controls */}
+                {total > limit && (
+                    <div className="mt-4 flex items-center justify-between bg-white px-4 py-3 rounded-lg shadow">
+                        <div className="text-sm text-gray-700">
+                            Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to <span className="font-medium">{Math.min(page * limit, total)}</span> of <span className="font-medium">{total}</span> results
+                        </div>
+                        <div className="flex gap-2 items-center">
+                            <button
+                                onClick={() => { setPage(1); }}
+                                disabled={page === 1}
+                                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                First
+                            </button>
+                            <button
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Previous
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-700">Page</span>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    max={totalPages}
+                                    value={pageInput}
+                                    onChange={(e) => setPageInput(e.target.value)}
+                                    onBlur={() => {
+                                        const pageNum = parseInt(pageInput);
+                                        if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+                                            setPage(pageNum);
+                                        } else {
+                                            setPageInput(page.toString());
+                                        }
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const pageNum = parseInt(pageInput);
+                                            if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+                                                setPage(pageNum);
+                                            } else {
+                                                setPageInput(page.toString());
+                                            }
+                                        }
+                                    }}
+                                    className="w-16 px-2 py-1 border border-gray-300 rounded-md text-sm text-center"
+                                />
+                                <span className="text-sm text-gray-700">of {totalPages}</span>
+                            </div>
+                            <button
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages}
+                                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Next
+                            </button>
+                            <button
+                                onClick={() => setPage(totalPages)}
+                                disabled={page === totalPages}
+                                className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Last
+                            </button>
+                        </div>
+                    </div>
+                )}
+                        </>
+                    );
+                })()}
             </section>
 
             {/* Operation result feedback */}
@@ -684,7 +805,27 @@ export default function EtlPage() {
                 {selected && (
                     <div>
                         <div className="mb-4">
-                            <strong>ID:</strong> {selected.id} &nbsp; <strong>Fetched:</strong> {formatDateTimeMinute(selected.fetched_at)}
+                            <div className="flex flex-wrap items-center gap-4 bg-gray-50 border p-3 rounded text-sm">
+                                <div className="flex items-baseline gap-3">
+                                    <div className="text-s text-gray-500">Origin:</div>
+                                    <div className="text-sm text-gray-800">{selected.origin ?? 'Api-Football'}</div>
+                                </div>
+
+                                <div className="flex items-baseline ml-4 gap-3">
+                                    <div className="text-s text-gray-500">League:</div>
+                                    <div className="text-sm text-gray-800">{selected.league ?? '-'}</div>
+                                </div>
+
+                                <div className="flex items-baseline ml-4 gap-3">
+                                    <div className="text-s text-gray-500">Season:</div>
+                                    <div className="text-sm text-gray-800">{selected.season ? `${selected.season}/${Number(selected.season) + (selected.flg_season_same_years ? 0 : 1)}` : '-'}</div>
+                                </div>
+
+                                <div className="flex items-baseline ml-4 gap-3">
+                                    <div className="text-s text-gray-500">Fetched:</div>
+                                    <div className="text-sm text-gray-800">{formatDateTimeMinute(selected.fetched_at)}</div>
+                                </div>
+                            </div>
                         </div>
                         <div className="mb-4">
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 w-full">

@@ -41,7 +41,7 @@ export class MatchesService {
                     updatedAt: matches.updatedAt,
                 })
                 .from(matches)
-                .orderBy(asc(matches.date)).orderBy(asc(matches.id));
+                .orderBy(asc(matches.date), asc(matches.id));
 
             // For each match, get the stadiums associated with the home club
             const matchesWithStadiums = await Promise.all(matchesData.map(async (match) => {
@@ -219,7 +219,7 @@ export class MatchesService {
                 .leftJoin(awayClubAlias, eq(matches.awayClubId, awayClubAlias.id)) // Join for away club
                 .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
                 .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
-                .orderBy(orderByClause).orderBy(order(matches.id))
+                .orderBy(orderByClause, order(matches.id))
                 .limit(limit)
                 .offset(offset);
 
@@ -640,7 +640,7 @@ async findOne(id: number) {
                 .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
                 .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
                 .where(eq(matches.groupId, groupId))
-                .orderBy(asc(matches.date)).orderBy(asc(matches.id));
+                .orderBy(asc(matches.date), asc(matches.id));
             return results.map(match => ({ ...match, status: match.status as MatchStatus }));
         } catch (error) {
             if (error instanceof NotFoundException) throw error;
@@ -737,7 +737,7 @@ async findOne(id: number) {
                 .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
                 .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
                 .where(whereCondition)
-                .orderBy(asc(matches.date)).orderBy(asc(matches.id));
+                .orderBy(asc(matches.date), asc(matches.id));
             return results.map(match => ({ ...match, status: match.status as MatchStatus }));
         } catch (error) {
             throw new BadRequestException('Failed to fetch matches by sport, league, season and group');
@@ -822,8 +822,8 @@ async findOne(id: number) {
                         eq(matches.seasonId, seasonId),
                         eq(matches.roundId, roundId),
                     ),
-                )
-                .orderBy(asc(matches.date)).orderBy(asc(matches.id));
+                    )
+                    .orderBy(asc(matches.date), asc(matches.id));
 
             // 2️⃣ Attach available stadiums (NEW)
             const matchesWithStadiums =
@@ -924,7 +924,7 @@ async findOne(id: number) {
                         lte(matches.date, endDate),
                     ),
                 )
-                .orderBy(asc(matches.date)).orderBy(asc(matches.id));
+                .orderBy(asc(matches.date), asc(matches.id));
 
             // 2️⃣ Attach available stadiums (NEW)
             const matchesWithStadiums =

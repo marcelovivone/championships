@@ -6,6 +6,10 @@ import { useForm } from 'react-hook-form';
 import { Plus } from 'lucide-react';
 import { roundsApi, seasonsApi, leaguesApi, sportsApi } from '@/lib/api/entities';
 import { Round, CreateRoundDto } from '@/lib/api/types';
+
+type CreateRoundForm = CreateRoundDto & {
+  sportId?: number | string;
+};
 import DataTable from '@/components/ui/data-table';
 import Modal from '@/components/ui/modal';
 
@@ -54,7 +58,7 @@ export default function RoundsPage() {
 
   const seasons = seasonsData?.data || [];
 
-  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CreateRoundDto>({
+  const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CreateRoundForm>({
     defaultValues: {
       flgCurrent: false,
     }
@@ -80,8 +84,8 @@ export default function RoundsPage() {
     mutationFn: async (data: CreateRoundDto) => {
       const response = await roundsApi.create(data);
       // Check if backend returned an error in success response
-      if (response && typeof response === 'object' && 'success' in response && !response.success) {
-        throw new Error(response.message || 'Failed to create round');
+      if (response && typeof response === 'object' && 'success' in response && !(response as any).success) {
+        throw new Error((response as any).message || 'Failed to create round');
       }
       return response;
     },
@@ -101,8 +105,8 @@ export default function RoundsPage() {
     mutationFn: async ({ id, data }: { id: number; data: Partial<CreateRoundDto> }) => {
       const response = await roundsApi.update(id, data);
       // Check if backend returned an error in success response
-      if (response && typeof response === 'object' && 'success' in response && !response.success) {
-        throw new Error(response.message || 'Failed to update round');
+      if (response && typeof response === 'object' && 'success' in response && !(response as any).success) {
+        throw new Error((response as any).message || 'Failed to update round');
       }
       return response;
     },

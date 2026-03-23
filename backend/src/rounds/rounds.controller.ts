@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { RoundsService } from './rounds.service';
-import { CreateRoundDto, UpdateRoundDto, RoundResponseDto } from '../common/dtos';
+import { CreateRoundDto, UpdateRoundDto } from '../common/dtos';
 
 /**
  * Controller for managing round-related data.
@@ -63,8 +63,14 @@ export class RoundsController {
   @ApiResponse({ status: 200, description: 'The round details' })
   @ApiResponse({ status: 404, description: 'Round not found' })
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<RoundResponseDto> {
-    return this.roundsService.findOne(id);
+  async findOne(@Param('id', ParseIntPipe) id: number): Promise<any> {
+    const round = await this.roundsService.findOne(id);
+    return {
+      ...round,
+      startDate: round.startDate instanceof Date ? round.startDate.toISOString() : round.startDate,
+      endDate: round.endDate instanceof Date ? round.endDate.toISOString() : round.endDate,
+      createdAt: round.createdAt instanceof Date ? round.createdAt.toISOString() : round.createdAt,
+    };
   }
 
   /**

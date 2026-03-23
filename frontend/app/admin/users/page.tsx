@@ -35,12 +35,10 @@ export default function UsersPage() {
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / limit);
 
-  const { data: menuItemsData } = useQuery({
+  const { data: menuItems = [] } = useQuery({
     queryKey: ['menuItems'],
-    queryFn: () => menuItemsApi.getAll({ page: 1, limit: 1000 }),
+    queryFn: () => menuItemsApi.getAll(),
   });
-
-  const menuItems = menuItemsData?.data || [];
 
   const { data: userPermissions = [] } = useQuery({
     queryKey: ['userPermissions', permissionsModal?.id],
@@ -110,7 +108,7 @@ export default function UsersPage() {
   const handleEdit = (user: User) => {
     setEditingUser(user);
     reset({
-      username: user.username,
+      username: user.name,
       email: user.email,
       profile: user.profile,
       isActive: user.isActive,
@@ -119,7 +117,7 @@ export default function UsersPage() {
   };
 
   const handleDelete = (user: User) => {
-    if (window.confirm(`Are you sure you want to delete ${user.username}?`)) {
+    if (window.confirm(`Are you sure you want to delete ${user.name}?`)) {
       deleteMutation.mutate(user.id);
     }
   };
@@ -149,8 +147,18 @@ export default function UsersPage() {
     return allowedMenuItems.some(mi => mi.id === menuItemId);
   };
 
+  const handleSort = (columnKey: string) => {
+    if (sortBy === columnKey) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(columnKey);
+      setSortOrder('asc');
+    }
+    setPage(1);
+  };
+
   const columns = [
-    { header: 'Username', accessor: 'username' as keyof User, sortKey: 'username', sortable: true, width: '180px' },
+    { header: 'Username', accessor: (user: User) => user.name, sortKey: 'name', sortable: true, width: '180px' },
     { header: 'Email', accessor: 'email' as keyof User, sortKey: 'email', sortable: true, width: '250px' },
     {
       header: 'Profile',
@@ -289,7 +297,7 @@ export default function UsersPage() {
               className="flex items-center gap-2 px-3 py-2 bg-purple-100 text-purple-700 rounded-md hover:bg-purple-200 transition-colors"
             >
               <Shield size={16} />
-              {user.username} Permissions
+              {user.name} Permissions
             </button>
           ))}
         </div>
@@ -303,19 +311,19 @@ export default function UsersPage() {
         size="sm"
       >
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Username *
-            </label>
-            <input
-              type="text"
-              {...register('username', { required: 'Username is required' })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {errors.username && (
-              <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
-            )}
-          </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Username *
+                  </label>
+                  <input
+                    type="text"
+                    {...register('username', { required: 'Username is required' })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {errors.username && (
+                    <p className="mt-1 text-sm text-red-600">{errors.username.message}</p>
+                  )}
+                </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -403,7 +411,7 @@ export default function UsersPage() {
       <Modal
         isOpen={!!permissionsModal}
         onClose={() => setPermissionsModal(null)}
-        title={`Manage Permissions - ${permissionsModal?.username}`}
+        title={`Manage Permissions - ${permissionsModal?.name}`}
         size="md"
       >
         <div className="space-y-4">

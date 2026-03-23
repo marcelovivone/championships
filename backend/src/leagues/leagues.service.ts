@@ -12,6 +12,11 @@ export class LeaguesService {
     private db: NodePgDatabase<typeof schema>,
   ) {}
 
+  // Ensure returned schedule type matches expected literal union
+  private normalizeScheduleType(val: any): 'Round' | 'Date' {
+    return String(val) === 'Date' ? 'Date' : 'Round';
+  }
+
   /**
    * Get all leagues with pagination
    */
@@ -112,7 +117,9 @@ export class LeaguesService {
         .leftJoin(sports, eq(leagues.sportId, sports.id))
         .leftJoin(schema.countries, eq(leagues.countryId, schema.countries.id));
       const total = Number(totalResult[0].count);
-      return { data, total, page, limit };
+      // Coerce schedule type to expected literal union
+      const dataNormalized = data.map((d: any) => ({ ...d, typeOfSchedule: this.normalizeScheduleType(d.typeOfSchedule) }));
+      return { data: dataNormalized, total, page, limit };
     } catch (error) {
       throw new BadRequestException('Failed to fetch paginated leagues');
     }
@@ -133,7 +140,7 @@ export class LeaguesService {
         throw new NotFoundException(`League with ID ${id} not found`);
       }
 
-      return league[0];
+      return { ...league[0], typeOfSchedule: this.normalizeScheduleType(league[0].typeOfSchedule) };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Failed to fetch league');
@@ -184,7 +191,7 @@ export class LeaguesService {
    */
   async findAllBySport(sportId: number) {
     try {
-      return await this.db
+      const rows = await this.db
         .select({
           id: schema.leagues.id,
           originalName: schema.leagues.originalName,
@@ -218,6 +225,7 @@ export class LeaguesService {
         .leftJoin(schema.countries, eq(schema.leagues.countryId, schema.countries.id))
         .leftJoin(schema.cities, eq(schema.leagues.cityId, schema.cities.id))
         .where(eq(schema.leagues.sportId, sportId));
+      return rows.map((r: any) => ({ ...r, typeOfSchedule: this.normalizeScheduleType(r.typeOfSchedule) }));
     } catch (error) {
       throw new BadRequestException('Failed to fetch leagues by sport');
     }
@@ -255,7 +263,7 @@ export class LeaguesService {
         .values(createLeagueDto)
         .returning();
 
-      return result[0];
+      return { ...result[0], typeOfSchedule: this.normalizeScheduleType(result[0].typeOfSchedule) };
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException('Failed to create league');
@@ -301,7 +309,7 @@ export class LeaguesService {
         .where(eq(leagues.id, id))
         .returning();
 
-      return result[0];
+      return { ...result[0], typeOfSchedule: this.normalizeScheduleType(result[0].typeOfSchedule) };
     } catch (error) {
       if (error instanceof BadRequestException || error instanceof NotFoundException)
         throw error;

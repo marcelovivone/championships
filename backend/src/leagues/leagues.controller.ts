@@ -76,7 +76,11 @@ export class LeaguesController {
   @ApiResponse({ status: 404, description: 'League not found' })
   @Get(':id')
   async findOne(@Param('id', ParseIntPipe) id: number): Promise<LeagueResponseDto> {
-    return this.leaguesService.findOne(id);
+    const league = await this.leaguesService.findOne(id);
+    return {
+      ...league,
+      typeOfSchedule: league.typeOfSchedule as 'Round' | 'Date',
+    };
   }
 
   /**
@@ -91,7 +95,11 @@ export class LeaguesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Body() createLeagueDto: CreateLeagueDto): Promise<LeagueResponseDto> {
-    return this.leaguesService.create(createLeagueDto);
+    const league = await this.leaguesService.create(createLeagueDto);
+    return {
+      ...league,
+      typeOfSchedule: league.typeOfSchedule as 'Round' | 'Date',
+    };
   }
 
   /**
@@ -106,7 +114,11 @@ export class LeaguesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() updateLeagueDto: UpdateLeagueDto,
   ): Promise<LeagueResponseDto> {
-    return this.leaguesService.update(id, updateLeagueDto);
+    const league = await this.leaguesService.update(id, updateLeagueDto);
+    return {
+      ...league,
+      typeOfSchedule: league.typeOfSchedule as 'Round' | 'Date',
+    };
   }
 
   /**

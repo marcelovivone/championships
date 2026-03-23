@@ -23,8 +23,7 @@ export class CreateClubDto {
   @IsOptional()
   @ValidateIf((object: CreateClubDto) => 
     object.foundationYear !== undefined && 
-    object.foundationYear !== null && 
-    object.foundationYear !== ""
+    object.foundationYear !== null
   )
   @IsInt({ message: 'Foundation year must be a valid integer' })
   @Min(1800, { message: 'Foundation year must be 1800 or later' })

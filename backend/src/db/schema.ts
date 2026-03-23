@@ -27,6 +27,7 @@ export const sports = pgTable('sports', {
   hasOvertime: boolean('has_overtime').default(false).notNull(),
   hasPenalties: boolean('has_penalties').default(false).notNull(),
   flgDefault: boolean('flg_default').default(false).notNull(),
+  flgEspnApiPartialScores: boolean('flg_espn_api_partial_scores').default(false).notNull(), // For integration with ESPN API (if needed)
   imageUrl: text('image_url').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

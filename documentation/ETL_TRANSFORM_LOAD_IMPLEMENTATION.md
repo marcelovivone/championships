@@ -616,13 +616,17 @@ ESPN enrichment complete: enriched=34, skipped=2, errors=2
 
 ### 9.7 Guards and safety conditions
 
-Three independent guards prevent enrichment from running at the wrong time:
+Three independent guards prevent enrichment from running at the wrong time, plus a fourth implicit gate at the upsert level:
 
-1. **Dry-run guard**: `if (!options.dryRun && ...)` — enrichment is completely skipped when the T&L page is running in dry-run mode. No internet traffic is generated and no divisions are modified.
+1. **Already-finished gate** (upsert level, §5.4): Before any enrichment logic is reached, if `existing.status === 'Finished'` the row loop calls `continue` and moves to the next match. This is the primary reason that matches already enriched in a previous payload are never re-queued — their `match_divisions` are left completely untouched and the enrichment call is never made.
 
-2. **Finished-status guard**: `&& status === 'Finished'` on both push sites — only matches that already have a final score are queued. `Scheduled` / `InProgress` matches have no meaningful partial scores.
+2. **Dry-run guard**: `if (!options.dryRun && ...)` — enrichment is completely skipped when the T&L page is running in dry-run mode. No internet traffic is generated and no divisions are modified.
 
-3. **Empty-queue guard**: `&& matchesForEnrichment.length > 0` before triggering — if nothing was queued (e.g., all matches were already enriched, or no ESPN origin matches were finished), the enrichment block is skipped entirely.
+3. **Finished-status guard**: `&& status === 'Finished'` on both push sites — only matches that already have a final score are queued. `Scheduled` / `InProgress` matches have no meaningful partial scores.
+
+4. **Empty-queue guard**: `&& matchesForEnrichment.length > 0` before triggering — if nothing was queued (e.g., all matches were already enriched, or no ESPN origin matches were finished), the enrichment block is skipped entirely.
+
+**Practical consequence for subsequent payloads**: When processing a second payload for the same league/season, only matches that transitioned from non-finished → finished *in that payload* (or brand-new already-finished matches) are queued. Games fully loaded in the first payload are never re-fetched from ESPN and their partial scores are preserved.
 
 ### 9.8 Return value and logging
 

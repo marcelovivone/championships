@@ -35,6 +35,10 @@ export default function BaseStandings({
   );
   const [roundOrDay, setRoundOrDay] = React.useState<number | string>(1);
   const [debouncedRoundOrDay, setDebouncedRoundOrDay] = React.useState<number | string>(roundOrDay);
+  // Track which league we've already auto-selected the default season for, so that
+  // a background React Query refetch of seasons data doesn't override the user's
+  // manually-selected season.
+  const autoSeasonLeagueRef = React.useRef<string>('');
   // The value shown next to the STANDING header. Only update this when the
   // selected round/day actually has rows in the standings table. If the user
   // selects a round/day with no standings rows, keep the previous displayed
@@ -285,15 +289,120 @@ export default function BaseStandings({
     };
   }, [standingsQuery.data, standings, clubsMap]);
 
-  // When seasons load or league changes, pick the default season for that league
+  // When seasons load or league changes, pick the default season for that league.
+  // We use autoSeasonLeagueRef to ensure we only auto-set the default season when
+  // the league actually changes, NOT on every background React Query refetch of
+  // seasons data (which would silently reset the user's manual season selection).
   React.useEffect(() => {
     if (seasons && seasons.length > 0) {
-      const defaultSeason = seasons.find((s: any) => s.flgDefault) || seasons[0];
-      if (defaultSeason) setSeason(String(defaultSeason.id));
+      if (autoSeasonLeagueRef.current !== league) {
+        // League changed (or initial load) — auto-select the default season.
+        autoSeasonLeagueRef.current = league;
+        const defaultSeason = seasons.find((s: any) => s.flgDefault) || seasons[0];
+        if (defaultSeason) setSeason(String(defaultSeason.id));
+      }
+      // else: same league, user may have manually picked a season — don't override.
     } else {
+      // Seasons not yet loaded for this league. Clear selection and reset the ref
+      // so that when seasons do load the default will be auto-selected.
+      autoSeasonLeagueRef.current = '';
       setSeason('');
     }
   }, [league, seasons]);
+
+  // Helper: determine if a season is active.
+  // The Season DTO uses a `status` field: 'planned' | 'active' | 'finished'.
+  const isSeasonActive = (s: any) => {
+    if (!s) return false;
+    // Primary check: explicit status field
+    if (s.status !== undefined) return String(s.status).toLowerCase() === 'active';
+    // Fallback: flgActive boolean
+    if (s.flgActive !== undefined) return Boolean(s.flgActive);
+    // Last resort: date range check
+    try {
+      const start = s.startDate ?? s.start_date;
+      const end = s.endDate ?? s.end_date;
+      if (!start) return false;
+      const now = new Date();
+      if (now < new Date(start)) return false;
+      if (end && now > new Date(end)) return false;
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Keep a ref of seasons so the round-selection effect can read current seasons
+  // data without having `seasons` in its dependency array (which would cause a
+  // spurious re-run — and potentially a round-reset to 1 — on every background
+  // React Query refetch of seasons).
+  const seasonsRef = React.useRef(seasons);
+  seasonsRef.current = seasons;
+
+  // Single effect: whenever league or season changes, determine the correct round.
+  // Rules: inactive/missing season → round 1; active season → flgCurrent round (or 1 if none).
+  // An AbortController cancels any stale in-flight fetch when league/season changes again.
+  React.useEffect(() => {
+    if (!season || !league) {
+      setRoundOrDay(1);
+      setDebouncedRoundOrDay(1);
+      return;
+    }
+
+    // Read seasons from ref so we always have current data without a dep on `seasons`.
+    const currentSeasons = seasonsRef.current;
+    const seasonObj = currentSeasons && currentSeasons.length > 0
+      ? currentSeasons.find((s: any) => String(s.id) === String(season))
+      : null;
+
+    if (!seasonObj || !isSeasonActive(seasonObj)) {
+      setRoundOrDay(1);
+      setDebouncedRoundOrDay(1);
+      return;
+    }
+
+    // Season is active — fetch rounds fresh to find the flgCurrent round.
+    let mounted = true;
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const resp = await apiClient.get(
+          `/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`,
+          { signal: controller.signal }
+        );
+        const data = (resp.data && Array.isArray(resp.data))
+          ? resp.data
+          : (Array.isArray(resp) ? resp : []);
+
+        if (!mounted) return;
+
+        const current = data.find((rr: any) =>
+          rr.flgCurrent || rr.flg_current || rr.isCurrent || rr.current
+        );
+
+        if (current) {
+          const num = Number(current.roundNumber ?? current.round ?? current.round_number ?? 1);
+          const finalNum = isNaN(num) ? 1 : num;
+          setRoundOrDay(finalNum);
+          setDebouncedRoundOrDay(finalNum);
+        } else {
+          setRoundOrDay(1);
+          setDebouncedRoundOrDay(1);
+        }
+      } catch (e) {
+        if ((e as any)?.name === 'CanceledError' || (e as any)?.message === 'canceled') return;
+        if (!mounted) return;
+        setRoundOrDay(1);
+        setDebouncedRoundOrDay(1);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      controller.abort();
+    };
+  }, [league, season]);
 
   // If leagues prop changes and there's no selected league, initialize it
   React.useEffect(() => {
@@ -312,8 +421,12 @@ export default function BaseStandings({
         setSeason={setSeason}
         league={league}
         setLeague={(v: any) => {
+          // Reset the auto-season ref so the new league's default season is auto-selected.
+          autoSeasonLeagueRef.current = '';
+          setSeason('');
+          setRoundOrDay(1);
+          setDebouncedRoundOrDay(1);
           setLeague(v);
-          // refetch seasons for the new league
           setTimeout(() => refetchSeasons(), 0);
         }}
         roundOrDay={roundOrDay}
@@ -339,7 +452,14 @@ export default function BaseStandings({
                   season={season}
                   setSeason={setSeason}
                   league={league}
-                  setLeague={setLeague}
+                  setLeague={(v: any) => {
+                    autoSeasonLeagueRef.current = '';
+                    setSeason('');
+                    setRoundOrDay(1);
+                    setDebouncedRoundOrDay(1);
+                    setLeague(v);
+                    setTimeout(() => refetchSeasons(), 0);
+                  }}
                   roundOrDay={roundOrDay}
                   setRoundOrDay={setRoundOrDay}
                   viewType={viewType}

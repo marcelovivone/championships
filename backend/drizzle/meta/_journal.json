@@ -71,6 +71,13 @@
       "when": 1773739640567,
       "tag": "0009_add_espnpartialscores_and_originapiid_to_matches_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1774171142355,
+      "tag": "0010_add_espnId_to_leagues_table",
+      "breakpoints": true
     }
   ]
 }

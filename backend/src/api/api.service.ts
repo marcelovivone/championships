@@ -4,6 +4,16 @@ import { Pool } from 'pg';
 import { matches } from 'class-validator/types/decorator/string/Matches';
 import { eq } from 'drizzle-orm/sql/expressions/conditions';
 
+// Shared normalization helpers used across functions in this module
+const normalizeText = (value: any) => String(value ?? '').trim();
+const normalizeLookupKey = (value: any) =>
+    normalizeText(value)
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '')
+        .trim();
+
 @Injectable()
 export class ApiService {
     private readonly logger = new Logger(ApiService.name);
@@ -94,6 +104,8 @@ export class ApiService {
             firstRow['league.season'] = get(sample, 'league.season') ?? get(payload, 'league.season') ?? null;
             firstRow['league.country'] = get(sample, 'league.country') ?? get(payload, 'league.country') ?? null;
             firstRow['league.flag'] = get(sample, 'league.flag') ?? get(payload, 'league.flag') ?? null;
+            // Extract league image from ESPN payload structure (payload.leagues[0].logos[0].href)
+            firstRow['league.image'] = get(sample, 'league.image') ?? get(payload, 'league.image') ?? payload?.leagues?.[0]?.logos?.[0]?.href ?? null;
         }
 
         // Build matches rows based on requested keys
@@ -143,7 +155,6 @@ export class ApiService {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         const effectiveOrigin = origin || 'Api-Football';
-        const effectiveSeason = startDate ? Number(String(startDate).slice(0, 4)) : season;
         try {
             let url: URL;
             let headers: Record<string, string> = {};
@@ -227,7 +238,7 @@ export class ApiService {
                               flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, flg_run_in_background) 
                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) 
                       RETURNING id, fetched_at;`,
-                             [league || null, effectiveSeason || null, sport || null, url.toString(), json, effectiveOrigin, 
+                             [league || null, season || null, sport || null, url.toString(), json, effectiveOrigin, 
                              seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, runInBackground],
             );
         } finally {
@@ -1279,6 +1290,7 @@ export class ApiService {
                 'league.season': seasonInfo?.year ?? new Date().getFullYear(),
                 'league.country': venue?.address?.country ?? 'England',
                 'league.flag': null,
+                'league.image': leagueInfo?.logos?.[0]?.href ?? null,
 
                 // ESPN does not reliably expose round/matchday values. Derive rounds primarily from the
                 // expected number of matches in a round (clubs / 2). Date gaps are only a fallback when the
@@ -1551,6 +1563,7 @@ export class ApiService {
         sportId: number,
         matchId: number,
         matchRow: Record<string, any>,
+        flgHasDivisions: boolean = false,
     ) {
         // Read sport defaults
         const sp = await client.query(
@@ -1604,8 +1617,15 @@ export class ApiService {
                 awayScore = 0;
             }
 
-            // If the sport does not provide partial scores via ESPN API, zero-out division scores
-            if (!hasEspnPartialScores) {
+            // When the payload already carries halftime/fulltime scores (Api-Football
+            // with flg_has_divisions=true) keep them; otherwise, if the sport does not
+            // provide partial scores via ESPN API, zero-out division scores so the
+            // ESPN enrichment pipeline can fill them in later.
+            if (flgHasDivisions) {
+                // Parsed row already has valid halftime scores — keep them
+                homeScore = homeScore == null || !Number.isFinite(Number(homeScore)) ? 0 : Math.max(0, Math.trunc(Number(homeScore)));
+                awayScore = awayScore == null || !Number.isFinite(Number(awayScore)) ? 0 : Math.max(0, Math.trunc(Number(awayScore)));
+            } else if (!hasEspnPartialScores) {
                 homeScore = 0;
                 awayScore = 0;
             } else {
@@ -1633,10 +1653,8 @@ export class ApiService {
         leagueCode: string,
         eventId: string,
     ): Promise<{ homeScores: number[]; awayScores: number[] } | null> {
-        // const url = `https://sports.core.api.espn.com/v2/sports/${sportName}/leagues/${leagueCode}/events/${eventId}/competitions/${eventId}/competitors`;
         const url = `https://site.api.espn.com/apis/site/v2/sports/${sportName}/${leagueCode}/summary?event=${eventId}`;
         try {
-            console.log(`Fetching ESPN linescores for event ${eventId} from URL: ${url}`);
             const resp = await fetch(url);
             if (!resp.ok) {
                 this.logger.warn(`ESPN event fetch failed (${resp.status}) for event ${eventId}`);
@@ -1811,11 +1829,13 @@ export class ApiService {
             const getVal = (key: string) => {
                 return first[key] ?? null;
             };
+            // Normalization helpers (moved to module scope)
 
             const leagueName = String(getVal('league.name') ?? getVal('league') ?? '').trim();
             const leagueSeason = getVal('league.season') ?? getVal('season') ?? null;
             const leagueCountry = String(getVal('league.country') ?? getVal('country') ?? '').trim();
             const leagueFlag = getVal('league.flag') ?? null;
+            const leagueImage = getVal('league.image') ?? null;
 
             await client.query('BEGIN');
 
@@ -1865,39 +1885,123 @@ export class ApiService {
             let leagueId: number | null = null;
             if (leagueName) {
                 const sportId = options.sportId ?? 36;
-                const q = `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1)` + (countryId ? ' AND country_id = $2' : '') + (sportId ? ' AND sport_id = $3' : '') + ' LIMIT 1';
-                const params: any[] = [leagueName];
-                if (countryId) params.push(countryId);
-                if (sportId) params.push(sportId);
-                const lRes = await client.query(q, params);
-                if (lRes.rows.length) {
-                    leagueId = lRes.rows[0].id;
-                } else {
-                    // Insert minimal league row per spec
-                    const ins = await client.query(
-                        `INSERT INTO leagues (sport_id, country_id, image_url, original_name, secondary_name, city_id, number_of_rounds_matches, min_divisions_number, max_divisions_number, division_time, has_ascends, ascends_quantity, has_descends, descends_quantity, number_of_sub_leagues, flg_default, flg_round_automatic, type_of_schedule) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id`,
-                        [
-                            sportId,
-                            countryId,
-                            leagueFlag || null,
-                            leagueName,
-                            leagueName,
-                            null,
-                            100,
-                            2,
-                            2,
-                            45,
-                            true,
-                            10,
-                            true,
-                            10,
-                            0,
-                            transitionalDbRow.flg_league_default || false,
-                            true,
-                            transitionalDbRow.league_schedule_type || 'Round',
-                        ],
-                    );
-                    leagueId = ins.rows[0].id;
+
+                // For ESPN-origin payloads, attempt to find league by espn_id first
+                let espnLeagueId: string | null = null;
+                try {
+                    const tRes2 = await client.query(`SELECT origin, payload FROM api_transitional WHERE id = $1 LIMIT 1`, [id]);
+                    const originVal = tRes2.rows?.[0]?.origin ?? null;
+                    const payload = tRes2.rows?.[0]?.payload ?? {};
+                    if (originVal === 'Api-Espn') {
+                        espnLeagueId = payload?.leagues?.[0]?.id ?? null;
+                        if (espnLeagueId) {
+                            const eRes = await client.query(`SELECT id FROM leagues WHERE espn_id = $1 LIMIT 1`, [String(espnLeagueId)]);
+                            if (eRes.rows.length) {
+                                leagueId = eRes.rows[0].id;
+                                // If we have a league image from the payload, set it when missing
+                                if (leagueImage) {
+                                    try {
+                                        await client.query(`UPDATE leagues SET image_url = COALESCE(image_url, $1) WHERE id = $2`, [leagueImage, leagueId]);
+                                    } catch (e) {
+                                        this.logger.debug(`Failed to update league image for league id=${leagueId}: ${String(e)}`);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    this.logger.debug(`Failed espn_id lookup for transitional id=${id}: ${String(e)}`);
+                }
+
+                // Only run the name-based lookup/insert if espn_id did not find an existing league
+                if (!leagueId) {
+                    const q = `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1)` + (countryId ? ' AND country_id = $2' : '') + (sportId ? ' AND sport_id = $3' : '') + ' LIMIT 1';
+                    const params: any[] = [leagueName];
+                    if (countryId) params.push(countryId);
+                    if (sportId) params.push(sportId);
+                    const lRes = await client.query(q, params);
+                    if (lRes.rows.length) {
+                        leagueId = lRes.rows[0].id;
+                        // If we have a league image from the payload, set it when missing
+                        if (leagueImage) {
+                            try {
+                                await client.query(`UPDATE leagues SET image_url = COALESCE(image_url, $1) WHERE id = $2`, [leagueImage, leagueId]);
+                            } catch (e) {
+                                this.logger.debug(`Failed to update league image for league id=${leagueId}: ${String(e)}`);
+                            }
+                        }
+                    } else {
+                        // Fallback: try a normalized/inclusion-based match among candidate leagues
+                        try {
+                            const incomingNorm = normalizeLookupKey(leagueName);
+                            const candParams: any[] = [];
+                            let candQ = `SELECT id, original_name, secondary_name FROM leagues`;
+                            const whereParts: string[] = [];
+                            if (countryId) {
+                                whereParts.push(`country_id = $${candParams.length + 1}`);
+                                candParams.push(countryId);
+                            }
+                            if (sportId) {
+                                whereParts.push(`sport_id = $${candParams.length + 1}`);
+                                candParams.push(sportId);
+                            }
+                            if (whereParts.length) candQ += ' WHERE ' + whereParts.join(' AND ');
+                            candQ += ' LIMIT 200';
+                            const candRes = await client.query(candQ, candParams);
+                            for (const c of candRes.rows) {
+                                const on = normalizeLookupKey(c.original_name ?? '');
+                                const sn = normalizeLookupKey(c.secondary_name ?? '');
+                                if (
+                                    on === incomingNorm || sn === incomingNorm ||
+                                    on.includes(incomingNorm) || incomingNorm.includes(on) ||
+                                    sn.includes(incomingNorm) || incomingNorm.includes(sn)
+                                ) {
+                                    leagueId = c.id;
+                                    break;
+                                }
+                            }
+                            if (leagueId && leagueImage) {
+                                try {
+                                    await client.query(`UPDATE leagues SET image_url = COALESCE(image_url, $1) WHERE id = $2`, [leagueImage, leagueId]);
+                                } catch (e) {
+                                    this.logger.debug(`Failed to update league image for league id=${leagueId}: ${String(e)}`);
+                                }
+                            }
+                        } catch (e) {
+                            this.logger.debug(`Normalized league fallback failed: ${String(e)}`);
+                        }
+
+                        // If still not found, proceed to insert
+                        if (!leagueId) {
+                            // Insert minimal league row per spec. Include espn_id when available (ESPN origin)
+                            const ins = await client.query(
+                                `INSERT INTO leagues (sport_id, country_id, espn_id, image_url, original_name, secondary_name, city_id, number_of_rounds_matches, min_divisions_number, max_divisions_number, division_time, has_ascends, ascends_quantity, has_descends, descends_quantity, number_of_sub_leagues, flg_default, flg_round_automatic, type_of_schedule) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
+                                [
+                                    sportId,
+                                    countryId,
+                                    espnLeagueId ? String(espnLeagueId) : null,
+                                    leagueImage ?? leagueFlag ?? null,
+                                    leagueName,
+                                    leagueName,
+                                    null,
+                                    100,
+                                    2,
+                                    2,
+                                    45,
+                                    true,
+                                    10,
+                                    true,
+                                    10,
+                                    0,
+                                    transitionalDbRow.flg_league_default || false,
+                                    true,
+                                    transitionalDbRow.league_schedule_type || 'Round',
+                                ],
+                            );
+                            leagueId = ins.rows[0].id;
+                        }
+                    }
+                
                 }
             }
 
@@ -2003,6 +2107,7 @@ export class ApiService {
                 'league.season': seasonInfo?.year ?? new Date().getFullYear(),
                 'league.country': venue?.address?.country ?? 'England',
                 'league.flag': null,
+                'league.image': leagueInfo?.logos?.[0]?.href ?? null,
                 'league.round': null,  // Skipped — rounds already exist in DB
                 'goals.home': homeTeam?.score ? Number(homeTeam.score) : null,
                 'goals.away': awayTeam?.score ? Number(awayTeam.score) : null,
@@ -2159,14 +2264,7 @@ export class ApiService {
             const leagueMetaRes = await client.query(`SELECT country_id FROM leagues WHERE id = $1 LIMIT 1`, [leagueId]);
             const leagueCountryId = leagueMetaRes.rows[0]?.country_id ?? (await client.query(`SELECT id FROM countries LIMIT 1`)).rows[0]?.id ?? null;
 
-            const normalizeText = (value: any) => String(value ?? '').trim();
-            const normalizeLookupKey = (value: any) =>
-                normalizeText(value)
-                    .toLowerCase()
-                    .normalize('NFKD')
-                    .replace(/[\u0300-\u036f]/g, '')
-                    .replace(/[^a-z0-9]+/g, '')
-                    .trim();
+            
 
             const ensureSportClub = async (clubId: number | null, clubNameRaw: any) => {
                 if (!clubId) return;
@@ -2427,15 +2525,43 @@ export class ApiService {
                         if (clubCache[clubName]) return clubCache[clubName];
 
                         // Try exact short_name or name (restrict to current country)
-                        let cres = await client.query(
-                            `SELECT id FROM clubs WHERE (lower(short_name)=lower($1) OR lower(name)=lower($1)) AND country_id = $2 LIMIT 1`,
-                            [clubName, leagueCountryId],
-                        );
-                        if (!cres.rows.length) {
+                        let cres: any = { rows: [] };
+                        try {
                             cres = await client.query(
-                                `SELECT id FROM clubs WHERE (name ILIKE $1 OR short_name ILIKE $1) AND country_id = $2 LIMIT 1`,
-                                [`%${clubName}%`, leagueCountryId],
+                                `SELECT id FROM clubs WHERE (lower(short_name)=lower($1) OR lower(name)=lower($1)) AND country_id = $2 LIMIT 1`,
+                                [clubName, leagueCountryId],
                             );
+                        } catch (e) {
+                            this.logger.debug(`Club lookup exact query failed: ${String(e)}`);
+                            cres = { rows: [] };
+                        }
+                        if (!cres.rows.length) {
+                            try {
+                                cres = await client.query(
+                                    `SELECT id FROM clubs WHERE (name ILIKE $1 OR short_name ILIKE $1) AND country_id = $2 LIMIT 1`,
+                                    [`%${clubName}%`, leagueCountryId],
+                                );
+                            } catch (e) {
+                                this.logger.debug(`Club lookup ILIKE query failed: ${String(e)}`);
+                                cres = { rows: [] };
+                            }
+                        }
+                        // If still not found, try a normalization-based match (strip diacritics/punctuation)
+                        if (!cres.rows.length) {
+                            try {
+                                const normalizedIncoming = normalizeLookupKey(clubName);
+                                const cands = await client.query(`SELECT id, name, short_name FROM clubs WHERE country_id = $1`, [leagueCountryId]);
+                                for (const c of cands.rows) {
+                                    const nName = normalizeLookupKey(c.name ?? '');
+                                    const nShort = normalizeLookupKey(c.short_name ?? '');
+                                    if (nName === normalizedIncoming || nShort === normalizedIncoming) {
+                                        cres = { rows: [{ id: c.id }] };
+                                        break;
+                                    }
+                                }
+                            } catch (e) {
+                                this.logger.debug(`Normalization club lookup failed: ${String(e)}`);
+                            }
                         }
                         if (cres.rows.length) {
                             clubCache[clubName] = cres.rows[0].id;
@@ -2531,7 +2657,7 @@ export class ApiService {
                                 // Recreate match_divisions for the now-finished match
                                 await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [matchId]);
                                 try {
-                                    const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
+                                    const divRes = await this.createMatchDivisions(client, sportId, matchId, r, flgHasDivisions);
                                     if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
                                     // When flg_has_divisions is false, zero-out scores and queue for ESPN enrichment
                                     // Only queue finished matches — unfinished ones have no partial scores to fetch
@@ -2568,7 +2694,7 @@ export class ApiService {
                         matchId = matchRes.rows[0].id;
                         // create match_divisions rows for NEW matches
                         try {
-                            const divRes = await this.createMatchDivisions(client, sportId, matchId, r);
+                            const divRes = await this.createMatchDivisions(client, sportId, matchId, r, flgHasDivisions);
                             if (divRes && divRes.created) createdDivisions += Number(divRes.created) || 0;
                             // When flg_has_divisions is false, zero-out scores and queue for ESPN enrichment
                             // Only queue finished matches — unfinished ones have no partial scores to fetch

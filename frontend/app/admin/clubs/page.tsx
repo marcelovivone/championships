@@ -9,6 +9,15 @@ import { Club, CreateClubDto } from '@/lib/api/types';
 import DataTable from '@/components/ui/data-table';
 import Modal from '@/components/ui/modal';
 
+type ClubFormValues = {
+  name: string;
+  shortName?: string;
+  foundationYear?: number;
+  cityId?: string;
+  countryId?: string;
+  imageUrl?: string;
+};
+
 export default function ClubsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClub, setEditingClub] = useState<Club | null>(null);
@@ -48,7 +57,7 @@ export default function ClubsPage() {
 
   const countries = countriesData?.data || [];
 
-  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<CreateClubDto>();
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<ClubFormValues>();
 
   const selectedCountryId = watch('countryId');
   const filteredCities = selectedCountryId 
@@ -132,12 +141,12 @@ export default function ClubsPage() {
     setPage(1);
   };
 
-  const onSubmit = (data: CreateClubDto) => {
+  const onSubmit = (data: ClubFormValues) => {
     const payload = {
       ...data,
-      cityId: data.cityId ? Number(data.cityId) : null,
+      cityId: data.cityId ? Number(data.cityId) : undefined,
       countryId: Number(data.countryId),
-      foundationYear: data.foundationYear ? Number(data.foundationYear) : null,
+      foundationYear: data.foundationYear !== undefined ? Number(data.foundationYear) : undefined,
     };
     if (editingClub) {
       updateMutation.mutate({ id: editingClub.id, data: payload });
