@@ -36,13 +36,25 @@ let LeaguesController = class LeaguesController {
         return this.leaguesService.findAllPaginated(pageNum, limitNum, sort, order);
     }
     async findOne(id) {
-        return this.leaguesService.findOne(id);
+        const league = await this.leaguesService.findOne(id);
+        return {
+            ...league,
+            typeOfSchedule: league.typeOfSchedule,
+        };
     }
     async create(createLeagueDto) {
-        return this.leaguesService.create(createLeagueDto);
+        const league = await this.leaguesService.create(createLeagueDto);
+        return {
+            ...league,
+            typeOfSchedule: league.typeOfSchedule,
+        };
     }
     async update(id, updateLeagueDto) {
-        return this.leaguesService.update(id, updateLeagueDto);
+        const league = await this.leaguesService.update(id, updateLeagueDto);
+        return {
+            ...league,
+            typeOfSchedule: league.typeOfSchedule,
+        };
     }
     async remove(id) {
         await this.leaguesService.remove(id);

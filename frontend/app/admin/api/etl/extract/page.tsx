@@ -10,7 +10,7 @@ export default function AdminApiPage() {
   const [result, setResult] = useState<any>(null);
   const [processingRowId, setProcessingRowId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [league, setLeague] = useState('39');
+  const [league, setLeague] = useState('eng.1');
   const [season, setSeason] = useState('2025');
   const [startDate, setStartDate] = useState('2025-08-01');
   const [endDate, setEndDate] = useState('2026-05-31');
@@ -19,7 +19,7 @@ export default function AdminApiPage() {
   const [isSeasonDefault, setIsSeasonDefault] = useState<boolean>(false);
   const [isLeagueDefault, setIsLeagueDefault] = useState<boolean>(false);
   const [scheduleType, setScheduleType] = useState<string>('Date');
-  const [addDivisions, setAddDivisions] = useState<boolean>(true);
+  const [hasDivisions, setHasDivisions] = useState<boolean>(true);
   const [runInBackground, setRunInBackground] = useState<boolean>(true);
   const [sports, setSports] = useState<any[]>([]);
   const [sportId, setSportId] = useState<number>(36);
@@ -66,6 +66,61 @@ export default function AdminApiPage() {
       // noop
     }
   }, [sports, sportId]);
+
+  // Hardcoded origin-driven defaults and disabled state.
+  // TODO: Improve in future — derive rules from backend or a config instead of hardcoding.
+  useEffect(() => {
+    try {
+      if (origin === 'Api-Espn') {
+        setHasDivisions(false); // ESPN payloads: no divisions
+        setRunInBackground(true); // ESPN: run in background by default
+      } else if (origin === 'Api-Football') {
+        setHasDivisions(true); // Api-Football: has divisions
+        setRunInBackground(false); // Api-Football: do not run in background by default
+      }
+    } catch (e) {
+      // noop
+    }
+  }, [origin]);
+
+  // Keep `sameYears` in sync with the start/end date years.
+  // If the years are equal, check the box; otherwise uncheck it.
+  // This runs on mount and whenever the user changes either date.
+  useEffect(() => {
+    try {
+      const parseYear = (d: string) => {
+        if (!d) return null;
+        const dt = new Date(d);
+        if (Number.isNaN(dt.getTime())) return null;
+        return dt.getFullYear();
+      };
+      const sYear = parseYear(startDate);
+      const eYear = parseYear(endDate);
+      if (sYear !== null && eYear !== null) {
+        setSameYears(sYear === eYear);
+      } else {
+        setSameYears(false);
+      }
+    } catch (e) {
+      // noop
+    }
+  }, [startDate, endDate]);
+
+  // Auto-set `seasonStatus` based on the `endDate` year.
+  // If end year >= current year => Active, else => Finished.
+  // Runs on mount and whenever `endDate` changes.
+  useEffect(() => {
+    try {
+      if (!endDate) return;
+      const dt = new Date(endDate);
+      if (Number.isNaN(dt.getTime())) return;
+      const endYear = dt.getFullYear();
+      const currentYear = new Date().getFullYear();
+      setSeasonStatus(endYear >= currentYear ? 'Active' : 'Finished');
+    } catch (e) {
+      // noop
+    }
+  }, [endDate]);
 
   useLayoutEffect(() => {
     const measure = () => {
@@ -133,7 +188,7 @@ export default function AdminApiPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          league: league,
+          league,
           season: Number(season),
           sport: Number(sportId),
           origin,
@@ -144,7 +199,7 @@ export default function AdminApiPage() {
           sameYears,
           scheduleType,
           isLeagueDefault,
-          addDivisions,
+          hasDivisions,
           runInBackground,
         }),
         signal: controllerRef.current.signal,
@@ -348,8 +403,9 @@ export default function AdminApiPage() {
             <input
               id="md-add-divisions"
               type="checkbox"
-              checked={addDivisions}
-              onChange={(e) => setAddDivisions(e.target.checked)}
+                checked={hasDivisions}
+                onChange={(e) => setHasDivisions(e.target.checked)}
+                disabled={origin === 'Api-Espn' || origin === 'Api-Football'}
               className="h-4 w-4"
             />
             <label htmlFor="md-add-divisions" className="text-sm text-gray-600">Has divisions</label>
@@ -361,6 +417,7 @@ export default function AdminApiPage() {
               type="checkbox"
               checked={runInBackground}
               onChange={(e) => setRunInBackground(e.target.checked)}
+              disabled={origin === 'Api-Espn' || origin === 'Api-Football'}
               className="h-4 w-4"
             />
             <label htmlFor="md-run-background" className="text-sm text-gray-600">Run in background</label>

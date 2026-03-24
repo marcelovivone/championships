@@ -47,7 +47,7 @@ let MatchesService = class MatchesService {
                 updatedAt: schema_1.matches.updatedAt,
             })
                 .from(schema_1.matches)
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date)).orderBy((0, drizzle_orm_1.asc)(schema_1.matches.id));
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await Promise.all(matchesData.map(async (match) => {
                 const clubStadiums = await this.db
                     .select({
@@ -200,7 +200,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
-                .orderBy(orderByClause).orderBy(order(schema_1.matches.id))
+                .orderBy(orderByClause, order(schema_1.matches.id))
                 .limit(limit)
                 .offset(offset);
             const matchesWithStadiums = await Promise.all(data.map(async (match) => {
@@ -546,7 +546,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
                 .where((0, drizzle_orm_1.eq)(schema_1.matches.groupId, groupId))
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date)).orderBy((0, drizzle_orm_1.asc)(schema_1.matches.id));
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             return results.map(match => ({ ...match, status: match.status }));
         }
         catch (error) {
@@ -631,7 +631,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
                 .where(whereCondition)
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date)).orderBy((0, drizzle_orm_1.asc)(schema_1.matches.id));
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             return results.map(match => ({ ...match, status: match.status }));
         }
         catch (error) {
@@ -707,7 +707,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
                 .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.roundId, roundId)))
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date)).orderBy((0, drizzle_orm_1.asc)(schema_1.matches.id));
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await this.attachAvailableStadiums(matchesData);
             return matchesWithStadiums;
         }
@@ -788,7 +788,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
                 .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.gte)(schema_1.matches.date, startDate), (0, drizzle_orm_1.lte)(schema_1.matches.date, endDate)))
-                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date)).orderBy((0, drizzle_orm_1.asc)(schema_1.matches.id));
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await this.attachAvailableStadiums(matchesData);
             const matchesWithDivisions = await this.attachMatchDivisions(matchesWithStadiums);
             return matchesWithDivisions;

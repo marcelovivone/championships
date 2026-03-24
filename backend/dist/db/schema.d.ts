@@ -216,6 +216,23 @@ export declare const sports: import("drizzle-orm/pg-core").PgTableWithColumns<{
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        flgEspnApiPartialScores: import("drizzle-orm/pg-core").PgColumn<{
+            name: "flg_espn_api_partial_scores";
+            tableName: "sports";
+            dataType: "boolean";
+            columnType: "PgBoolean";
+            data: boolean;
+            driverParam: boolean;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
         imageUrl: import("drizzle-orm/pg-core").PgColumn<{
             name: "image_url";
             tableName: "sports";

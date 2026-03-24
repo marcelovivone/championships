@@ -22,6 +22,9 @@ let LeaguesService = class LeaguesService {
     constructor(db) {
         this.db = db;
     }
+    normalizeScheduleType(val) {
+        return String(val) === 'Date' ? 'Date' : 'Round';
+    }
     async findAllPaginated(page, limit, sortBy, sortOrder) {
         const offset = (page - 1) * limit;
         const sortableColumns = ['originalName', 'sportId', 'countryId', 'flgDefault', 'typeOfSchedule', 'numberOfRoundsMatches', 'flgRoundAutomatic', 'hasSubLeagues', 'hasAscends', 'hasDescends', 'sportName', 'countryName'];
@@ -114,7 +117,8 @@ let LeaguesService = class LeaguesService {
                 .leftJoin(schema_1.sports, (0, drizzle_orm_1.eq)(schema_1.leagues.sportId, schema_1.sports.id))
                 .leftJoin(schema.countries, (0, drizzle_orm_1.eq)(schema_1.leagues.countryId, schema.countries.id));
             const total = Number(totalResult[0].count);
-            return { data, total, page, limit };
+            const dataNormalized = data.map((d) => ({ ...d, typeOfSchedule: this.normalizeScheduleType(d.typeOfSchedule) }));
+            return { data: dataNormalized, total, page, limit };
         }
         catch (error) {
             throw new common_1.BadRequestException('Failed to fetch paginated leagues');
@@ -130,7 +134,7 @@ let LeaguesService = class LeaguesService {
             if (!league || league.length === 0) {
                 throw new common_1.NotFoundException(`League with ID ${id} not found`);
             }
-            return league[0];
+            return { ...league[0], typeOfSchedule: this.normalizeScheduleType(league[0].typeOfSchedule) };
         }
         catch (error) {
             if (error instanceof common_1.NotFoundException)
@@ -172,7 +176,7 @@ let LeaguesService = class LeaguesService {
     }
     async findAllBySport(sportId) {
         try {
-            return await this.db
+            const rows = await this.db
                 .select({
                 id: schema.leagues.id,
                 originalName: schema.leagues.originalName,
@@ -206,6 +210,7 @@ let LeaguesService = class LeaguesService {
                 .leftJoin(schema.countries, (0, drizzle_orm_1.eq)(schema.leagues.countryId, schema.countries.id))
                 .leftJoin(schema.cities, (0, drizzle_orm_1.eq)(schema.leagues.cityId, schema.cities.id))
                 .where((0, drizzle_orm_1.eq)(schema.leagues.sportId, sportId));
+            return rows.map((r) => ({ ...r, typeOfSchedule: this.normalizeScheduleType(r.typeOfSchedule) }));
         }
         catch (error) {
             throw new common_1.BadRequestException('Failed to fetch leagues by sport');
@@ -231,7 +236,7 @@ let LeaguesService = class LeaguesService {
                 .insert(schema_1.leagues)
                 .values(createLeagueDto)
                 .returning();
-            return result[0];
+            return { ...result[0], typeOfSchedule: this.normalizeScheduleType(result[0].typeOfSchedule) };
         }
         catch (error) {
             if (error instanceof common_1.BadRequestException)
@@ -264,7 +269,7 @@ let LeaguesService = class LeaguesService {
                 .set(updateLeagueDto)
                 .where((0, drizzle_orm_1.eq)(schema_1.leagues.id, id))
                 .returning();
-            return result[0];
+            return { ...result[0], typeOfSchedule: this.normalizeScheduleType(result[0].typeOfSchedule) };
         }
         catch (error) {
             if (error instanceof common_1.BadRequestException || error instanceof common_1.NotFoundException)

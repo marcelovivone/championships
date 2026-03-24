@@ -452,36 +452,59 @@ export class ApiService {
         // with rows and go straight to the data table / T&L button.
         const origin = row.origin ?? 'Api-Football';
         if (origin === 'Api-Espn') {
+            // row.league is the ESPN URL code (e.g. 'eng.1', 'esp.1') stored at fetch time.
+            const espnLeagueCode: string | null = row.league ?? null;
             const meta = this.extractLeagueMetadata(row);
-            if (meta.leagueName && meta.leagueSeason) {
+
+            if (meta.leagueName || espnLeagueCode) {
                 const sportId = 36; // football default
-                const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-                try {
-                    const lRes = await pool.query(
-                        `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1) AND sport_id = $2 LIMIT 1`,
-                        [String(meta.leagueName).trim(), sportId],
-                    );
-                    if (lRes.rows.length) {
-                        const sRes = await pool.query(
-                            `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`,
-                            [sportId, lRes.rows[0].id, meta.leagueSeason],
+
+                // Build candidate season years from BOTH the payload and the
+                // stored row.season string (e.g. "2025/2026" → [2025, 2026]).
+                const seasonYears: number[] = [];
+                if (meta.leagueSeason != null && Number.isFinite(Number(meta.leagueSeason))) {
+                    seasonYears.push(Number(meta.leagueSeason));
+                }
+                const rawSeasonStr = String(row.season ?? '');
+                for (const m of (rawSeasonStr.match(/\d{4}/g) ?? [])) {
+                    const y = Number(m);
+                    if (Number.isFinite(y) && !seasonYears.includes(y)) seasonYears.push(y);
+                }
+
+                if (seasonYears.length > 0) {
+                    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+                    try {
+                        // Case-insensitive match: ESPN payload returns e.g.
+                        // "Spanish LALIGA" while DB has "Spanish LaLiga".
+                        const lRes = await pool.query(
+                            `SELECT id FROM leagues WHERE (LOWER(original_name) = LOWER($1) OR LOWER(secondary_name) = LOWER($1) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
+                            [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
                         );
-                        if (sRes.rows.length) {
-                            const roundsRes = await pool.query(
-                                `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
-                                [lRes.rows[0].id, sRes.rows[0].id],
-                            );
-                            if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
-                                // Rounds exist → subsequent load → use lightweight parser
-                                const lightweight = this.parseTransitionalEspnLightweight(row);
-                                if (lightweight.found) {
-                                    return { ...lightweight, isSubsequentLoad: true };
+                        if (lRes.rows.length) {
+                            let seasonRow: any = null;
+                            for (const year of seasonYears) {
+                                const sRes = await pool.query(
+                                    `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND (start_year = $3 OR end_year = $3) ORDER BY start_year DESC LIMIT 1`,
+                                    [sportId, lRes.rows[0].id, year],
+                                );
+                                if (sRes.rows.length) { seasonRow = sRes.rows[0]; break; }
+                            }
+                            if (seasonRow) {
+                                const roundsRes = await pool.query(
+                                    `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
+                                    [lRes.rows[0].id, seasonRow.id],
+                                );
+                                if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
+                                    const lightweight = this.parseTransitionalEspnLightweight(row);
+                                    if (lightweight.found) {
+                                        return { ...lightweight, isSubsequentLoad: true };
+                                    }
                                 }
                             }
                         }
+                    } finally {
+                        await pool.end();
                     }
-                } finally {
-                    await pool.end();
                 }
             }
         }
@@ -2188,27 +2211,45 @@ export class ApiService {
             let isSubsequentLoad = false;
 
             const meta = this.extractLeagueMetadata(transitionalRow);
-            if (meta.leagueName && meta.leagueSeason) {
+            const espnLeagueCode: string | null = transitionalRow.league ?? null;
+            if (meta.leagueName || espnLeagueCode) {
+                // Build candidate season years from the payload AND the stored season string
+                // (e.g. "2025/2026" → [2025, 2026]) so NULL season never blocks detection.
+                const seasonYears: number[] = [];
+                if (meta.leagueSeason != null && Number.isFinite(Number(meta.leagueSeason))) {
+                    seasonYears.push(Number(meta.leagueSeason));
+                }
+                const rawSeasonStr = String(transitionalRow.season ?? '');
+                for (const m of (rawSeasonStr.match(/\d{4}/g) ?? [])) {
+                    const y = Number(m);
+                    if (Number.isFinite(y) && !seasonYears.includes(y)) seasonYears.push(y);
+                }
+
+                // Case-insensitive: ESPN payload returns e.g. "Spanish LALIGA"
+                // while DB stores "Spanish LaLiga".
                 const lRes = await client.query(
-                    `SELECT id FROM leagues WHERE (original_name = $1 OR secondary_name = $1) AND sport_id = $2 LIMIT 1`,
-                    [String(meta.leagueName).trim(), sportId],
+                    `SELECT id FROM leagues WHERE (LOWER(original_name) = LOWER($1) OR LOWER(secondary_name) = LOWER($1) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
+                    [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
                 );
                 if (lRes.rows.length) {
                     const possibleLeagueId = lRes.rows[0].id;
-                    const sRes = await client.query(
-                        `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`,
-                        [sportId, possibleLeagueId, meta.leagueSeason],
-                    );
-                    if (sRes.rows.length) {
-                        const possibleSeasonId = sRes.rows[0].id;
+                    let seasonRow: any = null;
+                    for (const year of seasonYears) {
+                        const sRes = await client.query(
+                            `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND (start_year = $3 OR end_year = $3) ORDER BY start_year DESC LIMIT 1`,
+                            [sportId, possibleLeagueId, year],
+                        );
+                        if (sRes.rows.length) { seasonRow = sRes.rows[0]; break; }
+                    }
+                    if (seasonRow) {
                         const roundsRes = await client.query(
                             `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
-                            [possibleLeagueId, possibleSeasonId],
+                            [possibleLeagueId, seasonRow.id],
                         );
                         if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
                             isSubsequentLoad = true;
                             leagueId = possibleLeagueId;
-                            seasonId = possibleSeasonId;
+                            seasonId = seasonRow.id;
                         }
                     }
                 }

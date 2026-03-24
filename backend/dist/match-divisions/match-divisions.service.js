@@ -64,9 +64,10 @@ let MatchDivisionsService = class MatchDivisionsService {
                 .orderBy(schema_1.matchDivisions.id);
         }
         catch (error) {
+            console.error('findByMatch error:', error);
             if (error instanceof common_1.NotFoundException)
                 throw error;
-            throw new common_1.BadRequestException('Failed to fetch divisions by match');
+            throw new common_1.BadRequestException(`Failed to fetch divisions by match: ${error?.message || JSON.stringify(error)}`);
         }
     }
     async create(createDivisionDto) {

@@ -35,7 +35,13 @@ let RoundsController = class RoundsController {
         return this.roundsService.findAllPaginated(pageNum, limitNum, sort, order);
     }
     async findOne(id) {
-        return this.roundsService.findOne(id);
+        const round = await this.roundsService.findOne(id);
+        return {
+            ...round,
+            startDate: round.startDate instanceof Date ? round.startDate.toISOString() : round.startDate,
+            endDate: round.endDate instanceof Date ? round.endDate.toISOString() : round.endDate,
+            createdAt: round.createdAt instanceof Date ? round.createdAt.toISOString() : round.createdAt,
+        };
     }
     async create(createRoundDto) {
         try {

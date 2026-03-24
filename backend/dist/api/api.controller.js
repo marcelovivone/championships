@@ -27,7 +27,7 @@ let ApiController = class ApiController {
         return { created: Array.isArray(created) ? created.length : 0, items: created };
     }
     async fetchAndStore(body) {
-        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate);
+        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate, body.seasonStatus, body.isSeasonDefault, body.sameYears, body.scheduleType, body.isLeagueDefault, body.hasDivisions, body.runInBackground);
         return { stored: result };
     }
     async listTransitional(limit) {
@@ -56,13 +56,25 @@ let ApiController = class ApiController {
             const details = parsed?.details ?? null;
             return { found: false, reason, error, details };
         }
-        return { found: true, columns: parsed.columns, rows: parsed.rows };
+        return { found: true, columns: parsed.columns, rows: parsed.rows, isSubsequentLoad: !!parsed.isSubsequentLoad };
     }
     async structuredTransitional(id) {
         const res = await this.apiService.extractStructuredFromTransitional(id);
         if (!res || !res.found)
             return { found: false };
         return { found: true, firstRow: res.firstRow, matches: res.matches };
+    }
+    async getRoundReview(id) {
+        const review = await this.apiService.getRoundReview(id);
+        return { found: !!review, item: review };
+    }
+    async patchRoundReview(id, body) {
+        const review = await this.apiService.saveRoundReview(id, body?.overrides ?? {});
+        return { success: true, item: review };
+    }
+    async deleteRoundReview(id) {
+        const result = await this.apiService.deleteRoundReview(id);
+        return { success: !!result?.deleted };
     }
     async applyFirstRow(id, body) {
         const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
@@ -149,6 +161,28 @@ __decorate([
     __metadata("design:paramtypes", [Number]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "structuredTransitional", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id/round-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getRoundReview", null);
+__decorate([
+    (0, common_1.Patch)('transitional/:id/round-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "patchRoundReview", null);
+__decorate([
+    (0, common_1.Delete)('transitional/:id/round-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "deleteRoundReview", null);
 __decorate([
     (0, common_1.Post)('transitional/:id/apply-first-row'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),

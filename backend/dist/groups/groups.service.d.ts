@@ -37,6 +37,7 @@ export declare class GroupsService {
             hasOvertime: boolean;
             hasPenalties: boolean;
             flgDefault: boolean;
+            flgEspnApiPartialScores: boolean;
             imageUrl: string;
             createdAt: Date;
         };

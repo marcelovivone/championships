@@ -17,6 +17,7 @@ export declare class SportsController {
             hasOvertime: boolean;
             hasPenalties: boolean;
             flgDefault: boolean;
+            flgEspnApiPartialScores: boolean;
             imageUrl: string;
             createdAt: Date;
         }[];
@@ -38,6 +39,7 @@ export declare class SportsController {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }[]>;

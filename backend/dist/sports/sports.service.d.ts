@@ -18,6 +18,7 @@ export declare class SportsService {
             hasOvertime: boolean;
             hasPenalties: boolean;
             flgDefault: boolean;
+            flgEspnApiPartialScores: boolean;
             imageUrl: string;
             createdAt: Date;
         }[];
@@ -38,6 +39,7 @@ export declare class SportsService {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -54,6 +56,7 @@ export declare class SportsService {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }[]>;
@@ -70,6 +73,7 @@ export declare class SportsService {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -86,6 +90,7 @@ export declare class SportsService {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;
@@ -102,6 +107,7 @@ export declare class SportsService {
         hasOvertime: boolean;
         hasPenalties: boolean;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         imageUrl: string;
         createdAt: Date;
     }>;

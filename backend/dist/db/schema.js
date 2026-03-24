@@ -15,6 +15,7 @@ exports.sports = (0, pg_core_1.pgTable)('sports', {
     hasOvertime: (0, pg_core_1.boolean)('has_overtime').default(false).notNull(),
     hasPenalties: (0, pg_core_1.boolean)('has_penalties').default(false).notNull(),
     flgDefault: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
+    flgEspnApiPartialScores: (0, pg_core_1.boolean)('flg_espn_api_partial_scores').default(false).notNull(),
     imageUrl: (0, pg_core_1.text)('image_url').notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });

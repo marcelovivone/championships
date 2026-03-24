@@ -13,12 +13,17 @@ export declare class ApiService {
         firstRow: Record<string, any>;
         matches: Record<string, any>[];
     }>;
-    fetchAndStore(league: number, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string): Promise<{
-        id: any;
-        fetched_at: any;
-    }>;
+    fetchAndStore(league: string, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string, seasonStatus?: boolean | string, isSeasonDefault?: boolean, sameYears?: boolean, scheduleType?: string, isLeagueDefault?: boolean, hasDivisions?: boolean, runInBackground?: boolean): Promise<void>;
     listTransitional(limit?: number): Promise<any[]>;
     getTransitional(id: number): Promise<any>;
+    private ensureRoundReviewTable;
+    getRoundReview(id: number): Promise<any>;
+    saveRoundReview(id: number, overrides: Record<string, number>): Promise<any>;
+    resolveRoundReview(id: number, overrides?: Record<string, number>): Promise<any>;
+    deleteRoundReview(id: number): Promise<{
+        deleted: boolean;
+    }>;
+    private getDraftRoundOverrides;
     deleteTransitional(id: number): Promise<{
         deleted: boolean;
         id: any;
@@ -53,13 +58,18 @@ export declare class ApiService {
                 date: any;
                 homeTeam: any;
                 awayTeam: any;
+                homeShortName: any;
+                awayShortName: any;
             };
             reviewMatches: {
                 id: string;
                 eventId: string;
                 date: any;
+                leagueLocalDate: string;
                 homeTeam: any;
                 awayTeam: any;
+                homeShortName: any;
+                awayShortName: any;
                 homeId: string;
                 awayId: string;
                 venueName: any;
@@ -81,6 +91,9 @@ export declare class ApiService {
                 missingMatches: number;
                 duplicateTeamIds: string[];
                 eventIds: string[];
+                startDate: string;
+                endDate: string;
+                dateRange: string;
                 status: string;
             }[];
             validationErrors: {
@@ -95,6 +108,8 @@ export declare class ApiService {
                 awayId: string;
                 homeName: any;
                 awayName: any;
+                homeShortName: any;
+                awayShortName: any;
             }[];
             roundAssignments: {
                 eventId: string;
@@ -117,6 +132,18 @@ export declare class ApiService {
         details?: undefined;
     } | {
         found: boolean;
+    } | {
+        isSubsequentLoad: boolean;
+        found: boolean;
+        reason: string;
+        columns?: undefined;
+        rows?: undefined;
+    } | {
+        isSubsequentLoad: boolean;
+        found: boolean;
+        columns: string[];
+        rows: any[];
+        reason?: undefined;
     }>;
     private parseTransitionalEspn;
     applyTransitional(id: number, options?: {
@@ -182,8 +209,17 @@ export declare class ApiService {
         dryRun?: undefined;
     }>;
     getTableColumns(tableName: string): Promise<any[]>;
-    createMatchDivisions(client: any, sportId: number, matchId: number, matchRow: Record<string, any>): Promise<{
+    createMatchDivisions(client: any, sportId: number, matchId: number, matchRow: Record<string, any>, flgHasDivisions?: boolean): Promise<{
         created: number;
+    }>;
+    private fetchEspnEventLinescores;
+    enrichMatchDivisionsFromEspn(sportName: string, leagueCode: string, matchesForEnrichment: Array<{
+        matchId: number;
+        originApiId: string;
+    }>, rateMs?: number): Promise<{
+        enriched: number;
+        skipped: number;
+        errors: number;
     }>;
     applyFirstRowToApp(id: number, options?: {
         sportId?: number;
@@ -239,133 +275,13 @@ export declare class ApiService {
         leagueId?: undefined;
         seasonId?: undefined;
     }>;
+    private extractLeagueMetadata;
+    private parseTransitionalEspnLightweight;
     applyAllRowsToApp(id: number, options?: {
         sportId?: number;
         leagueId?: number;
         seasonId?: number;
         dryRun?: boolean;
         roundOverrides?: Record<string, number>;
-    }): Promise<{
-        applied: number;
-        reason: any;
-        error: any;
-        details: any;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        reason: string;
-        error?: undefined;
-        details?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        reason: string;
-        details: {
-            applied: boolean;
-            reason: any;
-            error: any;
-            details: any;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            reason: string;
-            error?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            reason: string;
-            missing: string[];
-            logId: any;
-            error?: undefined;
-            details?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            countryId: number;
-            leagueId: number;
-            seasonId: number;
-            reason?: undefined;
-            error?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-        } | {
-            applied: boolean;
-            error: string;
-            reason?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        };
-        error?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        error: string;
-        rolledBack: boolean;
-        details: any;
-        reason?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        createdClubs: number;
-        createdRounds: number;
-        createdDivisions: number;
-        createdStandings: number;
-        clubsIncluded: string[];
-        dryRun: boolean;
-        reason?: undefined;
-        error?: undefined;
-        details?: undefined;
-        rolledBack?: undefined;
-    } | {
-        applied: number;
-        error: string;
-        details: any;
-        reason?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    }>;
+    }): Promise<any>;
 }

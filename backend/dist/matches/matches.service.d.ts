@@ -33,7 +33,7 @@ export declare class MatchesService {
         awayClubId: number;
         homeScore: number;
         awayScore: number;
-        espnApiId: string;
+        originApiId: string;
         updatedAt: Date;
     }>;
     update(id: number, updateMatchDto: UpdateMatchDto): Promise<{
@@ -50,12 +50,118 @@ export declare class MatchesService {
         date: Date;
         homeScore: number;
         awayScore: number;
-        espnApiId: string;
+        originApiId: string;
         createdAt: Date;
         updatedAt: Date;
     }>;
-    findByGroup(groupId: number): Promise<any>;
-    findBySportLeagueSeasonAndGroup(sportId: number, leagueId: number, seasonId: number, groupId: number | null): Promise<any>;
+    findByGroup(groupId: number): Promise<{
+        status: MatchStatus;
+        id: number;
+        sportId: number;
+        leagueId: number;
+        seasonId: number;
+        roundId: number;
+        groupId: number;
+        homeClubId: number;
+        awayClubId: number;
+        stadiumId: number;
+        date: Date;
+        homeScore: number;
+        awayScore: number;
+        createdAt: Date;
+        updatedAt: Date;
+        sport: {
+            id: number;
+            name: string;
+        };
+        league: {
+            id: number;
+            originalName: string;
+        };
+        season: {
+            id: number;
+            startYear: number;
+            endYear: number;
+        };
+        round: {
+            id: number;
+            roundNumber: number;
+        };
+        homeClub: {
+            id: number;
+            name: string;
+            shortName: string;
+            imageUrl: string;
+        };
+        awayClub: {
+            id: number;
+            name: string;
+            shortName: string;
+            imageUrl: string;
+        };
+        stadium: {
+            id: number;
+            name: string;
+        };
+        group: {
+            id: number;
+            name: string;
+        };
+    }[]>;
+    findBySportLeagueSeasonAndGroup(sportId: number, leagueId: number, seasonId: number, groupId: number | null): Promise<{
+        status: MatchStatus;
+        id: number;
+        sportId: number;
+        leagueId: number;
+        seasonId: number;
+        roundId: number;
+        groupId: number;
+        homeClubId: number;
+        awayClubId: number;
+        stadiumId: number;
+        date: Date;
+        homeScore: number;
+        awayScore: number;
+        createdAt: Date;
+        updatedAt: Date;
+        sport: {
+            id: number;
+            name: string;
+        };
+        league: {
+            id: number;
+            originalName: string;
+        };
+        season: {
+            id: number;
+            startYear: number;
+            endYear: number;
+        };
+        round: {
+            id: number;
+            roundNumber: number;
+        };
+        homeClub: {
+            id: number;
+            name: string;
+            shortName: string;
+            imageUrl: string;
+        };
+        awayClub: {
+            id: number;
+            name: string;
+            shortName: string;
+            imageUrl: string;
+        };
+        stadium: {
+            id: number;
+            name: string;
+        };
+        group: {
+            id: number;
+            name: string;
+        };
+    }[]>;
     findBySeasonAndRound(seasonId: number, roundId: number): Promise<any[]>;
     findBySeasonAndDate(seasonId: number, date: string): Promise<any[]>;
     updateScore(id: number, updateScoreDto: UpdateMatchScoreDto): Promise<{
@@ -72,7 +178,7 @@ export declare class MatchesService {
         status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         homeScore: number;
         awayScore: number;
-        espnApiId: string;
+        originApiId: string;
         createdAt: Date;
         updatedAt: Date;
     }>;
@@ -91,7 +197,7 @@ export declare class MatchesService {
         awayClubId: number;
         homeScore: number;
         awayScore: number;
-        espnApiId: string;
+        originApiId: string;
         updatedAt: Date;
     }>;
     private attachAvailableStadiums;

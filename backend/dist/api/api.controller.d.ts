@@ -13,17 +13,21 @@ export declare class ApiController {
         };
     }>;
     fetchAndStore(body: {
-        league: number;
+        league: string;
         season: number;
         sport?: number;
         origin?: string;
         startDate?: string;
         endDate?: string;
+        seasonStatus?: string;
+        isSeasonDefault?: boolean;
+        sameYears?: boolean;
+        scheduleType?: string;
+        isLeagueDefault?: boolean;
+        hasDivisions?: boolean;
+        runInBackground?: boolean;
     }): Promise<{
-        stored: {
-            id: any;
-            fetched_at: any;
-        };
+        stored: void;
     }>;
     listTransitional(limit?: string): Promise<{
         count: number;
@@ -43,10 +47,12 @@ export declare class ApiController {
         details: any;
         columns?: undefined;
         rows?: undefined;
+        isSubsequentLoad?: undefined;
     } | {
         found: boolean;
         columns: any;
         rows: any;
+        isSubsequentLoad: boolean;
         reason?: undefined;
         error?: undefined;
         details?: undefined;
@@ -59,6 +65,19 @@ export declare class ApiController {
         found: boolean;
         firstRow: Record<string, any>;
         matches: Record<string, any>[];
+    }>;
+    getRoundReview(id: number): Promise<{
+        found: boolean;
+        item: any;
+    }>;
+    patchRoundReview(id: number, body: {
+        overrides?: Record<string, number>;
+    }): Promise<{
+        success: boolean;
+        item: any;
+    }>;
+    deleteRoundReview(id: number): Promise<{
+        success: boolean;
     }>;
     applyFirstRow(id: number, body: {
         sportId?: number;
@@ -117,129 +136,7 @@ export declare class ApiController {
         sportId?: number;
         dryRun?: boolean;
         roundOverrides?: Record<string, number>;
-    }): Promise<{
-        applied: number;
-        reason: any;
-        error: any;
-        details: any;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        reason: string;
-        error?: undefined;
-        details?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        reason: string;
-        details: {
-            applied: boolean;
-            reason: any;
-            error: any;
-            details: any;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            reason: string;
-            error?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            reason: string;
-            missing: string[];
-            logId: any;
-            error?: undefined;
-            details?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        } | {
-            applied: boolean;
-            countryId: number;
-            leagueId: number;
-            seasonId: number;
-            reason?: undefined;
-            error?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-        } | {
-            applied: boolean;
-            error: string;
-            reason?: undefined;
-            details?: undefined;
-            missing?: undefined;
-            logId?: undefined;
-            countryId?: undefined;
-            leagueId?: undefined;
-            seasonId?: undefined;
-        };
-        error?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        error: string;
-        rolledBack: boolean;
-        details: any;
-        reason?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    } | {
-        applied: number;
-        createdClubs: number;
-        createdRounds: number;
-        createdDivisions: number;
-        createdStandings: number;
-        clubsIncluded: string[];
-        dryRun: boolean;
-        reason?: undefined;
-        error?: undefined;
-        details?: undefined;
-        rolledBack?: undefined;
-    } | {
-        applied: number;
-        error: string;
-        details: any;
-        reason?: undefined;
-        rolledBack?: undefined;
-        createdClubs?: undefined;
-        createdRounds?: undefined;
-        createdDivisions?: undefined;
-        createdStandings?: undefined;
-        clubsIncluded?: undefined;
-        dryRun?: undefined;
-    }>;
+    }): Promise<any>;
     loadTransitional(id: number, body: {
         dryRun?: boolean;
         targetTable?: string;

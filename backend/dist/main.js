@@ -37,6 +37,7 @@ async function bootstrap() {
     await app.listen(port);
     console.log(`✅ API running on http://localhost:${port}`);
     console.log(`📄 Swagger docs available at http://localhost:${port}/api`);
+    app.enableShutdownHooks();
 }
 bootstrap();
 //# sourceMappingURL=main.js.map

@@ -81,6 +81,7 @@ export declare class SeasonsService {
             hasOvertime: boolean;
             hasPenalties: boolean;
             flgDefault: boolean;
+            flgEspnApiPartialScores: boolean;
             imageUrl: string;
             createdAt: Date;
         };
@@ -138,6 +139,7 @@ export declare class SeasonsService {
     create(createSeasonDto: CreateSeasonDto): Promise<{
         id: number;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
         sportId: number;
         leagueId: number;
@@ -145,7 +147,6 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
-        flgEspnApiPartialScores: boolean;
     }>;
     update(id: number, updateSeasonDto: UpdateSeasonDto): Promise<{
         id: number;
@@ -174,6 +175,7 @@ export declare class SeasonsService {
     remove(id: number): Promise<{
         id: number;
         flgDefault: boolean;
+        flgEspnApiPartialScores: boolean;
         createdAt: Date;
         sportId: number;
         leagueId: number;
@@ -181,6 +183,5 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
-        flgEspnApiPartialScores: boolean;
     }>;
 }

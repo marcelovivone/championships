@@ -32,8 +32,7 @@ __decorate([
     (0, swagger_2.ApiProperty)({ example: 1902, description: 'Year the club was founded', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.ValidateIf)((object) => object.foundationYear !== undefined &&
-        object.foundationYear !== null &&
-        object.foundationYear !== ""),
+        object.foundationYear !== null),
     (0, class_validator_1.IsInt)({ message: 'Foundation year must be a valid integer' }),
     (0, class_validator_1.Min)(1800, { message: 'Foundation year must be 1800 or later' }),
     (0, class_validator_1.Max)(getCurrentYear(), { message: 'Foundation year cannot be in the future' }),
