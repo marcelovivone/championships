@@ -114,6 +114,41 @@ export class ApiController {
     return { success: !!result?.deleted };
   }
 
+  @Get('transitional/:id/entity-review')
+  async getEntityReview(@Param('id', ParseIntPipe) id: number) {
+    const review = await this.apiService.getEntityReview(id);
+    return { found: !!review, item: review };
+  }
+
+  @Patch('transitional/:id/entity-review')
+  async patchEntityReview(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { leagueMapping?: number | null, clubMappings?: Record<string, number>, stadiumMappings?: Record<string, number> },
+  ) {
+    const review = await this.apiService.saveEntityReview(
+      id, 
+      body?.leagueMapping ?? null, 
+      body?.clubMappings ?? {}, 
+      body?.stadiumMappings ?? {}
+    );
+    return { success: true, item: review };
+  }
+
+  @Delete('transitional/:id/entity-review')
+  async deleteEntityReview(@Param('id', ParseIntPipe) id: number) {
+    const result = await this.apiService.deleteEntityReview(id);
+    return { success: !!result?.deleted };
+  }
+
+  @Get('transitional/:id/entity-suggestions')
+  async getEntitySuggestions(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('sportId') sportId?: string,
+  ) {
+    const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined);
+    return result;
+  }
+
   @Post('transitional/:id/apply-first-row')
   async applyFirstRow(@Param('id', ParseIntPipe) id: number, @Body() body: { sportId?: number }) {
     const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });

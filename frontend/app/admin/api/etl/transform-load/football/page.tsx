@@ -88,6 +88,13 @@ export default function EtlPage() {
     const [expandedRoundDetails, setExpandedRoundDetails] = useState<Record<string, boolean>>({});
     const [targetColumns, setTargetColumns] = useState<string[] | null>(null);
     const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
+    const [leagueForReview, setLeagueForReview] = useState<any | null>(null);
+    const [leagueMapping, setLeagueMapping] = useState<number | null | undefined>(undefined);
+    const [clubsForReview, setClubsForReview] = useState<any[]>([]);
+    const [stadiumsForReview, setStadiumsForReview] = useState<any[]>([]);
+    const [clubMappings, setClubMappings] = useState<Record<string, string>>({});
+    const [stadiumMappings, setStadiumMappings] = useState<Record<string, string>>({});
+    const [pendingEntityReviewApplyId, setPendingEntityReviewApplyId] = useState<number | null>(null);
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
     const searchParams = useSearchParams();
     const exportJsonRef = useRef<HTMLButtonElement | null>(null);
@@ -188,15 +195,10 @@ export default function EtlPage() {
                 ? `?roundOverrides=${encodeURIComponent(JSON.stringify(overrides))}`
                 : '';
             const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${overridesParam}`);
-            console.log('Parse response:', pResp);
             const pJson = await pResp.json();
-            console.log('parse body:', pJson);
             // Backend wraps responses with { statusCode, success, data } via interceptor
             const payload = pJson?.data ?? pJson;
-            console.log('parse payload:', payload);
             if (payload?.found) {
-                console.log('Flattened rows:', payload.rows);
-                console.log('Columns:', payload.columns);
                 setParsedColumns(payload.columns || []);
                 setParsedRowsData(payload.rows || []);
                 setPendingStrays([]);
@@ -298,7 +300,7 @@ export default function EtlPage() {
         }, 200);
     };
 
-    const handleToDbTables = async (id: number, overridesArg?: Record<string, number>, previewRow?: any, forceDryRun = false) => {
+    const handleToDbTables = async (id: number, overridesArg?: Record<string, number>, previewRow?: any, forceDryRun = false, skipEntityReview = false) => {
         const effectiveOverrides = overridesArg ?? accumulatedOverrides;
         const isDryRun = forceDryRun || dryRun;
 
@@ -309,7 +311,7 @@ export default function EtlPage() {
 
         // Pre-check: parse the row to detect if round assignment input is needed before confirming.
         // Skip this entirely for subsequent loads — rounds already exist, no review needed.
-        if (!isSubsequentLoad) {
+        if (!isSubsequentLoad && !skipEntityReview) {
           try {
             const overridesParam = Object.keys(effectiveOverrides).length > 0
                 ? `?roundOverrides=${encodeURIComponent(JSON.stringify(effectiveOverrides))}`
@@ -344,6 +346,46 @@ export default function EtlPage() {
           } catch (e) {
             // If pre-check fails, proceed — the apply endpoint will surface the error
             console.warn('[ETL] pre-check parse failed, proceeding with apply', e);
+          }
+        }
+
+        // Pre-check: detect if entity (club/stadium) mapping is needed before confirming.
+        if (!isSubsequentLoad && !skipEntityReview) {
+          try {
+            
+            // Always check for entity conflicts - backend will use existing mappings if available
+            const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/entity-suggestions?sportId=36`);
+            const entityCheckJson = await entityCheckResp.json();
+            const entityData = entityCheckJson?.data ?? entityCheckJson;
+            
+            // If there are any entities that need review, show the UI
+            if (entityData?.needsReview && (entityData?.league || entityData?.clubs?.length || entityData?.stadiums?.length)) {
+                // Entity review needed — show the mapping UI
+                setLeagueForReview(entityData.league || null);
+                setLeagueMapping(undefined);
+                setClubsForReview(entityData.clubs || []);
+                setStadiumsForReview(entityData.stadiums || []);
+                // Initialize mappings state with no selections (undefined means user must choose)
+                setClubMappings(
+                    Object.fromEntries(
+                        (entityData.clubs || []).map((club: any) => [club.name, undefined])
+                    )
+                );
+                setStadiumMappings(
+                    Object.fromEntries(
+                        (entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])
+                    )
+                );
+                setPendingEntityReviewApplyId(id);
+                setViewMode('table');
+                setTimeout(() => {
+                    const el = document.querySelector('[data-entity-review-section]');
+                    if (el) (el as HTMLElement).scrollIntoView({ behavior: 'smooth' });
+                }, 200);
+                return;
+            }
+          } catch (e) {
+            console.warn('[ETL] entity pre-check failed, proceeding with apply', e);
           }
         }
 
@@ -437,9 +479,8 @@ export default function EtlPage() {
                 // Update local UI optimistically and then refresh from server
                 setRows((s) => s.map((r) => (r.id === id ? { ...r, status: true } : r)));
                 await reloadRows();
-                // Clear the parse/review UI and the selected row — the row is
-                // fully loaded, no need to show the large raw payload again.
-                setSelected(null);
+                // Clear the parse/review UI but keep selected row to show API metadata
+                // setSelected(null); // Keep this to show API Processed metadata
                 setParsedColumns(null);
                 setParsedRowsData(null);
                 setRoundReviewSummary([]);
@@ -448,6 +489,7 @@ export default function EtlPage() {
                 setStrayInputs({});
                 setPendingApplyId(null);
                 setExpandedRoundDetails({});
+                setIsSubsequentLoad(false); // Reset for next load
             }
         } catch (e) {
             console.error(e);
@@ -455,6 +497,7 @@ export default function EtlPage() {
             if (!forceDryRun) {
                 alert(`Operation failed: ${String(e)}`);
             }
+            setIsSubsequentLoad(false); // Reset on error
         } finally {
             setRunningLoad(false);
         }
@@ -690,15 +733,15 @@ export default function EtlPage() {
             </div>
 
             <section className="mb-6">
-                <div className="flex justify-between items-center mb-2">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-2">
                     <h2 className="text-lg font-semibold">Available API Loads</h2>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <label className="inline-flex items-center text-sm mr-2">
                             <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mr-2" />
                             Dry run
                         </label>
-                        <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
-                        <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
+                        <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm whitespace-nowrap" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
+                        <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm whitespace-nowrap" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
                     </div>
                 </div>
                 {/* slice rows for pagination */}
@@ -772,11 +815,11 @@ export default function EtlPage() {
 
                 {/* Pagination Controls */}
                 {total > limit && (
-                    <div className="mt-4 flex items-center justify-between bg-white px-4 py-3 rounded-lg shadow">
+                    <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white px-4 py-3 rounded-lg shadow">
                         <div className="text-sm text-gray-700">
                             Showing <span className="font-medium">{(page - 1) * limit + 1}</span> to <span className="font-medium">{Math.min(page * limit, total)}</span> of <span className="font-medium">{total}</span> results
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex flex-wrap gap-2 items-center">
                             <button
                                 onClick={() => { setPage(1); }}
                                 disabled={page === 1}
@@ -1116,6 +1159,275 @@ export default function EtlPage() {
                                     }}
                                 >
                                     {pendingApplyId !== null ? 'Process current assignments and apply' : 'Process current assignments'}
+                                </button>
+                            </div>
+                        )}
+                        {(leagueForReview || clubsForReview.length > 0 || stadiumsForReview.length > 0) && (
+                            <div data-entity-review-section className="mb-4 rounded border border-purple-300 bg-purple-50 p-4 text-sm text-purple-950">
+                                <div className="mb-2 text-base font-semibold">Entity Review Required</div>
+                                <p className="mb-4 max-w-5xl">
+                                    {leagueForReview 
+                                        ? 'The league in this data was not found in the database. Please select an existing league to map this data to.'
+                                        : 'Some clubs or stadiums in this data are not found in the database. You can choose to map them to existing entities or create new ones. Review each item and make your selection below.'
+                                    }
+                                </p>
+
+                                {leagueForReview && (
+                                    <div className="mb-4 overflow-auto rounded border bg-white">
+                                        <div className="border-b bg-purple-100 px-3 py-2 font-medium">
+                                            League Mapping Required
+                                        </div>
+                                        <div className="p-3">
+                                            <div className="mb-2 font-medium text-purple-900">
+                                                Incoming League: {leagueForReview.incomingName}
+                                            </div>
+                                            <div className="mb-3 text-xs text-gray-600">
+                                                Select an existing league to map to, or create a new league:
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-4 bg-gray-50 border p-3 rounded text-sm">
+                                                <div className="flex items-baseline gap-3">
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Select Existing League:
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-baseline gap-3">
+                                                    <select
+                                                        className="w-full rounded border border-purple-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                                                        value={leagueMapping === undefined ? '' : (leagueMapping === null ? '' : String(leagueMapping))}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (val === '') setLeagueMapping(undefined);
+                                                            else setLeagueMapping(Number(val));
+                                                        }}
+                                                    >
+                                                        <option value="">-- Select a league --</option>
+                                                        {leagueForReview.suggestions.map((suggestion: any) => (
+                                                            <option key={suggestion.id} value={suggestion.id}>
+                                                                {suggestion.originalName}
+                                                                {suggestion.secondaryName && ` (${suggestion.secondaryName})`}
+                                                                {' — ID: '}
+                                                                {suggestion.id}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="flex items-baseline gap-3">
+                                                    <span className="ml-3">-</span><span>OR</span><span className="mr-3">-</span>
+                                                </div>
+                                                <div className="flex items-baseline">
+                                                    <button
+                                                        type="button"
+                                                        className={`w-full rounded px-4 py-2 text-sm font-medium transition-colors ${
+                                                            leagueMapping === null
+                                                                ? 'bg-green-600 text-white'
+                                                                : 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100'
+                                                        }`}
+                                                        onClick={() => setLeagueMapping(null)}
+                                                    >
+                                                        {leagueMapping === null ? '✓ Creating New League' : '✨ Create New League'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {clubsForReview.length > 0 && (
+                                    <div className="mb-4 overflow-auto rounded border bg-white">
+                                        <div className="border-b bg-purple-100 px-3 py-2 font-medium">
+                                            Clubs for review ({clubsForReview.length})
+                                        </div>
+                                        <div className="p-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            {clubsForReview.map((club: any) => (
+                                                <div key={club.name} className="border border-gray-300 rounded bg-white p-3 shadow-sm min-w-0">
+                                                    <div className="mb-2 font-medium text-purple-900">
+                                                        Incoming: {club.name}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600 mb-2">
+                                                        {club.suggestions.length > 0 
+                                                            ? `${club.suggestions.length} existing clubs available - select one or create new:`
+                                                            : 'No existing clubs found - you can create a new one:'}
+                                                    </div>
+                                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                        {club.suggestions.length > 0 && (
+                                                            <select
+                                                                className="flex-1 rounded border border-gray-300 p-2 text-sm"
+                                                                value={clubMappings[club.name] === null ? '' : (clubMappings[club.name] || '')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setClubMappings(prev => ({ 
+                                                                        ...prev, 
+                                                                        [club.name]: val === '' ? undefined : parseInt(val) 
+                                                                    }));
+                                                                }}
+                                                            >
+                                                                <option value="">-- Select a club --</option>
+                                                                {club.suggestions.map((suggestion: any) => (
+                                                                    <option key={suggestion.id} value={suggestion.id}>
+                                                                        {suggestion.shortName || suggestion.name} (ID: {suggestion.id})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        )}
+                                                        <div className="hidden sm:flex items-center gap-1 flex-shrink-0 text-gray-400">
+                                                            <span>-</span><span>OR</span><span>-</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className={`sm:whitespace-nowrap rounded px-3 py-2 text-sm font-medium text-center ${
+                                                                clubMappings[club.name] === null
+                                                                    ? 'bg-green-600 text-white'
+                                                                    : 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100'
+                                                            }`}
+                                                            onClick={() => setClubMappings(prev => ({ ...prev, [club.name]: null }))}
+                                                        >
+                                                            {clubMappings[club.name] === null ? '✓ Creating New Club' : '✨ Create New Club'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {stadiumsForReview.length > 0 && (
+                                    <div className="mb-4 overflow-auto rounded border bg-white">
+                                        <div className="border-b bg-purple-100 px-3 py-2 font-medium">
+                                            Stadiums for review ({stadiumsForReview.length})
+                                        </div>
+                                        <div className="p-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                            {stadiumsForReview.map((stadium: any) => (
+                                                <div key={stadium.name} className="border border-gray-300 rounded bg-white p-3 shadow-sm min-w-0">
+                                                    <div className="mb-2 font-medium text-purple-900">
+                                                        Incoming: {stadium.name} {stadium.city ? `(${stadium.city})` : ''}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600 mb-2">
+                                                        {stadium.suggestions.length > 0 
+                                                            ? `${stadium.suggestions.length} stadiums from country - select one or create new:`
+                                                            : 'No stadiums found in country - you can create a new one:'}
+                                                    </div>
+                                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                        {stadium.suggestions.length > 0 && (
+                                                            <select
+                                                                className="flex-1 min-w-0 rounded border border-gray-300 p-2 text-sm"
+                                                                value={stadiumMappings[stadium.name] === null ? '' : (stadiumMappings[stadium.name] || '')}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value;
+                                                                    setStadiumMappings(prev => ({ 
+                                                                        ...prev, 
+                                                                        [stadium.name]: val === '' ? undefined : parseInt(val) 
+                                                                    }));
+                                                                }}
+                                                            >
+                                                                <option value="">-- Select a stadium --</option>
+                                                                {stadium.suggestions.map((suggestion: any) => (
+                                                                    <option key={suggestion.id} value={suggestion.id}>
+                                                                        {suggestion.name} - {suggestion.city || 'Unknown'} (Cap: {suggestion.capacity || 'N/A'}, ID: {suggestion.id})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        )}
+                                                        <div className="hidden sm:flex items-center gap-1 flex-shrink-0 text-gray-400">
+                                                            <span>-</span><span>OR</span><span>-</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className={`sm:whitespace-nowrap rounded px-3 py-2 text-sm font-medium text-center ${
+                                                                stadiumMappings[stadium.name] === null
+                                                                    ? 'bg-green-600 text-white'
+                                                                    : 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100'
+                                                            }`}
+                                                            onClick={() => setStadiumMappings(prev => ({ ...prev, [stadium.name]: null }))}
+                                                        >
+                                                            {stadiumMappings[stadium.name] === null ? '✓ Creating New Stadium' : '✨ Create New Stadium'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <button
+                                    className="mt-1 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                                    disabled={
+                                        (leagueForReview && leagueMapping === undefined) ||
+                                        clubsForReview.some((club: any) => clubMappings[club.name] === undefined) ||
+                                        stadiumsForReview.some((stadium: any) => stadiumMappings[stadium.name] === undefined)
+                                    }
+                                    onClick={async () => {
+                                        try {
+                                            const response = await fetch(`${API_BASE}/v1/api/transitional/${selected.id}/entity-review`, {
+                                                method: 'PATCH',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ 
+                                                    leagueMapping: leagueMapping === undefined ? null : leagueMapping,
+                                                    clubMappings, 
+                                                    stadiumMappings 
+                                                }),
+                                            });
+                                            const result = await response.json();
+                                        } catch (e) {
+                                            alert('Failed to save entity mappings. Check console for details.');
+                                            return;
+                                        }
+                                        
+                                        // Check if we only selected a league (no clubs/stadiums yet)
+                                        const hasClubsOrStadiums = clubsForReview.length > 0 || stadiumsForReview.length > 0;
+                                        
+                                        if (pendingEntityReviewApplyId !== null) {
+                                            const applyId = pendingEntityReviewApplyId;
+                                            
+                                            if (leagueForReview && !hasClubsOrStadiums) {
+                                                // We just mapped the league - now check for clubs/stadiums
+                                                setLeagueForReview(null);
+                                                setLeagueMapping(undefined);
+                                                
+                                                try {
+                                                    const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?sportId=36`);
+                                                    const entityCheckJson = await entityCheckResp.json();
+                                                    const entityData = entityCheckJson?.data ?? entityCheckJson;
+                                                    
+                                                    if (entityData?.clubs?.length > 0 || entityData?.stadiums?.length > 0) {
+                                                        setClubsForReview(entityData.clubs || []);
+                                                        setStadiumsForReview(entityData.stadiums || []);
+                                                        // Initialize mappings state with no selections (undefined means user must choose)
+                                                        setClubMappings(
+                                                            Object.fromEntries(
+                                                                (entityData.clubs || []).map((club: any) => [club.name, undefined])
+                                                            )
+                                                        );
+                                                        setStadiumMappings(
+                                                            Object.fromEntries(
+                                                                (entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])
+                                                            )
+                                                        );
+                                                        // Keep pending ID, don't proceed yet
+                                                        return;
+                                                    }
+                                                } catch (e) {
+                                                    // console.warn('[ETL] Second entity check failed:', e);
+                                                }
+                                            }
+                                            
+                                            // Clear state and proceed to load
+                                            setPendingEntityReviewApplyId(null);
+                                            setLeagueForReview(null);
+                                            setLeagueMapping(undefined);
+                                            setClubsForReview([]);
+                                            setStadiumsForReview([]);
+                                            setClubMappings({});
+                                            setStadiumMappings({});
+                                            // Pass skipEntityReview=true to skip checks since we just completed entity review
+                                            handleToDbTables(applyId, undefined, undefined, false, true);
+                                        }
+                                    }}
+                                >
+                                    {pendingEntityReviewApplyId !== null 
+                                        ? (leagueForReview && clubsForReview.length === 0 && stadiumsForReview.length === 0
+                                            ? 'Continue to check clubs/stadiums'
+                                            : 'Apply mappings and proceed')
+                                        : 'Save mappings'}
                                 </button>
                             </div>
                         )}

@@ -3,7 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-03-21
+> **Last updated**: 2026-03-24
 
 ---
 
@@ -25,6 +25,7 @@
    - 5.4 [Upsert logic](#54-upsert-logic)
    - 5.5 [Standings calculation](#55-standings-calculation)
    - 5.6 [Cascade recalculation for future rounds](#56-cascade-recalculation-for-future-rounds)
+   - 5.7 [Entity Review and Deduplication](#57-entity-review-and-deduplication)
 6. [Database Tables Involved](#6-database-tables-involved)
 7. [Frontend Pages](#7-frontend-pages)
 8. [Key Decisions & Edge Cases](#8-key-decisions--edge-cases)
@@ -356,6 +357,304 @@ ORDER BY r.round_number DESC LIMIT 1
 
 This cascades correctly because future rows are processed in ascending order — each recalculated row becomes the base for the next.
 
+### 5.7 Entity Review and Deduplication
+
+**Purpose**: Before loading data into the application tables, the system detects potential entity conflicts (leagues, clubs, stadiums) between the incoming API data and existing database records. This prevents duplicate entities from being created when the same real-world entity appears under slightly different names or in data from different API origins.
+
+**Triggered**: Automatically before the first load for a transitional row, unless explicitly skipped (e.g., after the user has completed the review workflow).
+
+#### 5.7.1 Overview and workflow
+
+Entity review is a **two-stage interactive process**:
+
+1. **Stage 1 — League selection**: The user must first review and resolve the league entity
+2. **Stage 2 — Clubs & Stadiums**: After the league is resolved, the system uses the league's `country_id` to filter and present club and stadium suggestions from the same country
+
+**State encoding pattern**: For each entity needing review, the frontend maintains a state value:
+- `undefined` = User must make a selection (validation blocks proceed button)
+- `null` = User chose "Create New Entity" (tells backend to insert new record)
+- `number` = User selected an existing entity ID (tells backend to map/link to that existing record)
+
+**Skip mechanism**: The `skipEntityReview` parameter is passed to `handleToDbTables()` after the user completes the entity review workflow. This prevents infinite loops where the system would re-check for conflicts after the user has already resolved them all.
+
+#### 5.7.2 Backend infrastructure
+
+**Database table**: `api_transitional_entity_review`
+
+```sql
+CREATE TABLE IF NOT EXISTS api_transitional_entity_review (
+    transitional_id INTEGER PRIMARY KEY REFERENCES api_transitional(id) ON DELETE CASCADE,
+    league_mapping INTEGER NULL,           -- NULL = create new, number = map to existing league_id
+    club_mappings JSONB DEFAULT '{}',      -- { "Club Name": existingClubId | null, ... }
+    stadium_mappings JSONB DEFAULT '{}',   -- { "Stadium Name": existingStadiumId | null, ... }
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Key methods** (in `backend/src/api/api.service.ts`):
+
+- **`ensureEntityReviewTable()`** (lines ~440-454): Creates the review table if it doesn't exist
+- **`getDraftEntityMappings(id)`** (lines ~456-463): Retrieves saved mappings for a transitional row
+  - Returns: `{ league: number|null, clubs: Record<string, number|null>, stadiums: Record<string, number|null> }`
+  - Returns empty structures if no review exists yet
+  
+- **`detectEntitiesForReview(id, sportId)`** (lines ~465-735): Core detection algorithm
+  - Returns: `{ found: true, needsReview: boolean, league?, clubs[], stadiums[] }`
+  - Each entity includes list of suggestions with scoring
+  
+- **`saveEntityReview(id, mappings)`** (lines ~737-771): Persists user selections
+  - Accepts partial updates (e.g., just league, or just clubs)
+  - Uses `ON CONFLICT UPDATE` to merge with existing mappings
+  
+- **`parseTransitional(id, roundOverrides?)`** (line ~775+): Modified to use mappings during load
+  - Passes mappings to `findOrCreateClub()` and `ensureStadium()` methods
+  
+**API endpoints** (in `backend/src/api/api.controller.ts`):
+- `GET /v1/api/transitional/:id/entity-suggestions?sportId=:sportId` → calls `detectEntitiesForReview()`
+- `GET /v1/api/transitional/:id/entity-review` → calls `getDraftEntityMappings()`
+- `PATCH /v1/api/transitional/:id/entity-review` → calls `saveEntityReview()`
+- `DELETE /v1/api/transitional/:id/entity-review` → removes review record after successful load
+
+#### 5.7.3 Detection algorithm — League
+
+**Query strategy** (cascading fallback):
+
+1. **Exact match**: `WHERE (original_name = $1 OR secondary_name = $1) AND sport_id = $2`
+2. **Fuzzy match** (if exact fails): `WHERE (original_name ILIKE '%' || $1 || '%' OR secondary_name ILIKE '%' || $1 || '%') AND sport_id = $2 LIMIT 20`
+3. **All leagues fallback** (if fuzzy returns nothing): `WHERE sport_id = $1 LIMIT 50`
+
+**Scoring**: Each suggestion includes a similarity score (0-1) calculated by:
+```typescript
+const score = Math.max(
+  stringSimilarity(incomingName, candidate.original_name),
+  stringSimilarity(incomingName, candidate.secondary_name || '')
+);
+```
+
+**Decision**: `needsReview = true` if:
+- No exact match found, OR
+- Multiple matches with the same top score
+
+**Special handling**: Once the league is mapped, its `country_id` is used to filter clubs and stadiums in subsequent detection calls.
+
+#### 5.7.4 Detection algorithm — Clubs
+
+**Query strategy** (cascading fallback with country filtering):
+
+1. **Exact match**: `WHERE (name = $1 OR short_name = $1) AND country_id = $2`
+2. **Fuzzy match** (if exact fails): `WHERE (name ILIKE '%' || $1 || '%' OR short_name ILIKE '%' || $1 || '%') AND country_id = $2 LIMIT 10`
+3. **All from country fallback**: `WHERE country_id = $1 LIMIT 100`
+
+**Scoring**: Similarity calculated against both `name` and `short_name` fields
+
+**Skipping already-mapped clubs**: Before querying, checks if the club name exists in `clubMappings` — if found, skips detection for that club
+
+**Key difference from league**: Uses the **league's country** for filtering (not all sports clubs globally), which dramatically reduces false positives
+
+#### 5.7.5 Detection algorithm — Stadiums
+
+**Query strategy** (NO fuzzy matching):
+
+1. **Exact match**: 
+```sql
+SELECT s.*, c.country_id, ci.name as city_name
+FROM stadiums s
+JOIN cities ci ON ci.id = s.city_id
+JOIN countries c ON c.id = ci.country_id
+WHERE s.name = $1 AND c.country_id = $2 AND s.sport_id = $3
+```
+
+2. **All from country** (if exact fails):
+```sql
+SELECT s.*, c.country_id, ci.name as city_name
+FROM stadiums s
+JOIN cities ci ON ci.id = s.city_id
+JOIN countries c ON c.id = ci.country_id
+WHERE c.country_id = $1 AND s.sport_id = $2
+LIMIT 100
+```
+
+**Critical schema note**: The `stadiums` table does NOT have a direct `country_id` column. All stadium queries must JOIN through the `cities` table to access `cities.country_id`. Using `s.country_id` in queries will cause a PostgreSQL error.
+
+**No fuzzy matching**: User feedback indicated that fuzzy matching for stadiums was producing too many irrelevant suggestions. The current implementation only shows exact matches or the full country list as a dropdown.
+
+**Skipping already-mapped stadiums**: Same logic as clubs — checks `stadiumMappings` before querying
+
+#### 5.7.6 Frontend workflow
+
+**Component**: `frontend/app/admin/api/etl/transform-load/football/page.tsx`
+
+**State management** (lines ~86-96):
+```typescript
+const [leagueForReview, setLeagueForReview] = useState<any>(null);
+const [leagueMapping, setLeagueMapping] = useState<number | null | undefined>(undefined);
+const [clubsForReview, setClubsForReview] = useState<any[]>([]);
+const [clubMappings, setClubMappings] = useState<Record<string, number | null | undefined>>({});
+const [stadiumsForReview, setStadiumsForReview] = useState<any[]>([]);
+const [stadiumMappings, setStadiumMappings] = useState<Record<string, number | null | undefined>>({});
+const [pendingEntityReviewApplyId, setPendingEntityReviewApplyId] = useState<number | null>(null);
+```
+
+**Trigger condition** (lines ~358-402):
+```typescript
+if (!isSubsequentLoad && !skipEntityReview) {
+  const suggResponse = await fetch(`/v1/api/transitional/${id}/entity-suggestions?sportId=${sportId}`);
+  const suggData = await suggResponse.json();
+  
+  if (suggData.needsReview && (suggData.league || suggData.clubs?.length || suggData.stadiums?.length)) {
+    // Show entity review UI
+    setPendingEntityReviewApplyId(id);
+    // Initialize all mappings to undefined (forces user to choose)
+    if (suggData.league) setLeagueMapping(undefined);
+    if (suggData.clubs) {
+      const clubMap: Record<string, undefined> = {};
+      suggData.clubs.forEach(c => { clubMap[c.name] = undefined; });
+      setClubMappings(clubMap);
+    }
+    // ... similar for stadiums
+    return; // Block load process until user resolves
+  }
+}
+```
+
+**Two-stage detection**: After the user selects a league mapping and clicks "Apply & Continue":
+
+1. Frontend sends `PATCH /entity-review` with `{ leagueMapping }`
+2. Backend saves the league mapping
+3. Frontend immediately calls `GET /entity-suggestions` again
+4. Backend uses the saved `leagueMapping` to determine `country_id` and filter clubs/stadiums
+5. If clubs/stadiums are found, frontend shows Stage 2 UI
+6. If not, frontend proceeds directly to load with `skipEntityReview=true`
+
+#### 5.7.7 Frontend UI components
+
+**League selection UI** (lines ~1182-1232):
+- Displays incoming league name
+- Dropdown with suggestions (if any)
+- "Create New League" button (always visible)
+- Horizontal layout with "OR" separator
+
+**Club selection UI** (lines ~1248-1300):
+- **Responsive grid**: `grid-cols-1 lg:grid-cols-2` (1 column on mobile, 2 on large screens)
+- Each club card shows:
+  - Incoming club name (bold)
+  - Count message: "X existing club(s) found from [Country]"
+  - Dropdown (only shown if suggestions exist)
+  - "Create New Club" button (always visible, even if dropdown is shown)
+- Controls layout: `flex-col sm:flex-row` — vertical stack on mobile, horizontal on desktop
+- OR separator: `hidden sm:flex` — only visible on larger screens
+- Button styling: `sm:whitespace-nowrap text-center` for responsive wrapping
+
+**Stadium selection UI** (lines ~1305-1357):
+- Same responsive pattern as clubs
+- Additional display: city name from incoming data
+- Count message: "X existing stadium(s) found from [Country]"
+
+**Apply button** (lines ~1360-1445):
+- **Disabled when**: `leagueMapping === undefined` OR any club mapping `=== undefined` OR any stadium mapping `=== undefined`
+- **Dynamic button text**:
+  - If only league selected (no clubs/stadiums in UI yet): "Continue to check clubs/stadiums"
+  - If clubs/stadiums present: "Apply mappings and proceed to load"
+- **On click handler**:
+  1. Saves all mappings via `PATCH /entity-review`
+  2. If only league was selected (Stage 1 completion):
+     - Re-calls `/entity-suggestions` to get clubs/stadiums
+     - If found, populates Stage 2 UI and returns (stays on review screen)
+     - If none found, proceeds to load
+  3. If clubs/stadiums were present (Stage 2 completion):
+     - Calls `handleToDbTables(id, undefined, undefined, false, true)` with `skipEntityReview=true`
+  4. Clears entity review state
+
+#### 5.7.8 Integration with load process
+
+**Modified signature** (line ~308):
+```typescript
+const handleToDbTables = async (
+  id: number,
+  selectedRoundOverrides?: any,
+  roundReviewDrafts?: any,
+  dryRun = false,
+  skipEntityReview = false  // NEW PARAMETER
+) => { ... }
+```
+
+**Check condition** (line ~358):
+```typescript
+if (!isSubsequentLoad && !skipEntityReview) {
+  // Run entity detection
+}
+```
+
+**Skip scenarios**:
+- `isSubsequentLoad = true`: Subsequent loads skip entity review (entity mappings already resolved in first load)
+- `skipEntityReview = true`: Explicitly passed after user completes entity review, prevents infinite loop
+- Round review override present: If user is re-parsing with round overrides, skip entity review (already done)
+
+**After successful load** (lines ~493-504):
+- Clears entity review state (review UI, mappings)
+- **Important**: `setSelected(null)` is commented out to preserve API metadata display (Origin, League, Season, Fetched)
+- Calls `DELETE /entity-review` to clean up saved mappings
+
+#### 5.7.9 Usage during entity creation
+
+When the load process encounters clubs and stadiums, it checks the saved mappings:
+
+**Club handling** (in `findOrCreateClub()`):
+```typescript
+if (clubMappings && clubMappings[clubName] !== undefined) {
+  if (clubMappings[clubName] === null) {
+    // User chose "Create New Club" → proceed with INSERT
+  } else {
+    // User selected existing club ID → return that ID instead of creating
+    return clubMappings[clubName];
+  }
+}
+// Default fallback: fuzzy lookup and create if not found
+```
+
+**Stadium handling** (in `ensureStadium()`):
+```typescript
+if (stadiumMappings && stadiumMappings[stadiumName] !== undefined) {
+  if (stadiumMappings[stadiumName] === null) {
+    // User chose "Create New Stadium"
+  } else {
+    // User selected existing stadium ID
+    return stadiumMappings[stadiumName];
+  }
+}
+// Default fallback: exact lookup and create if not found
+```
+
+**League handling**: Applied during `applyFirstRowToApp()` when upserting the league record
+
+#### 5.7.10 Responsive design considerations
+
+The entity review UI follows the project's mobile-first responsive design:
+
+**Breakpoints used**:
+- **`sm:` (640px)**: Controls layout (flex-col → flex-row), OR separator visibility, button text wrapping
+- **`lg:` (1024px)**: Grid columns (1 → 2), card layout width
+
+**Layout patterns**:
+- Header section: `flex-col sm:flex-row gap-2 sm:gap-4`
+- Pagination controls: `flex-col sm:flex-row`
+- Entity cards grid: `grid-cols-1 lg:grid-cols-2 gap-4`
+- Card controls: `flex-col sm:flex-row items-start sm:items-center`
+- Buttons: `min-w-0 flex-shrink-0 sm:whitespace-nowrap` to prevent overflow
+
+**Testing verified**: Layout adapts correctly from mobile (320px) through tablet (768px) to desktop (1920px+)
+
+#### 5.7.11 Common scenarios and outcomes
+
+| Scenario | League decision | Club/Stadium decisions | Result |
+|----------|----------------|----------------------|--------|
+| New competition from new country | Create new league | Create all new clubs/stadiums | All entities inserted fresh |
+| Same competition, different API origin | Map to existing league | Mix of map to existing + create new | Avoids duplicate league, selectively reuses known clubs |
+| Subsequent load (same season) | (skipped) | (skipped) | Entities already resolved, fast-path load |
+| Different season, same league | Map to existing league | Map to existing clubs (if same teams) | Reuses league and clubs, new season_clubs bridges created |
+| Exact match for all entities | (auto-resolved) | (auto-resolved) | If exact matches found with high confidence, may skip review entirely |
+
 ---
 
 ## 6. Database Tables Involved
@@ -364,6 +663,7 @@ This cascades correctly because future rows are processed in ascending order —
 | Table | Purpose |
 |-------|---------|
 | `api_transitional` | Raw API response storage. Columns: `id, league, season, sport, origin, source_url, payload (JSONB), status, fetched_at` |
+| `api_transitional_entity_review` | Entity deduplication mappings per transitional row. Columns: `transitional_id (PK), league_mapping, club_mappings (JSONB), stadium_mappings (JSONB)` |
 | `api_transitional_round_review` | Persisted draft round overrides per transitional row |
 | `api_transitional_audit` | Audit trail of apply operations (dry-run or real) |
 | `api_import_log` | Error/diagnostic log for failed imports |
@@ -401,15 +701,23 @@ This cascades correctly because future rows are processed in ascending order —
   - 🗑️ Delete
 - **Dry Run checkbox**: Above the table, controls whether T&L runs in dry-run mode
 - **View modes**: Table / JSON toggle
+- **Entity Review section** (shown when entity conflicts detected):
+  - **Stage 1 — League**: Dropdown with suggestions + "Create New League" button
+  - **Stage 2 — Clubs & Stadiums**: After league resolved, shows:
+    - Responsive grid (1 column mobile, 2 columns lg+ screens)
+    - Each entity card with incoming name, count message, optional dropdown, "Create New" button
+    - Controls adapt: vertical on mobile (`flex-col`), horizontal on desktop (`sm:flex-row`)
+  - Apply button: Disabled until all selections made, dynamic text based on workflow stage
+  - Two-stage workflow: League first → then clubs/stadiums filtered by league's country
 - **Round Review section** (shown when `needs_round_review`):
   - Round Summary table (collapsible per round)
   - Full match list with editable round assignment inputs
   - Re-parse button to apply manual overrides
-- **`isSubsequentLoad` behavior**: When detected, skips the round review UI entirely and goes straight to loading
+- **`isSubsequentLoad` behavior**: When detected, skips round review and entity review entirely and goes straight to loading
 
 ### Frontend logic for subsequent loads
 1. `loadRow()` receives `isSubsequentLoad: true` from parse response → stores in state
-2. `handleToDbTables()` checks `isSubsequentLoad` → if true, skips the pre-check parse (which would show round review) and directly calls `apply-all-rows`
+2. `handleToDbTables()` checks `isSubsequentLoad` → if true, skips pre-check parse and entity review, directly calls `apply-all-rows`
 3. `handleClearResults()` and `handleSelect()` reset `isSubsequentLoad`
 
 ---

@@ -377,6 +377,354 @@ export class ApiService {
         }
     }
 
+    private async ensureEntityReviewTable(pool: Pool) {
+        await pool.query(`
+      CREATE TABLE IF NOT EXISTS api_transitional_entity_review (
+        id SERIAL PRIMARY KEY,
+        transitional_id INTEGER UNIQUE NOT NULL,
+        league_mapping INTEGER NULL,
+        club_mappings JSONB NOT NULL DEFAULT '{}'::jsonb,
+        stadium_mappings JSONB NOT NULL DEFAULT '{}'::jsonb,
+        status TEXT NOT NULL DEFAULT 'draft',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now(),
+        resolved_at TIMESTAMPTZ NULL
+      );
+    `);
+        // Add league_mapping column if it doesn't exist (for existing tables)
+        await pool.query(`
+      ALTER TABLE api_transitional_entity_review 
+      ADD COLUMN IF NOT EXISTS league_mapping INTEGER NULL;
+    `);
+    }
+
+    async getEntityReview(id: number) {
+        if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        try {
+            await this.ensureEntityReviewTable(pool);
+            const res = await pool.query(
+                `SELECT * FROM api_transitional_entity_review WHERE transitional_id = $1 ORDER BY id DESC LIMIT 1`,
+                [id],
+            );
+            return res.rows[0] || null;
+        } finally {
+            await pool.end();
+        }
+    }
+
+    async saveEntityReview(id: number, leagueMapping: number | null, clubMappings: Record<string, number>, stadiumMappings: Record<string, number>) {
+        if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        try {
+            await this.ensureEntityReviewTable(pool);
+            const normalizedClubMappings = Object.fromEntries(
+                Object.entries(clubMappings || {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
+            );
+            const normalizedStadiumMappings = Object.fromEntries(
+                Object.entries(stadiumMappings || {}).filter(([, value]) => Number.isFinite(Number(value))).map(([key, value]) => [key, Number(value)]),
+            );
+            const res = await pool.query(
+                `INSERT INTO api_transitional_entity_review (transitional_id, league_mapping, club_mappings, stadium_mappings, status, updated_at, resolved_at)
+         VALUES ($1, $2, $3, $4, 'draft', now(), NULL)
+         ON CONFLICT (transitional_id)
+         DO UPDATE SET league_mapping = EXCLUDED.league_mapping, club_mappings = EXCLUDED.club_mappings, stadium_mappings = EXCLUDED.stadium_mappings, status = 'draft', updated_at = now(), resolved_at = NULL
+         RETURNING *`,
+                [id, leagueMapping, normalizedClubMappings, normalizedStadiumMappings],
+            );
+            return res.rows[0] || null;
+        } finally {
+            await pool.end();
+        }
+    }
+
+    async deleteEntityReview(id: number) {
+        if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        try {
+            await this.ensureEntityReviewTable(pool);
+            const res = await pool.query(
+                `DELETE FROM api_transitional_entity_review WHERE transitional_id = $1 RETURNING transitional_id`,
+                [id],
+            );
+            return { deleted: !!res.rows[0] };
+        } finally {
+            await pool.end();
+        }
+    }
+
+    private async getDraftEntityMappings(id: number): Promise<{ league: number | null; clubs: Record<string, number>; stadiums: Record<string, number> }> {
+        const review = await this.getEntityReview(id);
+        return {
+            league: review?.league_mapping || null,
+            clubs: review?.club_mappings || {},
+            stadiums: review?.stadium_mappings || {},
+        };
+    }
+
+    async detectEntitiesForReview(id: number, sportId?: number) {
+        if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
+        const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+        try {
+            // Check if there's an existing league mapping first
+            let existingMappings = { league: null, clubs: {}, stadiums: {} };
+            try {
+                existingMappings = await this.getDraftEntityMappings(id);
+            } catch (e) {
+                console.warn('[ETL Backend] Failed to get existing mappings, using empty:', e);
+            }
+            
+            let leagueCountryId = null;
+            let leagueAlreadyMapped = false;
+            
+            if (existingMappings.league !== null) {
+                // User has already selected a league mapping - use it to check clubs/stadiums
+                const mappedLeagueRes = await pool.query(
+                    `SELECT id, country_id FROM leagues WHERE id = $1 LIMIT 1`,
+                    [existingMappings.league],
+                );
+                if (mappedLeagueRes.rows.length > 0) {
+                    leagueCountryId = mappedLeagueRes.rows[0].country_id;
+                    leagueAlreadyMapped = true;
+                }
+            }
+            
+            // Get transitional row
+            const transitionalRes = await pool.query(`SELECT * FROM api_transitional WHERE id = $1 LIMIT 1`, [id]);
+            if (!transitionalRes.rows.length) return { found: false, reason: 'transitional_not_found' };
+            
+            const transitional = transitionalRes.rows[0];
+            const origin = transitional.origin || 'Api-Football';
+            const leagueName = transitional.league;
+            const seasonYear = transitional.season;
+
+            // If no existing league mapping, try to find the league automatically
+            if (!leagueAlreadyMapped) {
+                // Get country ID for the league (try exact match first, then fuzzy)
+                let leagueRes = await pool.query(
+                    `SELECT id, country_id FROM leagues 
+                     WHERE lower(original_name) = lower($1) OR lower(secondary_name) = lower($1)
+                     LIMIT 1`,
+                    [leagueName],
+                );
+                
+                // If exact match fails, try fuzzy match
+                if (!leagueRes.rows.length) {
+                    leagueRes = await pool.query(
+                        `SELECT id, country_id FROM leagues 
+                         WHERE original_name ILIKE $1 OR secondary_name ILIKE $1
+                         LIMIT 1`,
+                        [`%${leagueName}%`],
+                    );
+                }
+                
+                // If league found automatically, use its country_id
+                if (leagueRes.rows.length > 0) {
+                    leagueCountryId = leagueRes.rows[0].country_id;
+                }
+            }
+            
+            // If league still not found (not mapped and not in DB), provide suggestions for user to map
+            if (leagueCountryId === null) {
+                // League not found - search for similar leagues (fuzzy match)
+                let leagueSuggestions = await pool.query(
+                    `SELECT id, original_name, secondary_name, country_id 
+                     FROM leagues 
+                     WHERE sport_id = $1
+                       AND (original_name ILIKE $2 OR secondary_name ILIKE $2)
+                     ORDER BY 
+                       CASE 
+                         WHEN lower(original_name) = lower($3) THEN 1
+                         WHEN lower(secondary_name) = lower($3) THEN 2
+                         ELSE 3
+                       END
+                     LIMIT 20`,
+                    [sportId || 36, `%${leagueName}%`, leagueName],
+                );
+                
+                // If no similar leagues found, return ALL leagues for this sport
+                if (!leagueSuggestions.rows.length) {
+                    leagueSuggestions = await pool.query(
+                        `SELECT id, original_name, secondary_name, country_id 
+                         FROM leagues 
+                         WHERE sport_id = $1
+                         ORDER BY original_name
+                         LIMIT 50`,
+                        [sportId || 36],
+                    );
+                }
+                
+                return {
+                    found: true,
+                    league: {
+                        incomingName: leagueName,
+                        suggestions: leagueSuggestions.rows.map((l: any) => ({
+                            id: l.id,
+                            originalName: l.original_name,
+                            secondaryName: l.secondary_name,
+                            countryId: l.country_id,
+                        })),
+                    },
+                    clubs: [],
+                    stadiums: [],
+                    needsReview: true,
+                };
+            }
+
+            // Parse the data
+            const parseResult = await this.parseTransitional(id);
+            if (!parseResult?.found) {
+                return { found: false, reason: 'parse_failed' };
+            }
+            if (!('rows' in parseResult) || !parseResult.rows?.length) {
+                return { found: false, reason: 'parse_failed' };
+            }
+
+            const rows = parseResult.rows;
+            const clubsToReview: Array<{ name: string; suggestions: any[] }> = [];
+            const stadiumsToReview: Array<{ name: string; city: string; suggestions: any[] }> = [];
+            const seenClubs = new Set<string>();
+            const seenStadiums = new Set<string>();
+
+            // Extract unique clubs and stadiums from the parsed data
+            for (const r of rows) {
+                const homeName = r['teams.home.name'] ?? r['home_team'] ?? null;
+                const awayName = r['teams.away.name'] ?? r['away_team'] ?? null;
+                const venueName = r['fixture.venue.name'] ?? null;
+                const venueCity = r['fixture.venue.city'] ?? null;
+
+                // Check clubs (only if we found the league and have country_id)
+                if (leagueCountryId) {
+                    for (const clubName of [homeName, awayName]) {
+                        if (!clubName || seenClubs.has(clubName)) continue;
+                        seenClubs.add(clubName);
+
+                        // Skip if user has already provided a mapping for this club
+                        if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) {
+                            continue;
+                        }
+
+                        // Check if club exists
+                        const clubRes = await pool.query(
+                            `SELECT id, name, short_name FROM clubs 
+                             WHERE (lower(short_name) = lower($1) OR lower(name) = lower($1)) AND country_id = $2 
+                             LIMIT 1`,
+                            [clubName, leagueCountryId],
+                        );
+
+                        if (!clubRes.rows.length) {
+                            // Club doesn't exist - find similar suggestions first
+                            let suggestions = await pool.query(
+                                `SELECT id, name, short_name, country_id 
+                                 FROM clubs 
+                                 WHERE country_id = $1 
+                                   AND (name ILIKE $2 OR short_name ILIKE $2)
+                                 ORDER BY 
+                                   CASE 
+                                     WHEN lower(short_name) = lower($3) THEN 1
+                                     WHEN lower(name) = lower($3) THEN 2
+                                     ELSE 3
+                                   END
+                                 LIMIT 10`,
+                                [leagueCountryId, `%${clubName}%`, clubName],
+                            );
+
+                            // If no fuzzy match found, get all clubs from the country
+                            if (!suggestions.rows.length) {
+                                suggestions = await pool.query(
+                                    `SELECT id, name, short_name, country_id 
+                                     FROM clubs 
+                                     WHERE country_id = $1
+                                     ORDER BY name
+                                     LIMIT 100`,
+                                    [leagueCountryId],
+                                );
+                            }
+
+                            clubsToReview.push({
+                                name: clubName,
+                                suggestions: suggestions.rows.map(s => ({
+                                    id: s.id,
+                                    name: s.name,
+                                    shortName: s.short_name,
+                                })),
+                            });
+                        }
+                    }
+                }
+
+                // Check stadiums
+                if (venueName && !seenStadiums.has(venueName)) {
+                    seenStadiums.add(venueName);
+
+                    // Skip if user has already provided a mapping for this stadium
+                    if (existingMappings.stadiums && existingMappings.stadiums[venueName] !== undefined) {
+                        continue;
+                    }
+
+                    // Check if stadium exists
+                    const stadiumRes = await pool.query(
+                        `SELECT s.id, s.name, c.name as city_name 
+                         FROM stadiums s
+                         LEFT JOIN cities c ON c.id = s.city_id
+                         WHERE lower(s.name) = lower($1) 
+                           AND s.sport_id = $2
+                         LIMIT 1`,
+                        [venueName, sportId || 36],
+                    );
+
+                    if (!stadiumRes.rows.length) {
+                        // Stadium doesn't exist - get all stadiums from country (no fuzzy matching)
+                        let suggestions;
+                        if (leagueCountryId) {
+                            // Filter by country if we know it
+                            suggestions = await pool.query(
+                                `SELECT s.id, s.name, c.name as city_name, s.capacity, c.country_id
+                                 FROM stadiums s
+                                 LEFT JOIN cities c ON c.id = s.city_id
+                                 WHERE s.sport_id = $1 AND c.country_id = $2
+                                 ORDER BY s.name
+                                 LIMIT 100`,
+                                [sportId || 36, leagueCountryId],
+                            );
+                        } else {
+                            // No country filter, get all for the sport
+                            suggestions = await pool.query(
+                                `SELECT s.id, s.name, c.name as city_name, s.capacity, c.country_id
+                                 FROM stadiums s
+                                 LEFT JOIN cities c ON c.id = s.city_id
+                                 WHERE s.sport_id = $1
+                                 ORDER BY s.name
+                                 LIMIT 100`,
+                                [sportId || 36],
+                            );
+                        }
+
+                        stadiumsToReview.push({
+                            name: venueName,
+                            city: venueCity || '',
+                            suggestions: suggestions.rows.map(s => ({
+                                id: s.id,
+                                name: s.name,
+                                city: s.city_name,
+                                capacity: s.capacity,
+                            })),
+                        });
+                    }
+                }
+            }
+
+            return {
+                found: true,
+                clubs: clubsToReview,
+                stadiums: stadiumsToReview,
+                needsReview: clubsToReview.length > 0 || stadiumsToReview.length > 0,
+            };
+        } finally {
+            await pool.end();
+        }
+    }
+
     private async getDraftRoundOverrides(id: number): Promise<Record<string, number>> {
         const review = await this.getRoundReview(id);
         if (!review || review.status !== 'draft') return {};
@@ -474,25 +822,36 @@ export class ApiService {
                 if (seasonYears.length > 0) {
                     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
                     try {
-                        // Case-insensitive match: ESPN payload returns e.g.
-                        // "Spanish LALIGA" while DB has "Spanish LaLiga".
-                        const lRes = await pool.query(
-                            `SELECT id FROM leagues WHERE (LOWER(original_name) = LOWER($1) OR LOWER(secondary_name) = LOWER($1) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
-                            [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
-                        );
-                        if (lRes.rows.length) {
+                        // Check if user has manually mapped the league (entity review)
+                        const entityMappings = await this.getDraftEntityMappings(id);
+                        let leagueId: number | null = entityMappings.league;
+                        
+                        // If no manual mapping, do automatic league lookup
+                        if (!leagueId) {
+                            // Case-insensitive match: ESPN payload returns e.g.
+                            // "Spanish LALIGA" while DB has "Spanish LaLiga".
+                            const lRes = await pool.query(
+                                `SELECT id FROM leagues WHERE (LOWER(original_name) = LOWER($1) OR LOWER(secondary_name) = LOWER($1) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
+                                [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
+                            );
+                            if (lRes.rows.length) {
+                                leagueId = lRes.rows[0].id;
+                            }
+                        }
+                        
+                        if (leagueId) {
                             let seasonRow: any = null;
                             for (const year of seasonYears) {
                                 const sRes = await pool.query(
                                     `SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND (start_year = $3 OR end_year = $3) ORDER BY start_year DESC LIMIT 1`,
-                                    [sportId, lRes.rows[0].id, year],
+                                    [sportId, leagueId, year],
                                 );
                                 if (sRes.rows.length) { seasonRow = sRes.rows[0]; break; }
                             }
                             if (seasonRow) {
                                 const roundsRes = await pool.query(
                                     `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
-                                    [lRes.rows[0].id, seasonRow.id],
+                                    [leagueId, seasonRow.id],
                                 );
                                 if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
                                     const lightweight = this.parseTransitionalEspnLightweight(row);
@@ -511,23 +870,18 @@ export class ApiService {
 
         const savedOverrides = await this.getDraftRoundOverrides(id);
         const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
-        // console.log('Parsing transitional id=', id, 'origin=', row.origin);
         // Check the origin and route to appropriate parser
         if (origin === 'Api-Espn') {
             return this.parseTransitionalEspn(row, effectiveRoundOverrides);
         }
         // Default: Api-Football parsing
-        // console.log('Parsing transitional id=', id, 'payload=', row.payload);
         const payload = row.payload ?? row;
-        // console.log('Payload to parse:', payload);
         // helper: get candidate array from common places
         let arr: any[] | null = null;
-        // console.log('Finding array in payload...');
         if (Array.isArray(payload)) arr = payload as any[];
         else if (payload?.response && Array.isArray(payload.response)) arr = payload.response;
         else if (payload?.data && Array.isArray(payload.data)) arr = payload.data;
         else if (payload?.results && Array.isArray(payload.results)) arr = payload.results;
-        // console.log('Candidate array found:', arr);
         // If still not an array, try to find first array nested inside payload
         if (!arr) {
             const stack = [payload];
@@ -548,7 +902,6 @@ export class ApiService {
                 if (arr) break;
             }
         }
-        // console.log('Final array to parse:', arr);
         // Helper to safely get nested paths
         const get = (obj: any, path: string) => {
             if (!obj) return null;
@@ -566,13 +919,11 @@ export class ApiService {
         }
         // If still no array, fall back to single-row table from payload
         let rows: any[];
-        // console.log('Preparing rows for flattening...');
         if (!arr) {
             rows = [payload];
         } else {
             rows = arr;
         }
-        // console.log('Rows before flattening:', rows);
         // Flatten helper (nested objects -> dot notation; arrays -> JSON string)
         const flatten = (obj: any, prefix = '') => {
             const out: Record<string, any> = {};
@@ -607,8 +958,6 @@ export class ApiService {
         const flatRows = rows.map((r) => flatten(r));
         // collect columns
         const columns = Array.from(new Set(flatRows.flatMap(Object.keys)));
-        // console.log('Flattened rows:', flatRows);
-        // console.log('Columns:', columns);
 
         return { found: true, columns, rows: flatRows };
     }
@@ -617,28 +966,23 @@ export class ApiService {
     // ESPN structure: events[] -> competitions[0] -> competitors[], venue, status
     private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>) {
         const payload = row.payload ?? row;
-        // console.log('Parsing ESPN transitional id=', row.id, 'payload=', payload);
         // ESPN data structure: { events: [...] }
         const events = payload?.events ?? [];
         if (!Array.isArray(events) || events.length === 0) {
             return { found: false, reason: 'no_events_array' };
         }
-        // console.log(`Found ${events.length} events in ESPN payload`);
         // Extract league info from the first event's season
         const firstEvent = events[0];
         const seasonInfo = firstEvent?.season ?? {};
         const leagueInfo = payload?.leagues?.[0] ?? {};
-        // console.log('Extracted league info:', leagueInfo, 'season info:', seasonInfo);
         const getEspnRoundNumbers = (items: any[], overrides: Map<string, number> = new Map()) => {
             const roundByEventId = new Map<string, number>();
             const uniqueClubIds = new Set<string>();
             const reservedEventIds = new Set<string>();
-            // console.log('Deriving round numbers for ESPN events...');
             const getTeamId = (competitor: any) => {
                 const teamId = competitor?.team?.id ?? competitor?.id;
                 return teamId !== undefined && teamId !== null ? String(teamId) : null;
             };
-            // console.log('Helper getTeamId defined');
             const getTeamName = (competitor: any) =>
                 competitor?.team?.displayName ?? competitor?.team?.shortDisplayName ?? competitor?.team?.name ?? null;
             const getTeamShortName = (competitor: any) =>
@@ -651,7 +995,6 @@ export class ApiService {
                     if (teamId) uniqueClubIds.add(teamId);
                 }
             }
-            // console.log('Unique club IDs found:', uniqueClubIds);
             const allTeamIds = Array.from(uniqueClubIds);
             const maxMatchesPerRound = uniqueClubIds.size >= 2 ? Math.floor(uniqueClubIds.size / 2) : null;
             const toUtcDay = (date: Date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
@@ -691,7 +1034,6 @@ export class ApiService {
                     return date.toISOString().slice(0, 10);
                 }
             };
-            //  console.log('Calculated max matches per round:', maxMatchesPerRound);
             const sortableEvents = items
                 .map((event: any, index: number) => {
                     const competition = event?.competitions?.[0];
@@ -1034,25 +1376,20 @@ export class ApiService {
                     }
                 }
             };
-            // console.log('Events sorted by date:', sortableEvents);
             let currentRound = 1;
             let previousDate: Date | null = null;
             let matchesInCurrentRound = 0;
             let currentRoundTeamIds = new Set<string>();
             let index = 0;
-            // console.log('Beginning round assignment loop...');
-            // console.log('Total sortable events:', sortableEvents.length);
             while (index < sortableEvents.length) {
                 const item = sortableEvents[index];
                 const currentDate = item.date!;
                 const eventId = item.event?.id !== undefined && item.event?.id !== null ? String(item.event.id) : null;
-                // console.log(`Processing event id ${eventId} at index ${index} with date ${currentDate.toISOString()}`);
                 if (!item.homeId || !item.awayId) {
                     previousDate = currentDate;
                     index += 1;
                     continue;
                 }
-                // console.log(`Event ${eventId} has homeId ${item.homeId} and awayId ${item.awayId}`);
                 if (eventId && reservedEventIds.has(eventId)) {
                     previousDate = currentDate;
                     index += 1;
@@ -1062,7 +1399,6 @@ export class ApiService {
                     index += 1;
                     continue;
                 }
-                // console.log(`Event ${eventId} is not reserved. Checking round assignment...`);
                 const roundReachedExpectedSize = maxMatchesPerRound !== null && matchesInCurrentRound >= maxMatchesPerRound;
                 if (roundReachedExpectedSize) {
                     currentRound += 1;
@@ -1115,8 +1451,6 @@ export class ApiService {
                     index += 1;
                     continue;
                 }
-                // console.log(`Checking for team conflicts in round ${currentRound}...`);
-                // console.log('666');
                 const teamAlreadyInRound = currentRoundTeamIds.has(item.homeId) || currentRoundTeamIds.has(item.awayId);
                 if (teamAlreadyInRound && maxMatchesPerRound !== null) {
                     const missingTeamIds = allTeamIds.filter((teamId) => !currentRoundTeamIds.has(teamId));
@@ -1125,8 +1459,6 @@ export class ApiService {
                         if (entry.homeId && entry.homeName && !teamNamesById.has(entry.homeId)) teamNamesById.set(entry.homeId, entry.homeName);
                         if (entry.awayId && entry.awayName && !teamNamesById.has(entry.awayId)) teamNamesById.set(entry.awayId, entry.awayName);
                     }
-                    // console.log(`Round ${currentRound} is missing teams:`, missingTeamIds);
-                    // console.log('777');
                     if (missingTeamIds.length > 2) {
                         // Before declaring a fatal conflict, attempt to detect and unassign a
                         // "stray" event from the current round.  A stray is a rescheduled /
@@ -1177,8 +1509,6 @@ export class ApiService {
                         index += 1;
                         continue;
                     }
-                    // console.log(`Attempting to find replacement match for round ${currentRound} with missing teams...`);
-                    // console.log('888');
                     if (missingTeamIds.length === 2) {
                         const [missingHomeId, missingAwayId] = missingTeamIds;
 
@@ -1191,11 +1521,7 @@ export class ApiService {
                                 (candidate.homeId === missingAwayId && candidate.awayId === missingHomeId)
                             );
                         });
-                        // console.log(`Replacement match ${foundReplacement ? `found with event id ${foundReplacement.event?.id}` : 'not found'} for missing teams ${missingTeamIds.join(', ')}`);
-                        // console.log('999');
                         if (!foundReplacement) {
-                            console.log('000');
-                            // console.log(`No replacement match found for round ${currentRound} with missing teams ${missingTeamIds.join(', ')}. This may indicate an unplayed/postponed match or a data inconsistency.`);
                             addOpenIncompleteRound(currentRound, currentRoundTeamIds);
                             currentRound += 1;
                             matchesInCurrentRound = 0;
@@ -1203,7 +1529,6 @@ export class ApiService {
                             previousDate = null;
                             continue;
                         }
-                        // console.log(`Assigning replacement event id ${foundReplacement.event?.id} to round ${currentRound} for missing teams ${missingTeamIds.join(', ')}`);
                         const replacementEventId = String(foundReplacement.event.id);
                         roundByEventId.set(replacementEventId, currentRound);
                         reservedEventIds.add(replacementEventId);
@@ -1217,15 +1542,12 @@ export class ApiService {
                         continue;
                     }
                 }
-                // console.log(`Assigning event id ${eventId} to round ${currentRound}`);
                 if (eventId) roundByEventId.set(eventId, currentRound);
-                // console.log(`Incrementing matches in current round: ${matchesInCurrentRound + 1}`);
                 matchesInCurrentRound += 1;
                 currentRoundTeamIds.add(item.homeId);
                 currentRoundTeamIds.add(item.awayId);
                 previousDate = currentDate;
                 index += 1;
-                // console.log('Current round team IDs:', Array.from(currentRoundTeamIds));
             }
             // Prune sparse auto-only clusters and compact round numbering BEFORE
             // applying manual overrides.  This keeps round numbers deterministic
@@ -1273,7 +1595,6 @@ export class ApiService {
                 null,
                 Array.from(reviewEventIds),
             );
-            // console.log('Round assignment complete. Result:', { roundByEventId, reservedEventIds });
             return { roundByEventId, reservedEventIds, conflict: finalConflict };
         };
 
@@ -1345,7 +1666,6 @@ export class ApiService {
                 // Origin API identifier — persisted as origin_api_id in the matches table
                 'origin_api_id': event?.id != null ? String(event.id) : null,
             };
-            // console.log('Mapping ESPN event id:', event?.id);
             rows.push(mapped);
         }
 
@@ -2292,6 +2612,11 @@ export class ApiService {
             }
             if (!rows.length) return { applied: 0, reason: 'no_rows' };
 
+            // Fetch entity mappings for clubs and stadiums (user-provided overrides)
+            const entityMappings = await this.getDraftEntityMappings(id);
+            const clubMappings = entityMappings.clubs || {};
+            const stadiumMappings = entityMappings.stadiums || {};
+
             // In-memory caches
             const clubCache: Record<string, number> = {};
             const roundCache: Record<number, number> = {};
@@ -2412,6 +2737,14 @@ export class ApiService {
                 const venueName = normalizeText(venueNameRaw);
                 if (!venueName || !cityId) return null;
 
+                // Check if user mapped this stadium to an existing one
+                if (stadiumMappings[venueName]) {
+                    const mappedId = stadiumMappings[venueName];
+                    const cacheKey = `${sportId}:${cityId}:${normalizeLookupKey(venueName)}`;
+                    stadiumCache[cacheKey] = mappedId;
+                    return { id: mappedId, created: false };
+                }
+
                 const normalizedVenueName = normalizeLookupKey(venueName);
                 const cacheKey = `${sportId}:${cityId}:${normalizedVenueName}`;
                 if (stadiumCache[cacheKey]) return { id: stadiumCache[cacheKey], created: false };
@@ -2498,7 +2831,7 @@ export class ApiService {
             let createdStandings = 0;
             let createdMatches = 0;
             let createdStadiums = 0;
-            const stadiumsCreated: Array<{ id: number; name: string }> = [];
+            const stadiumsCreated: Array<{ id: number; name: string; clubName?: string; clubId?: number }> = [];
 
             // Sort rows by round number ascending BEFORE processing.
             // This is critical when a reserved/relocated match (e.g. a postponed game that was
@@ -2570,6 +2903,17 @@ export class ApiService {
                         if (!clubNameRaw) return null;
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName) return null;
+
+                        // Check if user mapped this club to an existing one
+                        if (clubMappings[clubName]) {
+                            const mappedId = clubMappings[clubName];
+                            clubCache[clubName] = mappedId;
+                            const mappedClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [mappedId]);
+                            if (mappedClub.rows.length) {
+                                return { id: mappedClub.rows[0].id, shortName: mappedClub.rows[0].short_name || clubName };
+                            }
+                        }
+
                         if (clubCache[clubName]) {
                             // Fetch short_name from DB for cached clubs
                             const cached = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [clubCache[clubName]]);
@@ -3216,6 +3560,7 @@ export class ApiService {
             } else {
                 await client.query('COMMIT');
                 await this.deleteRoundReview(id);
+                await this.deleteEntityReview(id);
             }
 
             const result: any = { 
