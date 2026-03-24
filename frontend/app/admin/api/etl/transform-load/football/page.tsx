@@ -287,6 +287,8 @@ export default function EtlPage() {
     const handleToFrontendTable = (id: number) => {
         // Reuse existing selection logic to show the parsed preview
         loadRow(id);
+        // Also trigger a dry run to show the operation preview
+        handleToDbTables(id, undefined, undefined, true);
         // ensure table view
         setViewMode('table');
         // scroll to processing result
@@ -296,8 +298,14 @@ export default function EtlPage() {
         }, 200);
     };
 
-    const handleToDbTables = async (id: number, overridesArg?: Record<string, number>) => {
+    const handleToDbTables = async (id: number, overridesArg?: Record<string, number>, previewRow?: any, forceDryRun = false) => {
         const effectiveOverrides = overridesArg ?? accumulatedOverrides;
+        const isDryRun = forceDryRun || dryRun;
+
+        // Show the row metadata immediately from the table row the user clicked.
+        if (previewRow) {
+            setSelected(previewRow);
+        }
 
         // Pre-check: parse the row to detect if round assignment input is needed before confirming.
         // Skip this entirely for subsequent loads — rounds already exist, no review needed.
@@ -344,17 +352,46 @@ export default function EtlPage() {
         try {
             const checkResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`);
             const checkJson = await checkResp.json().catch(() => ({}));
-            transitionalRow = checkJson.item || checkJson.data?.item || checkJson;
+            // Use same extraction strategy as elsewhere: prefer wrapped `item`, then `data.item`, then `data`, then raw
+            transitionalRow = checkJson.item || checkJson.data?.item || checkJson.data || checkJson;
+            // Show basic metadata to the user before proceeding (origin, league, season, fetched)
+            if (transitionalRow) {
+                // Normalize fallback extraction from payload when top-level columns are null
+                const payload = transitionalRow.payload ?? transitionalRow;
+                const get = (obj: any, path: string) => {
+                    if (!obj) return null;
+                    // support simple nested keys and array indices like 'leagues.0.name'
+                    return path.split('.').reduce((acc: any, key: string) => {
+                        if (acc == null) return null;
+                        // array index
+                        const arrMatch = key.match(/^(\d+)$/);
+                        if (arrMatch) return Array.isArray(acc) ? acc[Number(arrMatch[1])] : null;
+                        // numeric index like 'leagues[0]'
+                        const idxMatch = key.match(/^(\w+)\[(\d+)\]$/);
+                        if (idxMatch) {
+                            const k = idxMatch[1]; const i = Number(idxMatch[2]);
+                            return acc[k] && Array.isArray(acc[k]) ? acc[k][i] : null;
+                        }
+                        return acc[key] !== undefined ? acc[key] : null;
+                    }, obj);
+                };
+                const extractedLeague = transitionalRow.league ?? get(payload, 'league.name') ?? get(payload, 'leagues[0].name') ?? get(payload, 'league') ?? null;
+                const extractedSeason = transitionalRow.season ?? get(payload, 'league.season') ?? get(payload, 'season') ?? null;
+                const extractedFetched = transitionalRow.fetched_at ?? transitionalRow.fetchedAt ?? get(payload, 'fetched_at') ?? null;
+                setSelected({ ...transitionalRow, league: extractedLeague, season: extractedSeason, fetched_at: extractedFetched } as any);
+            }
         } catch (e) {
             console.error('Failed to fetch transitional row for status check', e);
         }
-        const alreadyProcessed = transitionalRow?.status === true || transitionalRow?.status === 't';
-        const verb = dryRun ? 'run a dry-run of' : 'run the process to apply the first parsed row into application tables';
-        if (alreadyProcessed && !dryRun) {
-            alert('This row was already processed (status = True).');
+        const alreadyProcessed = transitionalRow?.status === true;
+        const verb = isDryRun ? 'run a dry-run of' : 'run the process to apply the first parsed row into application tables';
+        if (alreadyProcessed && !isDryRun) {
+            if (!forceDryRun) {
+                alert('This row was already processed (status = True).');
+            }
             return;
         }
-        if (!confirm(`Confirm: ${verb}?`)) return;
+        if (!forceDryRun && !confirm(`Confirm: ${verb}?`)) return;
         setRunningLoad(true);
         setLoadResult(null);
         try {
@@ -362,7 +399,7 @@ export default function EtlPage() {
             const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-all-rows`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sportId: 36, dryRun: !!dryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
+                body: JSON.stringify({ sportId: 36, dryRun: isDryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
             });
             const j = await resp.json();
             const payload = j?.data ?? j;
@@ -371,49 +408,53 @@ export default function EtlPage() {
             const detailedConflictMessage = payload?.error || payload?.details?.message;
             const isLogicalFailure = payload?.reason === 'round_assignment_conflict' || payload?.applied === 0 && !!detailedConflictMessage;
 
-            if (!resp.ok || isLogicalFailure) {
-                const missingTeams = Array.isArray(payload?.details?.missingTeams)
-                    ? ` Missing teams: ${payload.details.missingTeams.map((team: any) => team?.name || team?.id).join(', ')}.`
-                    : '';
-                alert(`${dryRun ? 'Dry run' : 'Apply'} failed: ${detailedConflictMessage || resp.statusText}${missingTeams}`);
-            } else {
-                alert(`${dryRun ? 'Dry run' : 'Apply'} completed — see Last Operation Result for details.`);
-                // If this was a real run, persist status=true on the server and update UI
-                if (!dryRun) {
-                    try {
-                        const persistResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ status: true }),
-                        });
-                        if (!persistResp.ok) {
-                            const errBody = await persistResp.json().catch(() => ({}));
-                            console.warn('[ETL] failed to persist status update', errBody || persistResp.statusText);
-                        }
-                    } catch (e) {
-                        console.warn('[ETL] status persist failed', e);
-                    }
-
-                    // Update local UI optimistically and then refresh from server
-                    setRows((s) => s.map((r) => (r.id === id ? { ...r, status: true } : r)));
-                    await reloadRows();
-                    // Clear the parse/review UI and the selected row — the row is
-                    // fully loaded, no need to show the large raw payload again.
-                    setSelected(null);
-                    setParsedColumns(null);
-                    setParsedRowsData(null);
-                    setRoundReviewSummary([]);
-                    setAccumulatedOverrides({});
-                    setPendingStrays([]);
-                    setStrayInputs({});
-                    setPendingApplyId(null);
-                    setExpandedRoundDetails({});
+            if (!forceDryRun) {
+                if (!resp.ok || isLogicalFailure) {
+                    const missingTeams = Array.isArray(payload?.details?.missingTeams)
+                        ? ` Missing teams: ${payload.details.missingTeams.map((team: any) => team?.name || team?.id).join(', ')}.`
+                        : '';
+                    alert(`${isDryRun ? 'Dry run' : 'Apply'} failed: ${detailedConflictMessage || resp.statusText}${missingTeams}`);
+                } else {
+                    alert(`${isDryRun ? 'Dry run' : 'Apply'} completed — see Last Operation Result for details.`);
                 }
+            }
+            // If this was a real run, persist status=true on the server and update UI
+            if (!isDryRun) {
+                try {
+                    const persistResp = await fetch(`${API_BASE}/v1/api/transitional/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: true }),
+                    });
+                    if (!persistResp.ok) {
+                        const errBody = await persistResp.json().catch(() => ({}));
+                        console.warn('[ETL] failed to persist status update', errBody || persistResp.statusText);
+                    }
+                } catch (e) {
+                    console.warn('[ETL] status persist failed', e);
+                }
+
+                // Update local UI optimistically and then refresh from server
+                setRows((s) => s.map((r) => (r.id === id ? { ...r, status: true } : r)));
+                await reloadRows();
+                // Clear the parse/review UI and the selected row — the row is
+                // fully loaded, no need to show the large raw payload again.
+                setSelected(null);
+                setParsedColumns(null);
+                setParsedRowsData(null);
+                setRoundReviewSummary([]);
+                setAccumulatedOverrides({});
+                setPendingStrays([]);
+                setStrayInputs({});
+                setPendingApplyId(null);
+                setExpandedRoundDetails({});
             }
         } catch (e) {
             console.error(e);
             setLoadResult({ error: String(e) });
-            alert(`Operation failed: ${String(e)}`);
+            if (!forceDryRun) {
+                alert(`Operation failed: ${String(e)}`);
+            }
         } finally {
             setRunningLoad(false);
         }
@@ -626,6 +667,22 @@ export default function EtlPage() {
         return { combined: columns, rows };
     };
 
+    const selectedRowMeta = selected?.id != null
+        ? rows.find((row: any) => row.id === selected.id) ?? null
+        : null;
+
+    const selectedDisplay = selected
+        ? {
+            ...selectedRowMeta,
+            ...selected,
+            origin: selected?.origin ?? selectedRowMeta?.origin ?? 'Api-Football',
+            league: selected?.league ?? selectedRowMeta?.league ?? '-',
+            season: selected?.season ?? selectedRowMeta?.season ?? null,
+            fetched_at: selected?.fetched_at ?? selectedRowMeta?.fetched_at ?? null,
+            flg_season_same_years: selected?.flg_season_same_years ?? selectedRowMeta?.flg_season_same_years ?? false,
+        }
+        : null;
+
     return (
         <div>
             <div className="flex justify-between items-center mb-6">
@@ -687,7 +744,7 @@ export default function EtlPage() {
                                                 <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="Table/Json View">
                                                     <TableIcon size={18} />
                                                 </button>
-                                                <button onClick={() => handleToDbTables(r.id)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
+                                                <button onClick={() => handleToDbTables(r.id, undefined, r)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
                                                     <Database size={18} />
                                                 </button>
                                                 <button onClick={() => handleDeleteRow(r.id)} className="text-red-600 hover:text-red-900" title="Delete">
@@ -789,44 +846,99 @@ export default function EtlPage() {
             {/* Operation result feedback */}
             {loadResult && (
                 <div className="mb-6">
-                            <h3 className="font-medium mb-2">Last Operation Result</h3>
-                            <pre className="bg-gray-50 border p-3 rounded text-sm max-h-40 overflow-auto">{JSON.stringify(loadResult?.data ?? loadResult ?? loadResult, null, 2)}</pre>
-                    
-                </div>
-            )}
-
-            <section>
-                {(selected || loadingRow) && (
-                <div className="flex justify-between items-center mb-2">
-                    <h2 className="text-lg font-semibold">Result</h2>
-                </div>
-                )}
-                {loadingRow && <div>Loading selected row...</div>}
-                {selected && (
                     <div>
+                        <h3 className="font-medium mb-2">API Processed</h3>
                         <div className="mb-4">
                             <div className="flex flex-wrap items-center gap-4 bg-gray-50 border p-3 rounded text-sm">
                                 <div className="flex items-baseline gap-3">
                                     <div className="text-s text-gray-500">Origin:</div>
-                                    <div className="text-sm text-gray-800">{selected.origin ?? 'Api-Football'}</div>
+                                    <div className="text-sm text-gray-800">{selectedDisplay?.origin ?? 'Api-Football'}</div>
                                 </div>
 
                                 <div className="flex items-baseline ml-4 gap-3">
                                     <div className="text-s text-gray-500">League:</div>
-                                    <div className="text-sm text-gray-800">{selected.league ?? '-'}</div>
+                                    <div className="text-sm text-gray-800">{selectedDisplay?.league ?? '-'}</div>
                                 </div>
 
                                 <div className="flex items-baseline ml-4 gap-3">
                                     <div className="text-s text-gray-500">Season:</div>
-                                    <div className="text-sm text-gray-800">{selected.season ? `${selected.season}/${Number(selected.season) + (selected.flg_season_same_years ? 0 : 1)}` : '-'}</div>
+                                    <div className="text-sm text-gray-800">{selectedDisplay?.season ? `${selectedDisplay.season}/${Number(selectedDisplay.season) + (selectedDisplay.flg_season_same_years ? 0 : 1)}` : '-'}</div>
                                 </div>
 
                                 <div className="flex items-baseline ml-4 gap-3">
                                     <div className="text-s text-gray-500">Fetched:</div>
-                                    <div className="text-sm text-gray-800">{formatDateTimeMinute(selected.fetched_at)}</div>
+                                    <div className="text-sm text-gray-800">{formatDateTimeMinute(selectedDisplay?.fetched_at)}</div>
                                 </div>
                             </div>
                         </div>
+                    </div>
+                    <h3 className="font-medium mb-2">Operation Result</h3>
+                    <div className="mb-4">
+                    
+                    <div className="mb-4 p-4 border rounded bg-blue-50">
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                            <div>
+                                <div className="text-gray-600">Matches Created</div>
+                                <div className="text-1xl text-blue-600">{loadResult.createdMatches ?? 0}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-600">Standings Created</div>
+                                <div className="text-1xl text-blue-600">{loadResult.createdStandings ?? 0}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-600">Clubs Created</div>
+                                <div className="text-1xl text-blue-600">{loadResult.createdClubs ?? 0}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-600">Stadiums Created</div>
+                                <div className="text-1xl text-blue-600">{loadResult.createdStadiums ?? 0}</div>
+                            </div>
+                            <div>
+                                <div className="text-gray-600">Rounds Created</div>
+                                <div className="text-1xl text-blue-600">{loadResult.createdRounds ?? 0}</div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                    {loadResult.clubsIncluded && loadResult.clubsIncluded.length > 0 && (
+                        <div className="mb-4 p-4 border rounded bg-gray-50">
+                            <h4 className="font-semibold text-lg mb-2">Clubs Included ({loadResult.clubsIncluded.length})</h4>
+                            <ul className="list-disc list-inside text-sm text-gray-700">
+                                {loadResult.clubsIncluded.map((clubName: string, idx: number) => (
+                                    <li key={idx}>{clubName}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    {loadResult.stadiumsCreated && loadResult.stadiumsCreated.length > 0 && (
+                        <div className="mb-4 p-4 border rounded bg-gray-50">
+                            <h4 className="font-semibold text-lg mb-2">Stadiums Created ({loadResult.stadiumsCreated.length})</h4>
+                            <ul className="list-disc list-inside text-sm text-gray-700">
+                                {loadResult.stadiumsCreated.map((stadium: any) => (
+                                    <li key={stadium.id}>
+                                        {stadium.name} (ID: {stadium.id})
+                                        {stadium.clubName && <span className="text-gray-600 ml-2">— {stadium.clubName}</span>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+                    <pre className="bg-gray-50 border p-3 rounded text-sm max-h-40 overflow-auto">{JSON.stringify((() => {
+                        const { stadiumsCreated, clubsIncluded, ...rest } = loadResult?.data ?? loadResult ?? {};
+                        return rest;
+                    })(), null, 2)}</pre>
+                </div>
+            )}
+
+            <section>
+                {/* {(selected || loadingRow) && (
+                <div className="flex justify-between items-center mb-2">
+                    <h2 className="text-lg font-semibold">Result</h2>
+                </div>
+                )} */}
+                {loadingRow && <div>Loading selected row...</div>}
+                {selected && (
+                    <div>
                         <div className="mb-4">
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 w-full">
                                 {/* Left: To DB + Dry run + Clear */}

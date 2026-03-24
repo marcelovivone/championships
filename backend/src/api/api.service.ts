@@ -2408,21 +2408,22 @@ export class ApiService {
                 return inserted.rows[0].id;
             };
 
-            const ensureStadium = async (venueNameRaw: any, cityId: number | null) => {
+            const ensureStadium = async (venueNameRaw: any, cityId: number | null): Promise<{ id: number; created: boolean } | null> => {
                 const venueName = normalizeText(venueNameRaw);
                 if (!venueName || !cityId) return null;
 
                 const normalizedVenueName = normalizeLookupKey(venueName);
                 const cacheKey = `${sportId}:${cityId}:${normalizedVenueName}`;
-                if (stadiumCache[cacheKey]) return stadiumCache[cacheKey];
+                if (stadiumCache[cacheKey]) return { id: stadiumCache[cacheKey], created: false };
 
                 const existing = await client.query(
                     `SELECT id FROM stadiums WHERE sport_id = $1 AND city_id = $2 AND lower(name) = lower($3) LIMIT 1`,
                     [sportId, cityId, venueName],
                 );
                 if (existing.rows.length) {
-                    stadiumCache[cacheKey] = existing.rows[0].id;
-                    return existing.rows[0].id;
+                    const stadiumId = existing.rows[0].id;
+                    stadiumCache[cacheKey] = stadiumId;
+                    return { id: stadiumId, created: false };
                 }
 
                 const normalizedExisting = await client.query(
@@ -2435,8 +2436,9 @@ export class ApiService {
                     [sportId, cityId, normalizedVenueName],
                 );
                 if (normalizedExisting.rows.length) {
-                    stadiumCache[cacheKey] = normalizedExisting.rows[0].id;
-                    return normalizedExisting.rows[0].id;
+                    const stadiumId = normalizedExisting.rows[0].id;
+                    stadiumCache[cacheKey] = stadiumId;
+                    return { id: stadiumId, created: false };
                 }
 
                 const flexible = await client.query(
@@ -2453,16 +2455,18 @@ export class ApiService {
                     [sportId, cityId, normalizedVenueName],
                 );
                 if (flexible.rows.length) {
-                    stadiumCache[cacheKey] = flexible.rows[0].id;
-                    return flexible.rows[0].id;
+                    const stadiumId = flexible.rows[0].id;
+                    stadiumCache[cacheKey] = stadiumId;
+                    return { id: stadiumId, created: false };
                 }
 
                 const inserted = await client.query(
                     `INSERT INTO stadiums (sport_id, name, city_id, capacity, image_url, year_constructed, type) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
                     [sportId, venueName, cityId, null, null, null, 'stadium'],
                 );
-                stadiumCache[cacheKey] = inserted.rows[0].id;
-                return inserted.rows[0].id;
+                const stadiumId = inserted.rows[0].id;
+                stadiumCache[cacheKey] = stadiumId;
+                return { id: stadiumId, created: true };
             };
 
             const ensureClubStadium = async (clubId: number | null, stadiumId: number | null) => {
@@ -2492,6 +2496,9 @@ export class ApiService {
             let createdRounds = 0;
             let createdDivisions = 0;
             let createdStandings = 0;
+            let createdMatches = 0;
+            let createdStadiums = 0;
+            const stadiumsCreated: Array<{ id: number; name: string }> = [];
 
             // Sort rows by round number ascending BEFORE processing.
             // This is critical when a reserved/relocated match (e.g. a postponed game that was
@@ -2558,18 +2565,24 @@ export class ApiService {
                         }
                     }
 
-                    // Helper to find or create club
-                    const findOrCreateClub = async (clubNameRaw: any, clubLogo: any) => {
+                    // Helper to find or create club - returns { id, shortName }
+                    const findOrCreateClub = async (clubNameRaw: any, clubLogo: any): Promise<{ id: number; shortName: string } | null> => {
                         if (!clubNameRaw) return null;
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName) return null;
-                        if (clubCache[clubName]) return clubCache[clubName];
+                        if (clubCache[clubName]) {
+                            // Fetch short_name from DB for cached clubs
+                            const cached = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [clubCache[clubName]]);
+                            if (cached.rows.length) {
+                                return { id: cached.rows[0].id, shortName: cached.rows[0].short_name || clubName };
+                            }
+                        }
 
                         // Try exact short_name or name (restrict to current country)
                         let cres: any = { rows: [] };
                         try {
                             cres = await client.query(
-                                `SELECT id FROM clubs WHERE (lower(short_name)=lower($1) OR lower(name)=lower($1)) AND country_id = $2 LIMIT 1`,
+                                `SELECT id, short_name FROM clubs WHERE (lower(short_name)=lower($1) OR lower(name)=lower($1)) AND country_id = $2 LIMIT 1`,
                                 [clubName, leagueCountryId],
                             );
                         } catch (e) {
@@ -2579,7 +2592,7 @@ export class ApiService {
                         if (!cres.rows.length) {
                             try {
                                 cres = await client.query(
-                                    `SELECT id FROM clubs WHERE (name ILIKE $1 OR short_name ILIKE $1) AND country_id = $2 LIMIT 1`,
+                                    `SELECT id, short_name FROM clubs WHERE (name ILIKE $1 OR short_name ILIKE $1) AND country_id = $2 LIMIT 1`,
                                     [`%${clubName}%`, leagueCountryId],
                                 );
                             } catch (e) {
@@ -2596,7 +2609,7 @@ export class ApiService {
                                     const nName = normalizeLookupKey(c.name ?? '');
                                     const nShort = normalizeLookupKey(c.short_name ?? '');
                                     if (nName === normalizedIncoming || nShort === normalizedIncoming) {
-                                        cres = { rows: [{ id: c.id }] };
+                                        cres = { rows: [{ id: c.id, short_name: c.short_name }] };
                                         break;
                                     }
                                 }
@@ -2606,21 +2619,23 @@ export class ApiService {
                         }
                         if (cres.rows.length) {
                             clubCache[clubName] = cres.rows[0].id;
-                            return cres.rows[0].id;
+                            const shortName = cres.rows[0].short_name || clubName;
+                            return { id: cres.rows[0].id, shortName };
                         }
 
                         // Create club
                         const countryId = leagueCountryId;
                         const ins = await client.query(
-                            `INSERT INTO clubs (name, short_name, image_url, foundation_year, country_id, city_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+                            `INSERT INTO clubs (name, short_name, image_url, foundation_year, country_id, city_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, short_name`,
                             [clubName, clubName, clubLogo || null, 2000, countryId, null],
                         );
                         const cid = ins.rows[0].id;
+                        const shortName = ins.rows[0].short_name || clubName;
                         clubCache[clubName] = cid;
                         createdClubs += 1;
                         // only track clubs that were actually created during this run
-                        if (!clubsIncluded.includes(clubName)) clubsIncluded.push(clubName);
-                        return cid;
+                        if (!clubsIncluded.includes(shortName)) clubsIncluded.push(shortName);
+                        return { id: cid, shortName };
                     };
 
                     const homeName = r['teams.home.name'] ?? r['home_team'] ?? null;
@@ -2630,17 +2645,28 @@ export class ApiService {
                     const venueCity = r['fixture.venue.city'] ?? null;
                     const venueName = r['fixture.venue.name'] ?? null;
 
-                    const homeClubId = await findOrCreateClub(homeName, homeLogo);
-                    const awayClubId = await findOrCreateClub(awayName, awayLogo);
+                    const homeClubResult = await findOrCreateClub(homeName, homeLogo);
+                    const awayClubResult = await findOrCreateClub(awayName, awayLogo);
+                    const homeClubId = homeClubResult?.id ?? null;
+                    const awayClubId = awayClubResult?.id ?? null;
+                    const homeClubShortName = homeClubResult?.shortName ?? homeName;
+                    const awayClubShortName = awayClubResult?.shortName ?? awayName;
 
-                    await ensureSportClub(homeClubId, homeName);
-                    await ensureSportClub(awayClubId, awayName);
+                    await ensureSportClub(homeClubId, homeClubShortName);
+                    await ensureSportClub(awayClubId, awayClubShortName);
                     await ensureSeasonClub(homeClubId);
                     await ensureSeasonClub(awayClubId);
 
                     // Venue data is attached to the fixture, which in football corresponds to the home club context.
                     const cityId = await ensureCity(venueCity);
-                    const stadiumId = await ensureStadium(venueName, cityId);
+                    const stadiumResult = await ensureStadium(venueName, cityId);
+                    const stadiumId = stadiumResult ? stadiumResult.id : null;
+                    if (stadiumResult && stadiumResult.created) {
+                        createdStadiums++;
+                        if (venueName && homeClubShortName) {
+                            stadiumsCreated.push({ id: stadiumResult.id, name: venueName, clubName: homeClubShortName, clubId: homeClubId });
+                        }
+                    }
                     await ensureClubStadium(homeClubId, stadiumId);
 
                     // Prepare match insert
@@ -2733,6 +2759,7 @@ export class ApiService {
                             );
                         }
                         matchId = matchRes.rows[0].id;
+                        createdMatches++;
                         // create match_divisions rows for NEW matches
                         try {
                             const divRes = await this.createMatchDivisions(client, sportId, matchId, r, flgHasDivisions);
@@ -3169,14 +3196,14 @@ export class ApiService {
                 }
             }
 
-            // Insert audit record summarizing the run
+            // Insert audit record summarizing the runcreatedStadiums, stadiumsCreated, 
             try {
                 await client.query(
                     `INSERT INTO api_transitional_audit (transitional_id, action, payload) VALUES ($1,$2,$3)`,
                     [
                         id,
                         options.dryRun ? 'dry_run' : 'applied',
-                        { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun },
+                        { applied, createdClubs, createdRounds, createdDivisions, createdStandings, createdMatches, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun },
                     ],
                 );
             } catch (e) {
@@ -3191,7 +3218,22 @@ export class ApiService {
                 await this.deleteRoundReview(id);
             }
 
-            const result: any = { applied, createdClubs, createdRounds, createdDivisions, createdStandings, skippedUnchanged, updatedMatches, clubsIncluded, dryRun: !!options.dryRun, isSubsequentLoad, enrichmentQueued: matchesForEnrichment.length };
+            const result: any = { 
+                applied, 
+                createdClubs, 
+                createdRounds, 
+                createdDivisions, 
+                createdStandings, 
+                createdMatches,
+                createdStadiums,
+                stadiumsCreated,
+                skippedUnchanged, 
+                updatedMatches, 
+                clubsIncluded, 
+                dryRun: !!options.dryRun, 
+                isSubsequentLoad, 
+                enrichmentQueued: matchesForEnrichment.length 
+            };
 
             // ── ESPN partial-score enrichment ─────────────────────────────
             // When flg_has_divisions is false, divisions were created with zero scores.
