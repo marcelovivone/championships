@@ -14,6 +14,120 @@ const normalizeLookupKey = (value: any) =>
         .replace(/[^a-z0-9]+/g, '')
         .trim();
 
+// Country to timezone mapping for match date conversion
+const COUNTRY_TIMEZONES: Record<string, string> = {
+    // Europe
+    'England': 'Europe/London',
+    'United Kingdom': 'Europe/London',
+    'UK': 'Europe/London',
+    'Spain': 'Europe/Madrid',
+    'France': 'Europe/Paris', 
+    'Germany': 'Europe/Berlin',
+    'Italy': 'Europe/Rome',
+    'Netherlands': 'Europe/Amsterdam',
+    'Portugal': 'Europe/Lisbon',
+    'Belgium': 'Europe/Brussels',
+    'Switzerland': 'Europe/Zurich',
+    'Austria': 'Europe/Vienna',
+    'Poland': 'Europe/Warsaw',
+    'Czech Republic': 'Europe/Prague',
+    'Russia': 'Europe/Moscow',
+    'Turkey': 'Europe/Istanbul',
+    'Greece': 'Europe/Athens',
+    'Sweden': 'Europe/Stockholm',
+    'Norway': 'Europe/Oslo',
+    'Denmark': 'Europe/Copenhagen',
+    'Finland': 'Europe/Helsinki',
+    'Ukraine': 'Europe/Kiev',
+    'Croatia': 'Europe/Zagreb',
+    'Serbia': 'Europe/Belgrade',
+    'Romania': 'Europe/Bucharest',
+    'Bulgaria': 'Europe/Sofia',
+    // Americas
+    'Brazil': 'America/Sao_Paulo',
+    'Argentina': 'America/Argentina/Buenos_Aires',
+    'Chile': 'America/Santiago',
+    'Colombia': 'America/Bogota',
+    'Mexico': 'America/Mexico_City',
+    'United States': 'America/New_York', // Default to Eastern
+    'USA': 'America/New_York',
+    'Canada': 'America/Toronto',
+    'Peru': 'America/Lima',
+    'Ecuador': 'America/Guayaquil',
+    'Uruguay': 'America/Montevideo',
+    'Paraguay': 'America/Asuncion',
+    'Bolivia': 'America/La_Paz',
+    'Venezuela': 'America/Caracas',
+    // Asia
+    'Japan': 'Asia/Tokyo',
+    'China': 'Asia/Shanghai',
+    'South Korea': 'Asia/Seoul',
+    'India': 'Asia/Kolkata',
+    'Australia': 'Australia/Sydney',
+    'Saudi Arabia': 'Asia/Riyadh',
+    'UAE': 'Asia/Dubai',
+    'Qatar': 'Asia/Qatar',
+    'Iran': 'Asia/Tehran',
+    'Israel': 'Asia/Jerusalem',
+    // Africa
+    'South Africa': 'Africa/Johannesburg',
+    'Egypt': 'Africa/Cairo',
+    'Morocco': 'Africa/Casablanca',
+    'Nigeria': 'Africa/Lagos',
+    'Algeria': 'Africa/Algiers',
+    'Tunisia': 'Africa/Tunis',
+};
+
+// Convert UTC date to local timezone based on country
+const convertToLocalTimezone = (utcDate: string | Date, country: string | null): { localDate: Date; localDateString: string; timezone: string } => {
+    const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
+    if (!date || Number.isNaN(date.getTime())) {
+        return {
+            localDate: new Date(),
+            localDateString: new Date().toISOString().slice(0, 10),
+            timezone: 'UTC'
+        };
+    }
+    
+    // Get timezone for country, default to UTC
+    const normalizedCountry = normalizeText(country ?? '').trim();
+    const timezone = COUNTRY_TIMEZONES[normalizedCountry] ?? 'UTC';
+    
+    try {
+        // Use Intl.DateTimeFormat to handle DST automatically
+        const formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit', 
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        });
+        
+        const parts = formatter.formatToParts(date);
+        const partsMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+        
+        const localDateString = `${partsMap.year}-${partsMap.month}-${partsMap.day}`;
+        const localDateTime = `${partsMap.year}-${partsMap.month}-${partsMap.day}T${partsMap.hour}:${partsMap.minute}:${partsMap.second}`;
+        const localDate = new Date(localDateTime);
+        
+        return {
+            localDate,
+            localDateString,
+            timezone
+        };
+    } catch (e) {
+        // Fallback to UTC if timezone conversion fails
+        return {
+            localDate: date,
+            localDateString: date.toISOString().slice(0, 10),
+            timezone: 'UTC'
+        };
+    }
+};
+
 @Injectable()
 export class ApiService {
     private readonly logger = new Logger(ApiService.name);
@@ -495,7 +609,20 @@ export class ApiService {
             
             const transitional = transitionalRes.rows[0];
             const origin = transitional.origin || 'Api-Football';
-            const leagueName = transitional.league;
+            // Prefer a human-friendly league name from the payload when available
+            let leagueName = transitional.league ?? "";
+            let leagueNameAbbreviation = transitional.league ?? "";
+            try {
+                const payload = transitional.payload ?? transitional;
+                const leagueInfo = payload?.leagues?.[0] ?? {};
+                // Use payload-provided friendly name when available (works for ESPN and Api-Football)
+                leagueName = leagueInfo?.name ?? leagueInfo?.abbreviation ?? leagueInfo?.slug ?? leagueName;
+                leagueNameAbbreviation = leagueInfo?.abbreviation ?? leagueInfo?.slug ?? leagueNameAbbreviation;
+            } catch (e) {
+                // ignore and keep fallback to transitional.league
+            }
+            
+            
             const seasonYear = transitional.season;
 
             // If no existing league mapping, try to find the league automatically
@@ -925,6 +1052,7 @@ export class ApiService {
             rows = arr;
         }
         // Flatten helper (nested objects -> dot notation; arrays -> JSON string)
+        // Special handling for fixture.date to convert timezone based on country
         const flatten = (obj: any, prefix = '') => {
             const out: Record<string, any> = {};
             if (obj === null || obj === undefined) return out;
@@ -948,6 +1076,18 @@ export class ApiService {
                     Object.assign(out, nested);
                 } else if (v instanceof Date) {
                     out[key] = v.toISOString();
+                } else if ((key === 'fixture.date' || key.includes('.date') || key.includes('.timestamp')) && typeof v === 'string') {
+                    // Special handling for fixture dates and timestamps - convert to local timezone
+                    try {
+                        // For Api-Football, get country from league.country or fixture.venue details
+                        const country = get(obj, 'league.country') ?? 
+                                      get(obj, 'fixture.venue.country') ?? 
+                                      firstRow['league.country'] ?? null;
+                        const localInfo = convertToLocalTimezone(v, country);
+                        out[key] = localInfo.localDate.toISOString();
+                    } catch (e) {
+                        out[key] = v; // fallback to original value
+                    }
                 } else {
                     out[key] = v;
                 }
@@ -997,42 +1137,15 @@ export class ApiService {
             }
             const allTeamIds = Array.from(uniqueClubIds);
             const maxMatchesPerRound = uniqueClubIds.size >= 2 ? Math.floor(uniqueClubIds.size / 2) : null;
+            // Convert UTC dates to local timezone based on match country
+            const timeToLocalDay = new Map<number, number>();
+            const timeToLocalDateString = new Map<number, string>();
+            const timeToTimezone = new Map<number, string>();
             const toUtcDay = (date: Date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-            // Use league-local day boundaries when clustering rounds.  ESPN provides
-            // timestamps in UTC; clustering by UTC can split matches that share the
-            // same local calendar day (e.g. Brasilia UTC-3) across two days. Prefer
-            // the Brazil timezone for Brasileirão payloads so matches on the same
-            // local date are grouped together. If Intl timeZone formatting isn't
-            // available, fall back to UTC-based day calculation.
-            const LEAGUE_TIMEZONE = 'America/Sao_Paulo';
-            const toLocalDay = (date: Date) => {
-                try {
-                    const parts = new Intl.DateTimeFormat('en-GB', {
-                        timeZone: LEAGUE_TIMEZONE,
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                    }).formatToParts(date);
-                    const year = Number(parts.find((p) => p.type === 'year')?.value ?? date.getUTCFullYear());
-                    const month = Number(parts.find((p) => p.type === 'month')?.value ?? (date.getUTCMonth() + 1));
-                    const day = Number(parts.find((p) => p.type === 'day')?.value ?? date.getUTCDate());
-                    return Date.UTC(year, month - 1, day);
-                } catch (err) {
-                    return toUtcDay(date);
-                }
-            };
             const formatLeagueLocalDate = (date: Date | null) => {
                 if (!date) return null;
-                try {
-                    return new Intl.DateTimeFormat('en-CA', {
-                        timeZone: LEAGUE_TIMEZONE,
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                    }).format(date);
-                } catch (err) {
-                    return date.toISOString().slice(0, 10);
-                }
+                const s = timeToLocalDateString.get(date.getTime());
+                return s ?? date.toISOString().slice(0, 10);
             };
             const sortableEvents = items
                 .map((event: any, index: number) => {
@@ -1042,6 +1155,29 @@ export class ApiService {
                     const away = competitors.find((c: any) => c.homeAway === 'away') ?? competitors[1] ?? competitors.find((c: any) => c !== home) ?? null;
                     const rawDate = competition?.startDate ?? competition?.date ?? event?.date ?? null;
                     const parsedDate = rawDate ? new Date(String(rawDate)) : null;
+                    
+                    // Get country for timezone conversion
+                    const country = competition?.venue?.address?.country ?? null;
+                    
+                    let localDateString: string | null = null;
+                    let localDayUtc: number | null = null;
+                    let timezone = 'UTC';
+                    
+                    if (parsedDate && !Number.isNaN(parsedDate.getTime())) {
+                        // Convert UTC date to local timezone based on country
+                        const localInfo = convertToLocalTimezone(parsedDate, country);
+                        localDateString = localInfo.localDateString;
+                        timezone = localInfo.timezone;
+                        localDayUtc = Date.UTC(
+                            localInfo.localDate.getFullYear(),
+                            localInfo.localDate.getMonth(), 
+                            localInfo.localDate.getDate()
+                        );
+                        
+                        timeToLocalDay.set(parsedDate.getTime(), localDayUtc);
+                        timeToLocalDateString.set(parsedDate.getTime(), localDateString);
+                        timeToTimezone.set(parsedDate.getTime(), timezone);
+                    }
                     return {
                         event,
                         index,
@@ -1408,7 +1544,8 @@ export class ApiService {
                     continue;
                 }
                 if (previousDate) {
-                    const diffInDays = Math.floor((toLocalDay(currentDate) - toLocalDay(previousDate)) / (24 * 60 * 60 * 1000));
+                    const diffInDays = Math.floor(((timeToLocalDay.get(currentDate.getTime()) ?? toUtcDay(currentDate)) -
+                        (timeToLocalDay.get(previousDate.getTime()) ?? toUtcDay(previousDate))) / (24 * 60 * 60 * 1000));
                     const hasRestDayBetweenMatches = diffInDays > 1;
                     const shouldSplitByGap = maxMatchesPerRound === null && hasRestDayBetweenMatches;
                     if (shouldSplitByGap) {
@@ -1480,7 +1617,9 @@ export class ApiService {
                             );
                             if (!assignedItem?.date) continue;
                             const daysBefore = Math.floor(
-                                (toLocalDay(currentDate) - toLocalDay(assignedItem.date)) / (24 * 60 * 60 * 1000),
+                                ((timeToLocalDay.get(currentDate.getTime()) ?? toUtcDay(currentDate)) -
+                                    (timeToLocalDay.get(assignedItem.date.getTime()) ?? toUtcDay(assignedItem.date))) /
+                                    (24 * 60 * 60 * 1000),
                             );
                             if (daysBefore > STRAY_THRESHOLD_DAYS) {
                                 strayCandidateId = assignedEventId;
@@ -1655,8 +1794,14 @@ export class ApiService {
                 'teams.away.name': awayTeam?.team?.displayName ?? awayTeam?.team?.name ?? null,
                 'teams.away.logo': awayTeam?.team?.logo ?? null,
 
-                // Fixture info
-                'fixture.date': competition?.date ?? event?.date ?? null,
+                // Fixture info - convert to local timezone based on venue country
+                'fixture.date': (() => {
+                    const rawDate = competition?.date ?? event?.date ?? null;
+                    if (!rawDate) return null;
+                    const country = venue?.address?.country ?? null;
+                    const localInfo = convertToLocalTimezone(rawDate, country);
+                    return localInfo.localDate.toISOString();
+                })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
                 'fixture.status.long': status?.description ?? null,
@@ -2175,6 +2320,8 @@ export class ApiService {
             // Normalization helpers (moved to module scope)
 
             const leagueName = String(getVal('league.name') ?? getVal('league') ?? '').trim();
+            // Default abbreviation to the normalized league name; may be overwritten from payload
+            let leagueNameAbbreviation = leagueName;
             const leagueSeason = getVal('league.season') ?? getVal('season') ?? null;
             const leagueCountry = String(getVal('league.country') ?? getVal('country') ?? '').trim();
             const leagueFlag = getVal('league.flag') ?? null;
@@ -2235,6 +2382,13 @@ export class ApiService {
                     const tRes2 = await client.query(`SELECT origin, payload FROM api_transitional WHERE id = $1 LIMIT 1`, [id]);
                     const originVal = tRes2.rows?.[0]?.origin ?? null;
                     const payload = tRes2.rows?.[0]?.payload ?? {};
+                    // If the payload contains a league abbreviation/slug, prefer it as secondary_name
+                    try {
+                        const pLeague = payload?.leagues?.[0] ?? {};
+                        leagueNameAbbreviation = pLeague?.abbreviation ?? pLeague?.slug ?? leagueNameAbbreviation;
+                    } catch (e) {
+                        // ignore and keep default
+                    }
                     if (originVal === 'Api-Espn') {
                         espnLeagueId = payload?.leagues?.[0]?.id ?? null;
                         if (espnLeagueId) {
@@ -2325,7 +2479,7 @@ export class ApiService {
                                     espnLeagueId ? String(espnLeagueId) : null,
                                     leagueImage ?? leagueFlag ?? null,
                                     leagueName,
-                                    leagueName,
+                                    leagueNameAbbreviation,
                                     null,
                                     100,
                                     2,
@@ -2460,7 +2614,14 @@ export class ApiService {
                 'teams.home.logo': homeTeam?.team?.logo ?? null,
                 'teams.away.name': awayTeam?.team?.displayName ?? awayTeam?.team?.name ?? null,
                 'teams.away.logo': awayTeam?.team?.logo ?? null,
-                'fixture.date': competition?.date ?? event?.date ?? null,
+                // Convert fixture date to local timezone based on venue country
+                'fixture.date': (() => {
+                    const rawDate = competition?.date ?? event?.date ?? null;
+                    if (!rawDate) return null;
+                    const country = venue?.address?.country ?? null;
+                    const localInfo = convertToLocalTimezone(rawDate, country);
+                    return localInfo.localDate.toISOString();
+                })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
                 'fixture.status.long': status?.description ?? null,
@@ -3015,7 +3176,9 @@ export class ApiService {
 
                     // Prepare match insert
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
+                    console.log('dateRaw', dateRaw, homeClubShortName, awayClubShortName);
                     const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
+                    console.log('dateVal', dateVal, homeClubShortName, awayClubShortName);
                     const statusShort = r['fixture.status.short'] ?? null;
                     const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
@@ -3091,6 +3254,7 @@ export class ApiService {
                     if (!isExistingMatch) {
                         // Insert new match
                         let matchRes;
+                            console.log('atches dateVal', dateVal, homeClubId, awayClubId);
                         if (hasOriginApiIdCol) {
                             matchRes = await client.query(
                                 `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
@@ -3239,6 +3403,7 @@ export class ApiService {
                             latestHome,
                             latestAway,
                         );
+                            console.log('standings dateVal', dateVal, homeClubId, awayClubId);
 
                         // Insert home standing (validate param count before executing)
                         {
@@ -3292,6 +3457,7 @@ export class ApiService {
                             }
                             await client.query(standingsSql, standingsParams);
                         }
+                            console.log('standings dateVal', dateVal, homeClubId, awayClubId);
 
                         // Insert away standing (validate param count before executing)
                         {

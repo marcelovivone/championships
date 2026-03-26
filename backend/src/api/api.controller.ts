@@ -57,14 +57,18 @@ export class ApiController {
   async listTransitional(@Query('limit') limit?: string) {
     const l = limit ? Number(limit) : 100;
     const rows = await this.apiService.listTransitional(l);
-    return { count: rows.length, items: rows };
+    // Omit the full payload JSON to avoid sending very large objects to the client
+    const items = rows.map(({ payload, ...rest }) => rest);
+    return { count: rows.length, items };
   }
 
   @Get('transitional/:id')
   async getTransitional(@Param('id', ParseIntPipe) id: number) {
     const row = await this.apiService.getTransitional(id);
     if (!row) return { found: false };
-    return { found: true, item: row };
+    // Do not return full payload to frontend (can be very large)
+    const { payload, ...rest } = row as any;
+    return { found: true, item: rest };
   }
 
   @Get('transitional/:id/parse')

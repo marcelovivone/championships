@@ -27,15 +27,24 @@ function toCSV(items: any[]) {
 function formatLeagueDate(dateValue: string | null | undefined) {
     if (!dateValue) return '-';
     try {
-        return new Intl.DateTimeFormat('en-GB', {
-            timeZone: 'America/Sao_Paulo',
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-        }).format(new Date(dateValue));
+        // The backend now provides dates already converted to local timezone
+        // based on the match country, so we can display them directly
+        const d = new Date(String(dateValue));
+        if (!Number.isNaN(d.getTime())) {
+            // For display purposes, show both the date and time in local timezone
+            return d.toLocaleString('en-GB', {
+                year: 'numeric',
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZoneName: 'short'
+            });
+        }
     } catch {
         return String(dateValue);
     }
+    return String(dateValue);
 }
 
 function collectManualRoundOverrides(

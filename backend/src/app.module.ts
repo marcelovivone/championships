@@ -23,6 +23,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { MenuItemsModule } from './menu-items/menu-items.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { AdminModule } from './admin/admin.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
@@ -54,6 +55,7 @@ import { APP_GUARD } from '@nestjs/core';
     AuthModule,
     MenuItemsModule,
     PermissionsModule,
+    AdminModule,
   ],
   providers: [
     {

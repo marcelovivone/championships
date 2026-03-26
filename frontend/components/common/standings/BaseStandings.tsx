@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { seasonsApi } from '@/lib/api/entities';
 import { apiClient } from '@/lib/api/client';
@@ -46,6 +46,7 @@ export default function BaseStandings({
   const [displayRoundForStandings, setDisplayRoundForStandings] = React.useState<number | string>(roundOrDay);
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
+  const [showUserTimezone, setShowUserTimezone] = useState(false);
 
   // Fetch seasons for the selected league
   const { data: seasonsData, refetch: refetchSeasons } = useQuery({
@@ -533,9 +534,27 @@ export default function BaseStandings({
         </div>
 
         <div className="lg:basis-1/3">
-          <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold">SCORES & FIXTURES</h2>
-            <div className="mt-2 text-sm text-gray-500 whitespace-nowrap">{scheduleIsDate ? 'Day' : 'Round'}: {roundOrDay}</div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">User Timezone</span>
+                <button
+                  type="button"
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                    showUserTimezone ? 'bg-blue-600' : 'bg-gray-300'
+                  }`}
+                  onClick={() => setShowUserTimezone(!showUserTimezone)}
+                >
+                  <span
+                    className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                      showUserTimezone ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="text-sm text-gray-500 whitespace-nowrap">{scheduleIsDate ? 'Day' : 'Round'}: {roundOrDay}</div>
+            </div>
           </div>
           {matchesQuery.isLoading ? (
             <div className="bg-white rounded-lg shadow p-4">Loading games...</div>
@@ -572,6 +591,7 @@ export default function BaseStandings({
                   isLoading={matchesQuery.isLoading}
                   error={matchesQuery.isError ? (matchesQuery.error instanceof Error ? matchesQuery.error.message : String(matchesQuery.error)) : null}
                   onRetry={() => matchesQuery.refetch()}
+                  showUserTimezone={showUserTimezone}
                 />
               );
             })()

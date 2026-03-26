@@ -71,6 +71,14 @@ const menuItems: MenuItem[] = [
                             { label: 'Ice Hockey', icon: <span style={{ fontSize: 18 }}>🏒</span>, href: '/admin/api/etl/transform-load/ice-hockey' },
                             { label: 'Volleyball', icon: <span style={{ fontSize: 18 }}>🏐</span>, href: '/admin/api/etl/transform-load/volleyball' }
                         ]
+                    },
+                    {
+                        label: 'Adjusts',
+                        icon: <ClipboardList size={16} />,
+                        href: '',
+                        children: [
+                            { label: 'Timezone', icon: <span style={{ fontSize: 18 }}>🌍</span>, href: '/admin/api/etl/adjusts/timezone' }
+                        ]
                     }
                 ]
             }
