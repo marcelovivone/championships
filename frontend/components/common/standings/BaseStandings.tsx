@@ -534,11 +534,11 @@ export default function BaseStandings({
         </div>
 
         <div className="lg:basis-1/3">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 mt-1">
             <h2 className="text-lg font-semibold">SCORES & FIXTURES</h2>
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">User Timezone</span>
+                <span className="text-sm text-gray-600">Local Timezone</span>
                 <button
                   type="button"
                   className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
@@ -592,6 +592,7 @@ export default function BaseStandings({
                   error={matchesQuery.isError ? (matchesQuery.error instanceof Error ? matchesQuery.error.message : String(matchesQuery.error)) : null}
                   onRetry={() => matchesQuery.refetch()}
                   showUserTimezone={showUserTimezone}
+                  matchCountry={selectedLeague?.country?.name ?? undefined}
                 />
               );
             })()

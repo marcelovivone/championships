@@ -63,7 +63,7 @@ const COUNTRY_TIMEZONES: Record<string, string> = {
     'Romania': 'Europe/Bucharest',
     'Bulgaria': 'Europe/Sofia',
     // Americas
-    'Brazil': 'America/Sao_Paulo',
+    'Brazil': 'America/Brasilia',
     'Argentina': 'America/Argentina/Buenos_Aires',
     'Chile': 'America/Santiago',
     'Colombia': 'America/Bogota',
@@ -101,12 +101,15 @@ export default function TimezoneAdjustmentPage() {
     // Form state
     const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
     const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
-    const [selectedRoundId, setSelectedRoundId] = useState<string>('');
+    const [selectedRoundIds, setSelectedRoundIds] = useState<string[]>([]);
     const [selectedMatchId, setSelectedMatchId] = useState<string>('');
 
     // Timezone adjustment options
-    const [adjustmentType, setAdjustmentType] = useState<'country' | 'manual'>('country');
+    const [adjustmentType, setAdjustmentType] = useState<'country' | 'manual' | 'set'>('country');
     const [manualHours, setManualHours] = useState<number>(0);
+    // When using 'set', user provides exact time (HH:MM) and optionally an exact date
+    const [setTime, setSetTime] = useState<string>('');
+    const [setDate, setSetDate] = useState<string>('');
 
     // Process state
     const [isProcessing, setIsProcessing] = useState(false);
@@ -124,7 +127,14 @@ export default function TimezoneAdjustmentPage() {
         }
     });
 
-    const leagues = leaguesData?.data || [];
+    const leaguesRaw = leaguesData?.data || [];
+
+    // Ensure leagues are displayed ordered by name (prefer originalName then name)
+    const leagues = [...leaguesRaw].sort((a: League, b: League) => {
+        const aName = (a.originalName || a.name || '').toLowerCase();
+        const bName = (b.originalName || b.name || '').toLowerCase();
+        return aName.localeCompare(bName);
+    });
 
     // Fetch seasons (dependent on league)
     const { data: seasonsData, isLoading: loadingSeasons } = useQuery({
@@ -152,35 +162,60 @@ export default function TimezoneAdjustmentPage() {
 
     const rounds = Array.isArray(roundsData) ? roundsData : (roundsData?.data || []);
 
-    // Fetch matches (dependent on league + season + round)
+    // Fetch matches (dependent on league + season + single selected round)
     const { data: matchesData, isLoading: loadingMatches } = useQuery({
-        queryKey: ['matches', selectedLeagueId, selectedSeasonId, selectedRoundId],
+        queryKey: ['matches', selectedLeagueId, selectedSeasonId, selectedRoundIds.join(',')],
         queryFn: async () => {
-            if (!selectedRoundId) return [];
-            const response = await apiClient.get(`/v1/matches?seasonId=${selectedSeasonId}&roundId=${selectedRoundId}`);
+            // only fetch matches when exactly one round selected
+            if (selectedRoundIds.length !== 1) return [];
+            const roundId = selectedRoundIds[0];
+            const response = await apiClient.get(`/v1/matches?seasonId=${selectedSeasonId}&roundId=${roundId}`);
             return response.data;
         },
-        enabled: !!selectedRoundId
+        enabled: selectedRoundIds.length === 1
     });
 
     const matches = Array.isArray(matchesData) ? matchesData : (matchesData?.data || []);
     const [open, setOpen] = useState(false);
 
+    // Friendly label for selected match (show names + date/time instead of raw id)
+    const selectedMatchObj = selectedMatchId ? matches.find((m: Match) => String(m.id) === String(selectedMatchId)) : undefined;
+    // Helper: format stored date/time using UTC (do NOT convert to user's local timezone)
+    const formatUtcDateTime = (dateStr?: string) => {
+        if (!dateStr) return { date: '--/--', time: '--:--' };
+        const d = new Date(dateStr);
+        if (Number.isNaN(d.getTime())) return { date: '--/--', time: '--:--' };
+        const dd = String(d.getUTCDate()).padStart(2, '0');
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+        const hh = String(d.getUTCHours()).padStart(2, '0');
+        const min = String(d.getUTCMinutes()).padStart(2, '0');
+        return { date: `${dd}/${mm}`, time: `${hh}:${min}` };
+    };
+
+    const selectedMatchLabel = selectedMatchObj
+        ? (() => {
+            const { date, time } = formatUtcDateTime(selectedMatchObj.date);
+            const home = selectedMatchObj.homeClub?.shortName || selectedMatchObj.homeClub?.name || 'HOME';
+            const away = selectedMatchObj.awayClub?.shortName || selectedMatchObj.awayClub?.name || 'AWAY';
+            return `${home} vs ${away} — ${date} ${time}`;
+        })()
+        : '';
+
     // Reset dependent fields when parent changes
     useEffect(() => {
         setSelectedSeasonId('');
-        setSelectedRoundId('');
+        setSelectedRoundIds([]);
         setSelectedMatchId('');
     }, [selectedLeagueId]);
 
     useEffect(() => {
-        setSelectedRoundId('');
+        setSelectedRoundIds([]);
         setSelectedMatchId('');
     }, [selectedSeasonId]);
 
     useEffect(() => {
         setSelectedMatchId('');
-    }, [selectedRoundId]);
+    }, [selectedRoundIds]);
 
     // Ensure we parse the selected league id safely (handle non-numeric IDs)
     const parsedLeagueId = selectedLeagueId ? parseInt(selectedLeagueId, 10) : NaN;
@@ -208,19 +243,39 @@ export default function TimezoneAdjustmentPage() {
             return;
         }
 
+        // Validate setTime when using 'set' mode
+        if (adjustmentType === 'set') {
+            if (!setTime) {
+                setProcessError('Please provide a time (HH:MM) when using "Set Time" adjustment');
+                return;
+            }
+            // basic validation: expect HH:MM
+            if (!/^\d{2}:\d{2}$/.test(setTime)) {
+                setProcessError('Please provide time in HH:MM format');
+                return;
+            }
+            // if date provided, basic YYYY-MM-DD validation
+            if (setDate && !/^\d{4}-\d{2}-\d{2}$/.test(setDate)) {
+                setProcessError('Please provide date in YYYY-MM-DD format');
+                return;
+            }
+        }
+
         setIsProcessing(true);
         setProcessError(null);
         setProcessResult(null);
 
-        try {
+            try {
             const payload = {
                 leagueId: resolvedLeague.id,
                 seasonId: selectedSeasonId ? Number(selectedSeasonId) : null,
-                roundId: selectedRoundId ? Number(selectedRoundId) : null,
+                roundIds: selectedRoundIds && selectedRoundIds.length > 0 ? selectedRoundIds.map(Number) : null,
                 matchId: selectedMatchId ? Number(selectedMatchId) : null,
                 adjustmentType,
                 manualHours: adjustmentType === 'manual' ? manualHours : 0,
-                countryTimezone: adjustmentType === 'country' ? countryTimezone : null
+                countryTimezone: adjustmentType === 'country' ? countryTimezone : null,
+                setTime: adjustmentType === 'set' ? setTime : null,
+                setDate: adjustmentType === 'set' ? (setDate || null) : null,
             };
             console.debug('Selected league id (raw):', selectedLeagueId);
             console.debug('Resolved league object:', resolvedLeague);
@@ -229,14 +284,7 @@ export default function TimezoneAdjustmentPage() {
             setLastErrorBody(null);
             const response = await apiClient.post('/v1/admin/timezone-adjustment', payload);
             setProcessResult(response.data);
-
-            // Reset form on success
-            if (response.data.success) {
-                setSelectedLeagueId('');
-                setSelectedSeasonId('');
-                setSelectedRoundId('');
-                setSelectedMatchId('');
-            }
+            // Do NOT reset league/season/round selections automatically; keep them for batch updates
         } catch (error: any) {
             const body = error.response?.data || { message: error.message || 'Process failed' };
             setLastErrorBody(body);
@@ -246,12 +294,28 @@ export default function TimezoneAdjustmentPage() {
         }
     };
 
+    const handleClear = () => {
+        setSelectedLeagueId('');
+        setSelectedSeasonId('');
+        setSelectedRoundIds([]);
+        setSelectedMatchId('');
+        setAdjustmentType('country');
+        setManualHours(0);
+        setSetTime('');
+        setSetDate('');
+        setIsProcessing(false);
+        setProcessResult(null);
+        setProcessError(null);
+        setLastPayload(null);
+        setLastErrorBody(null);
+    };
+
     return (
         <div className="p-6 max-w-4xl mx-auto">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">Timezone Adjustment</h1>
                 <p className="text-gray-600 mt-2">
-                    Update match dates and standings to correct timezone information. Select a league (required) and optionally narrow down by season, round, or specific match.
+                    Update match dates to correct timezone information. Select a league (required) and optionally narrow down by season, round, or specific match.
                 </p>
             </div>
 
@@ -286,18 +350,18 @@ export default function TimezoneAdjustmentPage() {
                                 </p>
                             )}
                             {/* DEBUG: show selected league values to help trace frontend issue */}
-                            <div className="mt-2 p-2 bg-gray-50 border rounded text-xs text-gray-600">
+                            {/* <div className="mt-2 p-2 bg-gray-50 border rounded text-xs text-gray-600">
                                 <div><strong>Debug (league):</strong></div>
                                 <div>selectedLeagueId (raw): <span className="font-mono">{String(selectedLeagueId)}</span></div>
                                 <div>resolvedLeague.id: <span className="font-mono">{selectedLeague ? String(selectedLeague.id) : 'null'}</span></div>
                                 <div>resolvedLeague.name: {selectedLeague ? (selectedLeague.originalName || selectedLeague.name) : 'null'}</div>
-                            </div>
+                            </div> */}
                             {/* DEBUG: last payload / error from last attempt */}
-                            <div className="mt-2 p-2 bg-yellow-50 border rounded text-xs text-gray-700">
+                            {/* <div className="mt-2 p-2 bg-yellow-50 border rounded text-xs text-gray-700">
                                 <div><strong>Debug (last request):</strong></div>
                                 <div>Last payload: <pre className="bg-white p-1 rounded text-xs overflow-auto">{lastPayload ? JSON.stringify(lastPayload, null, 2) : 'null'}</pre></div>
                                 <div className="mt-1">Last error body: <pre className="bg-white p-1 rounded text-xs overflow-auto">{lastErrorBody ? JSON.stringify(lastErrorBody, null, 2) : 'null'}</pre></div>
-                            </div>
+                            </div> */}
                         </div>
 
                         {/* Season Selector */}
@@ -326,17 +390,21 @@ export default function TimezoneAdjustmentPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Round (Optional)
                             </label>
+                            <label className="block text-sm text-gray-500 mb-1">(Ctrl/Cmd+click to multi-select rounds)</label>
                             <select
-                                value={selectedRoundId}
-                                onChange={(e) => setSelectedRoundId(e.target.value)}
+                                multiple
+                                value={selectedRoundIds}
+                                onChange={(e) => {
+                                    const vals = Array.from(e.target.selectedOptions).map(o => o.value);
+                                    setSelectedRoundIds(vals);
+                                }}
                                 disabled={!selectedSeasonId || loadingRounds}
-                                className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                                className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 h-36"
                             >
-                                <option value="">All Rounds</option>
                                 {rounds
                                     .sort((a: Round, b: Round) => a.roundNumber - b.roundNumber)
                                     .map((round: Round) => (
-                                        <option key={round.id} value={round.id}>
+                                        <option key={round.id} value={String(round.id)}>
                                             Round {round.roundNumber}
                                         </option>
                                     ))}
@@ -381,9 +449,9 @@ export default function TimezoneAdjustmentPage() {
                                 type="button"
                                 onClick={() => setOpen(!open)}
                                 className="w-full p-2 border rounded-md bg-white text-sm font-mono text-center"
-                                disabled={!selectedRoundId || loadingMatches}
+                                disabled={selectedRoundIds.length !== 1 || loadingMatches}
                             >
-                                {selectedMatchId || "All Matches in Round"}
+                                {selectedRoundIds.length === 1 ? (selectedMatchObj ? selectedMatchLabel : "All Matches in Round") : "Matches (select exactly one round to pick a match)"}
                             </button>
 
                             {open && (
@@ -400,18 +468,7 @@ export default function TimezoneAdjustmentPage() {
                                     </div>
 
                                     {matches.map((match: Match) => {
-                                        const dateObj = new Date(match.date);
-
-                                        const date = dateObj.toLocaleDateString("en-GB", {
-                                            day: "2-digit",
-                                            month: "2-digit",
-                                        });
-
-                                        const time = dateObj.toLocaleTimeString("en-GB", {
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                            hour12: false,
-                                        });
+                                        const { date, time } = formatUtcDateTime(match.date);
 
                                         const home =
                                             match.homeClub?.shortName ||
@@ -484,6 +541,16 @@ export default function TimezoneAdjustmentPage() {
                                         />
                                         <span>Manual Hour Adjustment</span>
                                     </label>
+                                    <label className="flex items-center">
+                                        <input
+                                            type="radio"
+                                            value="set"
+                                            checked={adjustmentType === 'set'}
+                                            onChange={(e) => setAdjustmentType(e.target.value as 'set')}
+                                            className="mr-2"
+                                        />
+                                        <span>Set Exact Date and Time</span>
+                                    </label>
                                 </div>
                             </div>
 
@@ -520,30 +587,74 @@ export default function TimezoneAdjustmentPage() {
                                 </div>
                             )}
 
+                            {/* Set Exact Time (and optional date) Input */}
+                            {adjustmentType === 'set' && (
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Exact Date (optional)
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={setDate}
+                                            onChange={(e) => setSetDate(e.target.value)}
+                                            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            If provided, this exact date will be used (YYYY-MM-DD). Leave empty to keep existing date.
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            Exact Time (HH:MM)
+                                        </label>
+                                        <input
+                                            type="time"
+                                            value={setTime}
+                                            onChange={(e) => setSetTime(e.target.value)}
+                                            className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        />
+                                        <p className="text-sm text-gray-500 mt-1">
+                                            Provide the match time (e.g., 19:30). This exact time will be saved for selected matches.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Tables to Update Info */}
                             <div className="bg-yellow-50 p-3 rounded-md">
                                 <h4 className="font-medium text-sm mb-1">Scope of update:</h4>
                                 <ul className="text-sm text-gray-600">
-                                    <li>• <strong>League only:</strong> All matches and standings in the entire league</li>
-                                    <li>• <strong>League + Season:</strong> All matches and standings in that specific season</li>
+                                    <li>• <strong>League only:</strong> All matches in the entire league</li>
+                                    <li>• <strong>League + Season:</strong> All matches in that specific season</li>
                                     <li>• <strong>League + Season + Round:</strong> All matches in that round</li>
                                     <li>• <strong>League + Season + Round + Match:</strong> Only that specific match</li>
                                 </ul>
                                 <p className="text-xs text-gray-500 mt-2">
-                                    Tables updated: matches (date field) and standings (related match dates)
+                                    Tables updated: matches (date field)
                                 </p>
                             </div>
                         </div>
                     </div>
 
                     {/* Process Button */}
-                    <div className="pt-4 border-t">
+                    <div className="pt-4 border-t flex flex-col md:flex-row md:items-start gap-3">
                         <button
                             onClick={handleProcess}
                             disabled={isProcessing || !selectedLeagueId}
-                            className="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                            className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[200px] text-center"
                         >
                             {isProcessing ? 'Processing...' : 'Update Timezone Data'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleClear}
+                            disabled={isProcessing}
+                            className="bg-gray-200 text-gray-800 px-4 py-3 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px]"
+                        >
+                            Clear
                         </button>
                     </div>
 
@@ -559,7 +670,6 @@ export default function TimezoneAdjustmentPage() {
                             <h4 className="font-medium text-green-900 mb-2">Process Completed Successfully</h4>
                             <div className="text-sm text-green-800">
                                 <p>Matches updated: {processResult.matchesUpdated || 0}</p>
-                                <p>Standings recalculated: {processResult.standingsRecalculated || 0}</p>
                                 {processResult.details && (
                                     <pre className="mt-2 bg-green-100 p-2 rounded text-xs overflow-auto">
                                         {JSON.stringify(processResult.details, null, 2)}

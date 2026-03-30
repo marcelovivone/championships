@@ -1,9 +1,8 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { matches, standings } from '../db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { matches } from '../db/schema';
+import { eq, and, or } from 'drizzle-orm';
 import * as schema from '../db/schema';
-import { StandingsService } from '../standings/standings.service';
 
 // Country timezone mappings (same as used in ETL)
 const COUNTRY_TIMEZONES: Record<string, string> = {
@@ -35,7 +34,7 @@ const COUNTRY_TIMEZONES: Record<string, string> = {
   'Romania': 'Europe/Bucharest',
   'Bulgaria': 'Europe/Sofia',
   // Americas
-  'Brazil': 'America/Sao_Paulo',
+  'Brazil': 'America/Brasilia',
   'Argentina': 'America/Argentina/Buenos_Aires',
   'Chile': 'America/Santiago',
   'Colombia': 'America/Bogota',
@@ -73,10 +72,7 @@ const COUNTRY_TIMEZONES: Record<string, string> = {
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(
-    @Inject('DRIZZLE') private db: NodePgDatabase<typeof schema>,
-    private readonly standingsService: StandingsService,
-  ) {}
+  constructor(@Inject('DRIZZLE') private db: NodePgDatabase<typeof schema>) {}
 
   /**
    * Convert date to local timezone using country timezone or manual offset
@@ -85,7 +81,8 @@ export class AdminService {
     if (!timezone) {
       return utcDate;
     }
-
+    this.logger.warn(`Converting date ${utcDate.toISOString()} using timezone: ${timezone}`);
+console.log(`Converting date ${utcDate.toISOString()} using timezone: ${timezone}`);
     try {
       // Create a formatter for the target timezone
       const formatter = new Intl.DateTimeFormat('en-US', {
@@ -98,7 +95,8 @@ export class AdminService {
         second: '2-digit',
         hour12: false
       });
-
+      this.logger.warn(`Formatter created for timezone: ${timezone}`);
+console.log(`Formatter created for timezone: ${timezone}`);
       // Get the date parts in the target timezone
       const parts = formatter.formatToParts(utcDate);
       const year = parseInt(parts.find(p => p.type === 'year')?.value || '1970');
@@ -107,11 +105,13 @@ export class AdminService {
       const hour = parseInt(parts.find(p => p.type === 'hour')?.value || '0');
       const minute = parseInt(parts.find(p => p.type === 'minute')?.value || '0');
       const second = parseInt(parts.find(p => p.type === 'second')?.value || '0');
-
+      this.logger.warn(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}, Hour: ${hour}, Minute: ${minute}, Second: ${second}`);
+console.log(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}, Hour: ${hour}, Minute: ${minute}, Second: ${second}`);
       // Create new date with local timezone interpretation
       return new Date(year, month, day, hour, minute, second);
     } catch (error) {
       this.logger.warn(`Failed to convert timezone for ${timezone}, using original date: ${error.message}`);
+      console.log(`Failed to convert timezone for ${timezone}, using original date: ${error.message}`);
       return utcDate;
     }
   }
@@ -132,6 +132,7 @@ export class AdminService {
     leagueId: number;
     seasonId?: number;
     roundId?: number;
+    roundIds?: number[];
     matchId?: number;
   }) {
     let whereCondition = eq(matches.leagueId, filters.leagueId);
@@ -140,7 +141,14 @@ export class AdminService {
       whereCondition = and(whereCondition, eq(matches.seasonId, filters.seasonId));
     }
 
-    if (filters.roundId) {
+    if (filters.roundIds && filters.roundIds.length > 0) {
+      // build OR condition for multiple rounds
+      let roundCond = eq(matches.roundId, filters.roundIds[0]);
+      for (let i = 1; i < filters.roundIds.length; i++) {
+        roundCond = or(roundCond, eq(matches.roundId, filters.roundIds[i]));
+      }
+      whereCondition = and(whereCondition, roundCond);
+    } else if (filters.roundId) {
       whereCondition = and(whereCondition, eq(matches.roundId, filters.roundId));
     }
 
@@ -155,14 +163,18 @@ export class AdminService {
     leagueId: number;
     seasonId?: number;
     roundId?: number;
+    roundIds?: number[];
     matchId?: number;
-    adjustmentType: 'country' | 'manual';
+    adjustmentType: 'country' | 'manual' | 'set';
     manualHours?: number;
+    /** HH:MM string when using 'set' */
+    setTime?: string;
+    setDate?: string;
     countryTimezone?: string;
   }) {
     const startTime = Date.now();
-    this.logger.log(`Starting timezone adjustment for league ${dto.leagueId}` + 
-      (dto.seasonId ? `, season ${dto.seasonId}` : ' (all seasons)'));
+    // this.logger.log(`Starting timezone adjustment for league ${dto.leagueId}` + 
+    //   (dto.seasonId ? `, season ${dto.seasonId}` : ' (all seasons)'));
 
     try {
       // Build query for affected matches
@@ -170,6 +182,7 @@ export class AdminService {
         leagueId: dto.leagueId,
         seasonId: dto.seasonId,
         roundId: dto.roundId,
+        roundIds: dto.roundIds,
         matchId: dto.matchId
       });
 
@@ -188,11 +201,11 @@ export class AdminService {
         };
       }
 
-      this.logger.log(`Found ${matchesToUpdate.length} matches to update`);
+    //   this.logger.log(`Found ${matchesToUpdate.length} matches to update`);
 
       let updatedCount = 0;
       const updateIds: number[] = [];
-      const updateDateMap: Record<number, Date> = {};
+      // track updated match ids
 
       // Process each match
       for (const match of matchesToUpdate) {
@@ -202,13 +215,41 @@ export class AdminService {
           // Convert using country timezone
           newDate = this.convertToLocalTimezone(new Date(match.date), dto.countryTimezone);
         } else if (dto.adjustmentType === 'manual' && dto.manualHours !== undefined) {
-          // Apply manual hour adjustment
+          // Apply manual hour adjustment (offset)
           newDate = this.applyManualAdjustment(new Date(match.date), dto.manualHours);
+        } else if (dto.adjustmentType === 'set' && dto.setTime) {
+          // Set explicit hour:minute provided by user (format HH:MM). Optionally, replace the date too.
+          const timeStr = String(dto.setTime).trim();
+          const m = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+          if (!m) {
+            continue;
+          }
+          const hours = parseInt(m[1], 10);
+          const minutes = parseInt(m[2], 10);
+          if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+            continue;
+          }
+          if (dto.setDate) {
+            // setDate expected format YYYY-MM-DD
+            const dateStr = String(dto.setDate).trim();
+            const dm = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (!dm) {
+              continue;
+            }
+            const y = parseInt(dm[1], 10);
+            const mo = parseInt(dm[2], 10) - 1;
+            const dday = parseInt(dm[3], 10);
+            // Construct exact UTC instant for provided date + time
+            newDate = new Date(Date.UTC(y, mo, dday, hours, minutes, 0, 0));
+          } else {
+            // Preserve original date (in UTC) but replace the time
+            newDate = new Date(match.date);
+            newDate.setUTCHours(hours, minutes, 0, 0);
+          }
         } else {
-          this.logger.warn(`Skipping match ${match.id}: invalid adjustment parameters`);
+          // this.logger.warn(`Skipping match ${match.id}: invalid adjustment parameters`);
           continue;
         }
-
         // Update match date
         await this.db
           .update(matches)
@@ -220,111 +261,19 @@ export class AdminService {
 
         updatedCount++;
         updateIds.push(match.id);
-        updateDateMap[match.id] = newDate;
 
-        this.logger.debug(`Updated match ${match.id}: ${match.date} -> ${newDate.toISOString()}`);
+        // this.logger.debug(`Updated match ${match.id}: ${match.date} -> ${newDate.toISOString()}`);
       }
-
-      // Update standings rows for affected matches (set match_date to new match date)
-      let standingsRecalculated = 0;
-      if (updatedCount > 0 && updateIds.length > 0) {
-        try {
-          for (const m of matchesToUpdate) {
-            if (!updateDateMap[m.id]) continue;
-            const newMatchDate = updateDateMap[m.id];
-
-            // Inspect existing standings rows for this matchId (for debugging)
-            const existingStandings = await this.db
-              .select()
-              .from(standings)
-              .where(eq(standings.matchId, m.id));
-            this.logger.log(`Match ${m.id}: found ${existingStandings.length} standings rows with matchId` +
-              (existingStandings.length ? ` (ids: ${existingStandings.map(s => s.id).join(',')})` : ''));
-
-            // First try to update standings rows that have matchId set
-            let result = await this.db
-              .update(standings)
-              .set({ matchDate: newMatchDate, updatedAt: new Date() })
-              .where(eq(standings.matchId, m.id))
-              .returning();
-
-            standingsRecalculated += result.length;
-
-            // If no rows were updated via matchId, fall back to updating by round/season and clubId (home/away)
-            if (result.length === 0) {
-              const clubIds = [m.homeClubId, m.awayClubId].filter(Boolean);
-              if (clubIds.length > 0 && m.roundId && m.seasonId) {
-                // Debug: inspect potential fallback rows before updating
-                const potential = await this.db
-                  .select()
-                  .from(standings)
-                  .where(
-                    and(
-                      eq(standings.roundId, m.roundId),
-                      eq(standings.seasonId, m.seasonId),
-                      inArray(standings.clubId, clubIds)
-                    )
-                  );
-                this.logger.log(`Match ${m.id}: fallback select found ${potential.length} rows for round ${m.roundId}, season ${m.seasonId}, clubs ${clubIds.join(',')}` +
-                  (potential.length ? ` (ids: ${potential.map(p => p.id).join(',')})` : ''));
-
-                const fallback = await this.db
-                  .update(standings)
-                  .set({ matchDate: newMatchDate, updatedAt: new Date() })
-                  .where(
-                    and(
-                      eq(standings.roundId, m.roundId),
-                      eq(standings.seasonId, m.seasonId),
-                      inArray(standings.clubId, clubIds)
-                    )
-                  )
-                  .returning();
-
-                standingsRecalculated += fallback.length;
-              }
-
-              // If still no standings rows were found/updated, create them using StandingsService
-              if (standingsRecalculated === 0) {
-                try {
-                  this.logger.log(`Match ${m.id}: no existing standings found, creating standings rows via StandingsService.create()`);
-                  const createDto = {
-                    sportId: m.sportId,
-                    leagueId: m.leagueId,
-                    seasonId: m.seasonId,
-                    roundId: m.roundId,
-                    matchDate: newMatchDate.toISOString(),
-                    groupId: m.groupId ?? null,
-                    homeClubId: m.homeClubId,
-                    awayClubId: m.awayClubId,
-                    matchId: m.id,
-                    matchDivisions: [],
-                    homeScore: m.homeScore ?? null,
-                    awayScore: m.awayScore ?? null,
-                  } as any;
-
-                  const created = await this.standingsService.create(createDto);
-                  // created.home/away contain returned rows
-                  const createdCount = (created.home?.length ?? 0) + (created.away?.length ?? 0);
-                  standingsRecalculated += createdCount;
-                  this.logger.log(`Match ${m.id}: created ${createdCount} standings rows`);
-                } catch (err) {
-                  this.logger.error(`Match ${m.id}: failed to create standings rows: ${err.message}`);
-                }
-              }
-            }
-          }
-        } catch (error) {
-          this.logger.error(`Failed to update standings for updated matches: ${error.message}`);
-        }
-      }
+      // Do NOT touch the standings table in this operation.
+      const standingsRecalculated = 0;
 
       const executionTime = Date.now() - startTime;
       
-      this.logger.log(
-        `Timezone adjustment completed: ${updatedCount} matches updated, ` +
-        `${standingsRecalculated} standings entries affected in ${executionTime}ms` +
-        ` (League: ${dto.leagueId}` + (dto.seasonId ? `, Season: ${dto.seasonId}` : ', All seasons') + `)`
-      );
+    //   this.logger.log(
+    //     `Timezone adjustment completed: ${updatedCount} matches updated, ` +
+    //     `${standingsRecalculated} standings entries affected in ${executionTime}ms` +
+    //     ` (League: ${dto.leagueId}` + (dto.seasonId ? `, Season: ${dto.seasonId}` : ', All seasons') + `)`
+    //   );
 
       return {
         success: true,
@@ -334,6 +283,8 @@ export class AdminService {
           adjustmentType: dto.adjustmentType,
           timezone: dto.countryTimezone,
           manualHours: dto.manualHours,
+            setTime: dto.setTime,
+            setDate: dto.setDate || null,
           executionTimeMs: executionTime,
           updatedMatchIds: updateIds
         }

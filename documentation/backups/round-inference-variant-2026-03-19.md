@@ -5,7 +5,7 @@ Files covered:
 - frontend/app/admin/api/etl/football/page.tsx
 
 Behavior snapshot:
-- Date-based round boundaries use league-local day handling for `America/Sao_Paulo`.
+- Date-based round boundaries use league-local day handling for `America/Brasilia`.
 - Incomplete rounds can be carried forward in `openIncompleteRounds` and later delayed fixtures can be auto-assigned back.
 - Ambiguous fixtures are deferred and one consolidated review set is returned after the full parse loop.
 - Review UI shows a round summary, editable rows, unresolved-only filtering, and league-local dates.

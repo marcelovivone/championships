@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AdminController } from './admin.controller';
 import { AdminService } from './admin.service';
-import { StandingsModule } from '../standings/standings.module';
 
 @Module({
-  imports: [StandingsModule],
   controllers: [AdminController],
   providers: [AdminService],
   exports: [AdminService]

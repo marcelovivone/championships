@@ -108,10 +108,27 @@ export const sportsApi = createCrudApi<Sport, CreateSportDto>('sports');
 // Custom leagues API to support filtering by sportId
 export const leaguesApi = {
   ...createCrudApi<League, CreateLeagueDto>('leagues'),
+  // Override: fetch leagues by sport and return them ordered by name
   getBySport: async (sportId: number): Promise<League[]> => {
     const response = await apiClient.get<League[]>(`/v1/leagues?sportId=${sportId}`);
     const result = response.data as any;
-    return Array.isArray(result) ? result : (result.data || []);
+    const raw = Array.isArray(result) ? result : (result.data || []);
+    return [...raw].sort((a: any, b: any) => {
+      const aName = ((a.originalName || a.name) || '').toLowerCase();
+      const bName = ((b.originalName || b.name) || '').toLowerCase();
+      return aName.localeCompare(bName);
+    });
+  },
+  // Override getAll for leagues to return paginated results with data sorted by name
+  getAll: async (params?: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc'; }) => {
+    const base = createCrudApi<League, CreateLeagueDto>('leagues');
+    const res = await base.getAll(params);
+    const sorted = [...res.data].sort((a: any, b: any) => {
+      const aName = ((a.originalName || a.name) || '').toLowerCase();
+      const bName = ((b.originalName || b.name) || '').toLowerCase();
+      return aName.localeCompare(bName);
+    });
+    return { ...res, data: sorted };
   }
 };
 

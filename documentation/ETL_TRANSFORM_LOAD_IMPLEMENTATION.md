@@ -3,7 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-03-24
+> **Last updated**: 2026-03-30
 
 ---
 
@@ -186,7 +186,7 @@ This is the core algorithm in `getEspnRoundNumbers()`. It assigns round numbers 
 2. **Check for authoritative overrides**: If the user has manually assigned ALL events, skip automatic inference entirely
 3. **Main loop** — iterate through sorted events:
    - **Round full**: If `matchesInCurrentRound >= maxMatchesPerRound` → advance to next round
-   - **Date gap boundary**: If >1 day gap between consecutive matches (in league-local timezone, e.g., `America/Sao_Paulo`) AND the round isn't full yet, advance to next round and track the current round as "open incomplete"
+   - **Date gap boundary**: If >1 day gap between consecutive matches (in league-local timezone, e.g., `America/Brasilia`) AND the round isn't full yet, advance to next round and track the current round as "open incomplete"
    - **Strong boundary**: If gap > `ROUND_BOUNDARY_GAP_DAYS` (1) and at least one match is assigned → advance
    - **Open incomplete round backfill**: When a match's home AND away teams are both missing from exactly one open incomplete round → assign the match to that round (this handles early-played / rescheduled games)
    - **Team conflict detection**: If a team is already in the current round:
@@ -267,17 +267,51 @@ Used when **rounds already exist** for the league/season.
 3. Look up league → season → count rounds in DB
 4. If rounds exist → set `isSubsequentLoad = true`, set `leagueId` and `seasonId` from DB
 
-**Behavior differences**:
+**Behavior differences** (parse phase):
 - **Skip full parse**: Use `parseTransitionalEspnLightweight()` for ESPN (or standard `parseTransitional()` for Api-Football which is already lightweight)
-- **Skip `applyFirstRowToApp()`**: Country/League/Season already exist
-- **Skip round creation**: Rounds already exist; existing `round_id` is preserved via COALESCE
-- The per-row processing loop still runs normally, handling upserts
+- **Skip `applyFirstRowToApp()`**: Country/League/Season already exist; this call (which handles Country/League/Season upsert) is not made
+
+**Per-row fast path** (implemented in `backend/src/api/api.service.ts`):
+
+When `isSubsequentLoad = true`, the standard per-row loop (§5.3) contains a complete self-contained fast path block at the **very top** of each iteration, executed before any entity resolution code. The fast path:
+
+1. **Reads `origin_api_id`** from the current row (the external API's event ID)
+2. **Looks up the existing match** in the DB:
+   ```sql
+   SELECT id, status, home_club_id, away_club_id, round_id
+   FROM matches
+   WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3
+   ```
+3. **Skips the row** if:
+   - The match is already `Finished` in the DB (standing already computed; don't overwrite)
+   - The incoming payload row also shows non-Finished status (nothing changed; no work to do)
+4. **When a previously non-Finished match is now Finished** in the payload:
+   - `UPDATE matches SET status = 'Finished', home_score = ?, away_score = ?, updated_at = NOW() WHERE id = ?`
+   - `DELETE FROM match_divisions WHERE match_id = ?` + recreate them via `createMatchDivisions()`
+   - `INSERT INTO standings` for both home and away clubs (with the same duplicate-guard as the first-load path)
+   - Runs `cascadeClub()` for both clubs to recalculate any future rounds with early-played games
+5. **`continue`** — the rest of the loop body (all entity resolution) is never reached
+
+**What is completely skipped** on subsequent loads:
+- Round lookup / creation (`ensureRound`)
+- Club fuzzy matching and creation (`findOrCreateClub`)
+- Sport-club bridging (`ensureSportClub`)
+- Season-club bridging (`ensureSeasonClub`)
+- City/stadium creation (`ensureCity`, `ensureStadium`)
+- Club-stadium bridging (`ensureClubStadium`)
+- Match INSERT (only UPDATE is needed; new matches don't appear in subsequent payloads of the same season)
+- Entity review (all entities were resolved during the first load)
+- Round review (all round assignments were resolved during the first load)
+
+> **Design rationale**: Skipping all entity resolution is safe because every entity that can appear in a subsequent payload (for an already-loaded season) was created or mapped during the first load. The second payload for the same season only provides score updates for previously-scheduled matches. Any attempt to re-run entity resolution would at best be wasteful and at worst cause duplicate-entity or constraint errors if names differ slightly between API payloads.
 
 ### 5.3 Per-row processing loop
 
 Rows are **sorted by round number ascending** before processing (critical for correct standings calculation).
 
-For each row:
+> **Subsequent-load**: When `isSubsequentLoad = true`, each iteration begins with the fast-path block described in §5.2. If the fast path fires (the row is relevant and needs updating) it handles everything and calls `continue`, skipping all steps below. Steps 1–4 are therefore **only executed on the first load**.
+
+For each row (first-load path, or rows where fast-path did not apply):
 1. **Resolve round**: Extract round number → look up or create `rounds` row → cache
 2. **Resolve clubs**: Find or create home/away clubs by name (fuzzy match by `short_name`/`name` within the league's country) → cache
 3. **Ensure bridging rows**: `sport_clubs`, `season_clubs` for each club
@@ -737,7 +771,7 @@ When a team conflict occurs (team already assigned to the current round) and >2 
 - The user must manually assign the stray to its correct round
 
 ### Local timezone clustering
-ESPN timestamps are UTC. Date gap detection uses league-local dates (e.g., `America/Sao_Paulo` for Brasileirão) to avoid splitting same-day matches across two calendar days in UTC.
+ESPN timestamps are UTC. Date gap detection uses league-local dates (e.g., `America/Brasilia` for Brasileirão) to avoid splitting same-day matches across two calendar days in UTC.
 
 ### Scores for non-finished matches
 Scores are saved as `null` (not 0) for matches that aren't finished yet. This distinguishes "not played" from "0-0".
@@ -969,6 +1003,12 @@ The following items are known areas that still need implementation or refinement
 - **Integration testing**: No automated test covers the full ETL pipeline end-to-end; verification has been manual.
 - **Error recovery**: If a load fails partway through, the transaction rolls back completely. There's no partial-apply or resume capability.
 - **Performance**: The per-row processing loop makes many individual DB queries (club lookup, city lookup, etc.). For very large payloads this could be optimized with batch operations.
-- **ESPN league-specific timezone config**: The `LEAGUE_TIMEZONE` is hardcoded to `America/Sao_Paulo`. For other ESPN league endpoints (e.g., MLS, La Liga) this should become configurable.
+- **ESPN league-specific timezone config (IMPLEMENTED)**: The `LEAGUE_TIMEZONE` is now configurable per-league instead of being hardcoded to `America/Brasilia`. League-specific timezone values are stored and used during parsing and date computations so that local-day clustering and date-based logic (e.g., grouping matches that occur on the same local calendar day) respect the league's timezone and DST rules.
+
+- **Admin timezone correction UI (NEW)**: An admin page was added to allow manual corrections of match datetimes for a selected League (required) and optionally Season, one or multiple Rounds, or a single Match. The page supports three adjustment modes:
+  - `country`: apply the league's configured timezone conversion (DST-aware) to stored UTC datetimes.
+  - `manual`: add or subtract whole-hour offsets to match datetimes (e.g., +1, -2 hours).
+  - `set`: set an exact time (HH:MM) and optionally an exact date (YYYY-MM-DD) for matches; when `set` is used the server writes the exact UTC instant corresponding to the provided date/time (avoiding server-local timezone shifts).
+  The admin flow updates only the `matches.date` field (it does NOT touch `standings`) and supports batch updates across non-sequential round selections.
 - **Enrichment standings update**: After ESPN enrichment writes real partial scores into `match_divisions`, the standings rows already in the DB were calculated with `home_score = 0, away_score = 0` for those divisions. If the standings calculator relies on division data (e.g., overtime wins from `match_divisions`), those standings rows may be slightly incorrect. A post-enrichment standings recalculation step is not yet implemented.
 - **Enrichment retry on partial failure**: If enrichment fails for a subset of matches (e.g., ESPN rate-limits mid-batch), there is no automatic retry. Re-running the full T&L load would skip already-finished matches (upsert guard), so the only current workaround is to manually trigger enrichment or re-run after clearing the affected division scores.

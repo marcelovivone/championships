@@ -28,7 +28,7 @@ function Last5Chip({ c, tooltip }: { c: string; tooltip?: string | null }) {
     return empty;
   }
 
-  const bg = c === 'W' ? 'bg-green-500' : c === 'D' ? 'bg-gray-400' : 'bg-red-500';
+  const bg = c === 'W' ? 'bg-green-600' : c === 'D' ? 'bg-gray-400' : 'bg-red-600';
   const chip = (
     <div className={clsx('w-6 h-6 rounded flex items-center justify-center text-xs text-white', bg)}>
       {c}

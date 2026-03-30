@@ -568,7 +568,7 @@ let ApiService = ApiService_1 = class ApiService {
             const allTeamIds = Array.from(uniqueClubIds);
             const maxMatchesPerRound = uniqueClubIds.size >= 2 ? Math.floor(uniqueClubIds.size / 2) : null;
             const toUtcDay = (date) => Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-            const LEAGUE_TIMEZONE = 'America/Sao_Paulo';
+            const LEAGUE_TIMEZONE = 'America/Brasilia';
             const toLocalDay = (date) => {
                 try {
                     const parts = new Intl.DateTimeFormat('en-GB', {
