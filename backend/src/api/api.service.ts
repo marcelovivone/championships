@@ -15,6 +15,23 @@ const normalizeLookupKey = (value: any) =>
         .replace(/[^a-z0-9]+/g, '')
         .trim();
 
+const STADIUM_WORDS = new Set(['stadium', 'estadio', 'stade', 'stadio', 'stadion', 'arena', 'ground', 'field', 'park', 'parque', 'coliseum', 'centre', 'center', 'complex', 'parc']);
+const NOISE_WORDS = new Set(['de', 'do', 'da', 'dos', 'das', 'del', 'della', 'dello', 'di', 'le', 'la', 'les', 'the', 'of', 'des', 'a', 'o', 'e', 'y', 'and', 'et', 'und']);
+
+const canonicalizeName = (raw: string): string => {
+    const stripped = raw
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase();
+    const words = stripped.split(/\s+/);
+    const kept = words
+        .filter(w => !STADIUM_WORDS.has(w) && !NOISE_WORDS.has(w))
+        .map(w => w.replace(/[^a-z0-9]/g, ''))
+        .filter(w => w.length > 0);
+    kept.sort();
+    return kept.join(' ');
+};
+
 // Country to timezone mapping for match date conversion
 const COUNTRY_TIMEZONES: Record<string, string> = {
     // Europe
@@ -550,6 +567,36 @@ export class ApiService {
          RETURNING *`,
                 [id, leagueMapping, normalizedClubMappings, normalizedStadiumMappings],
             );
+
+            // Persist user-resolved mappings to the permanent alias table
+            let aliasSportId: number | null = null;
+            let aliasCountryId: number | null = null;
+            if (leagueMapping) {
+                const leagueInfo = await pool.query(`SELECT sport_id, country_id FROM leagues WHERE id = $1 LIMIT 1`, [leagueMapping]);
+                if (leagueInfo.rows.length) {
+                    aliasSportId = leagueInfo.rows[0].sport_id;
+                    aliasCountryId = leagueInfo.rows[0].country_id;
+                }
+            }
+            for (const [aliasName, entityId] of Object.entries(normalizedClubMappings)) {
+                if (!entityId) continue;
+                await pool.query(
+                    `INSERT INTO entity_name_aliases (entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source)
+                     VALUES ('club', $1, $2, $3, $4, $5, 'user')
+                     ON CONFLICT (entity_type, alias_name, COALESCE(sport_id, 0), COALESCE(country_id, 0)) DO UPDATE SET entity_id = EXCLUDED.entity_id, source = 'user'`,
+                    [entityId, aliasName, canonicalizeName(aliasName), aliasSportId, aliasCountryId],
+                );
+            }
+            for (const [aliasName, entityId] of Object.entries(normalizedStadiumMappings)) {
+                if (!entityId) continue;
+                await pool.query(
+                    `INSERT INTO entity_name_aliases (entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source)
+                     VALUES ('stadium', $1, $2, $3, $4, $5, 'user')
+                     ON CONFLICT (entity_type, alias_name, COALESCE(sport_id, 0), COALESCE(country_id, 0)) DO UPDATE SET entity_id = EXCLUDED.entity_id, source = 'user'`,
+                    [entityId, aliasName, canonicalizeName(aliasName), aliasSportId, aliasCountryId],
+                );
+            }
+
             return res.rows[0] || null;
         } finally {
             await pool.end();
@@ -754,6 +801,15 @@ export class ApiService {
                         if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) {
                             continue;
                         }
+                        // Check persistent alias table
+                        const clubAlias = await pool.query(
+                            `SELECT entity_id FROM entity_name_aliases
+                             WHERE entity_type = 'club' AND alias_name = $1
+                               AND COALESCE(country_id, 0) = COALESCE($2, 0)
+                             LIMIT 1`,
+                            [clubName, leagueCountryId],
+                        );
+                        if (clubAlias.rows.length) continue;
                         // Check if club exists
                         const clubRes = await pool.query(
                             `SELECT id, name, short_name FROM clubs 
@@ -808,6 +864,16 @@ export class ApiService {
                     if (existingMappings.stadiums && existingMappings.stadiums[venueName] !== undefined) {
                         continue;
                     }
+
+                    // Check persistent alias table
+                    const stadiumAlias = await pool.query(
+                        `SELECT entity_id FROM entity_name_aliases
+                         WHERE entity_type = 'stadium' AND alias_name = $1
+                           AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+                         LIMIT 1`,
+                        [venueName, sportId || 36],
+                    );
+                    if (stadiumAlias.rows.length) continue;
 
                     // Check if stadium exists
                     const stadiumRes = await pool.query(
@@ -1828,6 +1894,7 @@ export class ApiService {
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
                 'fixture.status.long': status?.description ?? null,
                 'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
+                'fixture.status.state': status?.state ?? null,
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
 
                 // Origin API identifier — persisted as origin_api_id in the matches table
@@ -2641,6 +2708,7 @@ export class ApiService {
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
                 'fixture.status.long': status?.description ?? null,
                 'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
+                'fixture.status.state': status?.state ?? null,
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
             });
@@ -2902,11 +2970,39 @@ export class ApiService {
                 return inserted.rows[0].id;
             };
 
+            const saveAlias = async (entityType: string, entityId: number, aliasName: string, canonicalName: string, aliasSportId: number | null, countryId: number | null, source: string) => {
+                try {
+                    await client.query(
+                        `INSERT INTO entity_name_aliases (entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7)
+                         ON CONFLICT (entity_type, alias_name, COALESCE(sport_id, 0), COALESCE(country_id, 0)) DO NOTHING`,
+                        [entityType, entityId, aliasName, canonicalName, aliasSportId, countryId, source],
+                    );
+                } catch (e) {
+                    this.logger.debug(`saveAlias failed: ${String(e)}`);
+                }
+            };
+
             const ensureStadium = async (venueNameRaw: any, cityId: number | null): Promise<{ id: number; created: boolean } | null> => {
                 const venueName = normalizeText(venueNameRaw);
                 if (!venueName || !cityId) return null;
 
-                // Check if user mapped this stadium to an existing one
+                // Step 0: Check persistent alias table
+                const aliasRes = await client.query(
+                    `SELECT entity_id FROM entity_name_aliases
+                     WHERE entity_type = 'stadium' AND alias_name = $1
+                       AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+                     LIMIT 1`,
+                    [venueName, sportId],
+                );
+                if (aliasRes.rows.length) {
+                    const aliasId = aliasRes.rows[0].entity_id;
+                    const cacheKey = `${sportId}:${cityId}:${normalizeLookupKey(venueName)}`;
+                    stadiumCache[cacheKey] = aliasId;
+                    return { id: aliasId, created: false };
+                }
+
+                // Step 1: Check if user mapped this stadium to an existing one
                 if (stadiumMappings[venueName]) {
                     const mappedId = stadiumMappings[venueName];
                     const cacheKey = `${sportId}:${cityId}:${normalizeLookupKey(venueName)}`;
@@ -2918,6 +3014,7 @@ export class ApiService {
                 const cacheKey = `${sportId}:${cityId}:${normalizedVenueName}`;
                 if (stadiumCache[cacheKey]) return { id: stadiumCache[cacheKey], created: false };
 
+                // Step 2: Exact match
                 const existing = await client.query(
                     `SELECT id FROM stadiums WHERE sport_id = $1 AND city_id = $2 AND unaccent(lower(name)) = unaccent(lower($3)) LIMIT 1`,
                     [sportId, cityId, venueName],
@@ -2928,6 +3025,7 @@ export class ApiService {
                     return { id: stadiumId, created: false };
                 }
 
+                // Step 3: Normalized match (strip diacritics/punctuation)
                 const normalizedExisting = await client.query(
                     `SELECT id
              FROM stadiums
@@ -2940,9 +3038,43 @@ export class ApiService {
                 if (normalizedExisting.rows.length) {
                     const stadiumId = normalizedExisting.rows[0].id;
                     stadiumCache[cacheKey] = stadiumId;
+                    await saveAlias('stadium', stadiumId, venueName, canonicalizeName(venueName), sportId, leagueCountryId, 'auto');
                     return { id: stadiumId, created: false };
                 }
 
+                // Step 4: Canonical matching (word-order independent, stadium words stripped)
+                const incomingCanonical = canonicalizeName(venueName);
+                if (incomingCanonical) {
+                    const canonicalAlias = await client.query(
+                        `SELECT entity_id FROM entity_name_aliases
+                         WHERE entity_type = 'stadium' AND canonical_name = $1
+                           AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+                         LIMIT 1`,
+                        [incomingCanonical, sportId],
+                    );
+                    if (canonicalAlias.rows.length) {
+                        const stadiumId = canonicalAlias.rows[0].entity_id;
+                        stadiumCache[cacheKey] = stadiumId;
+                        await saveAlias('stadium', stadiumId, venueName, incomingCanonical, sportId, leagueCountryId, 'auto');
+                        return { id: stadiumId, created: false };
+                    }
+
+                    // Compare canonical forms against all stadiums in the same sport+city
+                    const candidates = await client.query(
+                        `SELECT id, name FROM stadiums WHERE sport_id = $1 AND city_id = $2`,
+                        [sportId, cityId],
+                    );
+                    for (const c of candidates.rows) {
+                        if (canonicalizeName(c.name) === incomingCanonical) {
+                            const stadiumId = c.id;
+                            stadiumCache[cacheKey] = stadiumId;
+                            await saveAlias('stadium', stadiumId, venueName, incomingCanonical, sportId, leagueCountryId, 'auto');
+                            return { id: stadiumId, created: false };
+                        }
+                    }
+                }
+
+                // Step 5: Flexible substring match
                 const flexible = await client.query(
                     `SELECT id
              FROM stadiums
@@ -2959,15 +3091,22 @@ export class ApiService {
                 if (flexible.rows.length) {
                     const stadiumId = flexible.rows[0].id;
                     stadiumCache[cacheKey] = stadiumId;
+                    await saveAlias('stadium', stadiumId, venueName, canonicalizeName(venueName), sportId, leagueCountryId, 'auto');
                     return { id: stadiumId, created: false };
                 }
 
+                // Step 6: INSERT new stadium
                 const inserted = await client.query(
                     `INSERT INTO stadiums (sport_id, name, city_id, capacity, image_url, year_constructed, type) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
                     [sportId, venueName, cityId, null, null, null, 'stadium'],
                 );
                 const stadiumId = inserted.rows[0].id;
                 stadiumCache[cacheKey] = stadiumId;
+                // Save canonical form for newly created stadiums too
+                const newCanonical = canonicalizeName(venueName);
+                if (newCanonical) {
+                    await saveAlias('stadium', stadiumId, venueName, newCanonical, sportId, leagueCountryId, 'auto');
+                }
                 return { id: stadiumId, created: true };
             };
 
@@ -3073,7 +3212,8 @@ export class ApiService {
                         const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                         const _dateVal = _dateRaw ? new Date(String(_dateRaw)) : null;
                         const _statusShort = r['fixture.status.short'] ?? null;
-                        const _status = _statusShort === 'FT' ? 'Finished' : 'Scheduled';
+                        const _statusState = r['fixture.status.state'] ?? null;
+                        const _status = (_statusShort === 'FT' || _statusState === 'post') ? 'Finished' : 'Scheduled';
                         const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                         const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
 
@@ -3331,6 +3471,23 @@ export class ApiService {
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName) return null;
 
+                        // Step 0: Check persistent alias table
+                        const clubAlias = await client.query(
+                            `SELECT entity_id FROM entity_name_aliases
+                             WHERE entity_type = 'club' AND alias_name = $1
+                               AND COALESCE(country_id, 0) = COALESCE($2, 0)
+                             LIMIT 1`,
+                            [clubName, leagueCountryId],
+                        );
+                        if (clubAlias.rows.length) {
+                            const aliasId = clubAlias.rows[0].entity_id;
+                            clubCache[clubName] = aliasId;
+                            const aliasClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [aliasId]);
+                            if (aliasClub.rows.length) {
+                                return { id: aliasClub.rows[0].id, shortName: aliasClub.rows[0].short_name || clubName };
+                            }
+                        }
+
                         // Check if user mapped this club to an existing one
                         if (clubMappings[clubName]) {
                             const mappedId = clubMappings[clubName];
@@ -3391,6 +3548,10 @@ export class ApiService {
                         if (cres.rows.length) {
                             clubCache[clubName] = cres.rows[0].id;
                             const shortName = cres.rows[0].short_name || clubName;
+                            // Auto-save alias when found via normalization
+                            if (shortName.toLowerCase() !== clubName.toLowerCase()) {
+                                await saveAlias('club', cres.rows[0].id, clubName, canonicalizeName(clubName), sportId, leagueCountryId, 'auto');
+                            }
                             return { id: cres.rows[0].id, shortName };
                         }
 
@@ -3404,6 +3565,11 @@ export class ApiService {
                         const shortName = ins.rows[0].short_name || clubName;
                         clubCache[clubName] = cid;
                         createdClubs += 1;
+                        // Save canonical form for newly created clubs
+                        const clubCanonical = canonicalizeName(clubName);
+                        if (clubCanonical) {
+                            await saveAlias('club', cid, clubName, clubCanonical, sportId, leagueCountryId, 'auto');
+                        }
                         // only track clubs that were actually created during this run
                         if (!clubsIncluded.includes(shortName)) clubsIncluded.push(shortName);
                         return { id: cid, shortName };
@@ -3449,7 +3615,8 @@ export class ApiService {
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                     const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
                     const statusShort = r['fixture.status.short'] ?? null;
-                    const status = statusShort === 'FT' ? 'Finished' : 'Scheduled';
+                    const statusState = r['fixture.status.state'] ?? null;
+                    const status = (statusShort === 'FT' || statusState === 'post') ? 'Finished' : 'Scheduled';
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
                     // Resolve the origin API identifier from whichever key the parser emitted:

@@ -46,7 +46,7 @@ export default function BaseStandings({
   const [displayRoundForStandings, setDisplayRoundForStandings] = React.useState<number | string>(roundOrDay);
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
-  const [showUserTimezone, setShowUserTimezone] = useState(false);
+  const [showUserTimezone, setShowUserTimezone] = useState(true);
 
   // Fetch seasons for the selected league
   const { data: seasonsData, refetch: refetchSeasons } = useQuery({
@@ -311,6 +311,20 @@ export default function BaseStandings({
     }
   }, [league, seasons]);
 
+  // Helper: determine if a season is finished.
+  const isSeasonFinished = (s: any) => {
+    if (!s) return false;
+    if (s.status !== undefined) return String(s.status).toLowerCase() === 'finished';
+    // Fallback: flgActive false + end date in the past
+    if (s.flgActive !== undefined && Boolean(s.flgActive) === false) {
+      try {
+        const end = s.endDate ?? s.end_date;
+        if (end && new Date() > new Date(end)) return true;
+      } catch { /* ignore */ }
+    }
+    return false;
+  };
+
   // Helper: determine if a season is active.
   // The Season DTO uses a `status` field: 'planned' | 'active' | 'finished'.
   const isSeasonActive = (s: any) => {
@@ -341,7 +355,10 @@ export default function BaseStandings({
   seasonsRef.current = seasons;
 
   // Single effect: whenever league or season changes, determine the correct round.
-  // Rules: inactive/missing season → round 1; active season → flgCurrent round (or 1 if none).
+  // Rules:
+  //   active season   → flgCurrent round (or 1 if none flagged)
+  //   finished season → last round (highest roundNumber in the season)
+  //   planned/unknown → round 1
   // An AbortController cancels any stale in-flight fetch when league/season changes again.
   React.useEffect(() => {
     if (!season || !league) {
@@ -356,13 +373,17 @@ export default function BaseStandings({
       ? currentSeasons.find((s: any) => String(s.id) === String(season))
       : null;
 
-    if (!seasonObj || !isSeasonActive(seasonObj)) {
+    const active = seasonObj && isSeasonActive(seasonObj);
+    const finished = seasonObj && isSeasonFinished(seasonObj);
+
+    if (!active && !finished) {
+      // Planned or unknown — start at round 1
       setRoundOrDay(1);
       setDebouncedRoundOrDay(1);
       return;
     }
 
-    // Season is active — fetch rounds fresh to find the flgCurrent round.
+    // Active or finished — fetch rounds to find the right starting round.
     let mounted = true;
     const controller = new AbortController();
 
@@ -378,18 +399,28 @@ export default function BaseStandings({
 
         if (!mounted) return;
 
-        const current = data.find((rr: any) =>
-          rr.flgCurrent || rr.flg_current || rr.isCurrent || rr.current
-        );
-
-        if (current) {
-          const num = Number(current.roundNumber ?? current.round ?? current.round_number ?? 1);
-          const finalNum = isNaN(num) ? 1 : num;
-          setRoundOrDay(finalNum);
-          setDebouncedRoundOrDay(finalNum);
+        if (finished) {
+          // Finished season: jump to the last round that exists in DB.
+          const nums = (data as any[])
+            .map((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number))
+            .filter((n: number) => !isNaN(n) && n > 0);
+          const lastRound = nums.length > 0 ? Math.max(...nums) : 1;
+          setRoundOrDay(lastRound);
+          setDebouncedRoundOrDay(lastRound);
         } else {
-          setRoundOrDay(1);
-          setDebouncedRoundOrDay(1);
+          // Active season: use flgCurrent round.
+          const current = data.find((rr: any) =>
+            rr.flgCurrent || rr.flg_current || rr.isCurrent || rr.current
+          );
+          if (current) {
+            const num = Number(current.roundNumber ?? current.round ?? current.round_number ?? 1);
+            const finalNum = isNaN(num) ? 1 : num;
+            setRoundOrDay(finalNum);
+            setDebouncedRoundOrDay(finalNum);
+          } else {
+            setRoundOrDay(1);
+            setDebouncedRoundOrDay(1);
+          }
         }
       } catch (e) {
         if ((e as any)?.name === 'CanceledError' || (e as any)?.message === 'canceled') return;
@@ -412,6 +443,29 @@ export default function BaseStandings({
       setLeague(init);
     }
   }, [leagues, initialLeagueId]);
+
+  // Derive the actual max round for the selected league+season from the rounds data.
+  // This handles leagues that change team count between seasons (e.g. Ligue 1: 38 → 34 rounds).
+  // When rounds are not yet loaded, returns undefined and FilterBar falls back to the
+  // league-level number_of_rounds_matches.
+  const effectiveMaxRound = React.useMemo(() => {
+    if (!roundsQuery.data || !Array.isArray(roundsQuery.data) || roundsQuery.data.length === 0) return undefined;
+    const nums = (roundsQuery.data as any[])
+      .map((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number))
+      .filter((n: number) => !isNaN(n) && n > 0);
+    return nums.length > 0 ? Math.max(...nums) : undefined;
+  }, [roundsQuery.data]);
+
+  // Clamp the selected round down to the effective max when rounds data loads for
+  // the current league+season.  The FilterBar navigation buttons are also capped
+  // so the user cannot go beyond this value once data is available.
+  React.useEffect(() => {
+    if (!effectiveMaxRound || scheduleIsDate) return;
+    if (Number(roundOrDay) > effectiveMaxRound) {
+      setRoundOrDay(effectiveMaxRound);
+      setDebouncedRoundOrDay(effectiveMaxRound);
+    }
+  }, [effectiveMaxRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
@@ -441,6 +495,7 @@ export default function BaseStandings({
         seasons={seasons}
         showTop={true}
         showBottom={false}
+        effectiveMaxRound={effectiveMaxRound}
       />
 
       <div className="mt-6 flex flex-col lg:flex-row gap-6">
@@ -473,6 +528,7 @@ export default function BaseStandings({
                   showTop={false}
                   showBottom={true}
                   compact={true}
+                  effectiveMaxRound={effectiveMaxRound}
                 />
               </div>
             </div>

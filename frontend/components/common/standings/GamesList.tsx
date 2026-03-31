@@ -207,6 +207,7 @@ export default function GamesList({
             </div>
             <div className="mt-2 flex flex-col sm:flex-row sm:items-center gap-3">
               <div className="flex items-center gap-3 flex-1 min-w-0 max-w-[40%]">
+                <div className="text-sm min-w-0 flex-1 text-right">{g.home.name}</div>
                 {g.home.image ? (
                   <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center p-0.5 flex-shrink-0">
                     <img src={g.home.image} alt={g.home.name} className="max-w-full max-h-full object-contain" />
@@ -214,7 +215,6 @@ export default function GamesList({
                 ) : (
                   <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm flex-shrink-0"> {g.home.name.charAt(0)}</div>
                 )}
-                <div className="text-sm min-w-0 flex-1">{g.home.name}</div>
               </div>
 
               <div className="w-16 flex-shrink-0 text-center">
@@ -225,14 +225,14 @@ export default function GamesList({
               </div>
 
               <div className="flex items-center gap-3 justify-end flex-1 min-w-0 max-w-[40%]">
-                <div className="text-sm text-right min-w-0 flex-1">{g.away.name}</div>
                 {g.away.image ? (
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center p-0.5 flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full overflow-hidden bg-white flex items-center justify-center p-0.5 flex-shrink-0">
                     <img src={g.away.image} alt={g.away.name} className="max-w-full max-h-full object-contain" />
                   </div>
                 ) : (
-                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm flex-shrink-0">{g.away.name.charAt(0)}</div>
+                    <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-sm flex-shrink-0">{g.away.name.charAt(0)}</div>
                 )}
+                <div className="text-sm min-w-0 flex-1 text-left">{g.away.name}</div>
               </div>
             </div>
             {/* score/status shown inline between teams when available */}

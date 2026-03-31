@@ -147,7 +147,7 @@ export default function TimezoneAdjustmentPage() {
         enabled: !!selectedLeagueId
     });
 
-    const seasons = Array.isArray(seasonsData) ? seasonsData : (seasonsData?.data || []);
+    const seasons = (Array.isArray(seasonsData) ? seasonsData : (seasonsData?.data || [])).slice().sort((a: Season, b: Season) => b.startYear - a.startYear);
 
     // Fetch rounds (dependent on league + season)
     const { data: roundsData, isLoading: loadingRounds } = useQuery({

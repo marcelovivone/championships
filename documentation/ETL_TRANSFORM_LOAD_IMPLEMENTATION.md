@@ -3,7 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-03-30
+> **Last updated**: 2026-03-31
 
 ---
 
@@ -26,6 +26,8 @@
    - 5.5 [Standings calculation](#55-standings-calculation)
    - 5.6 [Cascade recalculation for future rounds](#56-cascade-recalculation-for-future-rounds)
    - 5.7 [Entity Review and Deduplication](#57-entity-review-and-deduplication)
+   - 5.8 [Persistent Entity Aliases (Canonical Matching)](#58-persistent-entity-aliases-canonical-matching)
+   - 5.9 [REST API Standings Creation (Matches Page)](#59-rest-api-standings-creation-matches-page)
 6. [Database Tables Involved](#6-database-tables-involved)
 7. [Frontend Pages](#7-frontend-pages)
 8. [Key Decisions & Edge Cases](#8-key-decisions--edge-cases)
@@ -152,6 +154,7 @@ This is the heavyweight parser. It:
 | `fixture.venue.name` | `venue.fullName` |
 | `fixture.status.long` | `status.description` |
 | `fixture.status.short` | `status.shortDetail` |
+| `fixture.status.state` | `status.state` — ESPN game state: `'pre'`, `'in'`, or `'post'` |
 | `origin_api_id` | `event.id` (string) |
 
 ### 4.3 ESPN parsing — Lightweight (subsequent load)
@@ -316,7 +319,16 @@ For each row (first-load path, or rows where fast-path did not apply):
 2. **Resolve clubs**: Find or create home/away clubs by name (fuzzy match by `short_name`/`name` within the league's country) → cache
 3. **Ensure bridging rows**: `sport_clubs`, `season_clubs` for each club
 4. **Resolve venue**: Find or create city and stadium with fuzzy matching → create `club_stadiums` link
-5. **Prepare match data**: Parse date, determine status (`FT` → `Finished`, else `Scheduled`), extract scores (null if not finished)
+5. **Prepare match data**: Parse date, determine status (see status mapping rules below), extract scores (null if not finished)
+
+   **Status mapping** (applied in both first-load and subsequent-load paths):
+   ```typescript
+   const statusShort = r['fixture.status.short'] ?? null;  // e.g. 'FT', 'ABN', "90'+6'"
+   const statusState = r['fixture.status.state'] ?? null;  // e.g. 'post', 'in', 'pre'
+   const status = (statusShort === 'FT' || statusState === 'post') ? 'Finished' : 'Scheduled';
+   ```
+   - **Api-Football**: `fixture.status.short` is `'FT'` for finished matches. `fixture.status.state` is null (not emitted).
+   - **ESPN**: `fixture.status.short` is `status.shortDetail` which can be `'FT'`, `'ABN'` (abandoned), `'AET'` (after extra time), or a clock value like `"90'+6'"`. The `fixture.status.state` field captures ESPN's `status.type.state` (`'post'` = game over, `'in'` = live, `'pre'` = not started). Using `state === 'post'` as a second trigger ensures abandoned, forfeited, and extra-time matches are correctly recognized as finished even when `shortDetail` is not `'FT'`.
 6. **Upsert match** (see §5.4)
 7. **Create match_divisions** (see §5.3.1)
 8. **Calculate and insert standings** (see §5.5)
@@ -484,6 +496,8 @@ const score = Math.max(
 
 **Skipping already-mapped clubs**: Before querying, checks if the club name exists in `clubMappings` — if found, skips detection for that club
 
+**Alias pre-check**: Before adding a club to the review list, the system checks `entity_name_aliases WHERE entity_type = 'club' AND alias_name = $1 AND country_id = $2`. If an alias is found the club is silently skipped (no human review required). See §5.8.
+
 **Key difference from league**: Uses the **league's country** for filtering (not all sports clubs globally), which dramatically reduces false positives
 
 #### 5.7.5 Detection algorithm — Stadiums
@@ -514,6 +528,8 @@ LIMIT 100
 **No fuzzy matching**: User feedback indicated that fuzzy matching for stadiums was producing too many irrelevant suggestions. The current implementation only shows exact matches or the full country list as a dropdown.
 
 **Skipping already-mapped stadiums**: Same logic as clubs — checks `stadiumMappings` before querying
+
+**Alias pre-check**: Before adding a stadium to the review list, the system checks `entity_name_aliases WHERE entity_type = 'stadium' AND alias_name = $1 AND sport_id = $2`. If an alias is found the stadium is silently skipped (no human review required). See §5.8.
 
 #### 5.7.6 Frontend workflow
 
@@ -632,33 +648,28 @@ if (!isSubsequentLoad && !skipEntityReview) {
 
 #### 5.7.9 Usage during entity creation
 
-When the load process encounters clubs and stadiums, it checks the saved mappings:
+When the load process encounters clubs and stadiums, it now checks multiple layers in order:
 
-**Club handling** (in `findOrCreateClub()`):
-```typescript
-if (clubMappings && clubMappings[clubName] !== undefined) {
-  if (clubMappings[clubName] === null) {
-    // User chose "Create New Club" → proceed with INSERT
-  } else {
-    // User selected existing club ID → return that ID instead of creating
-    return clubMappings[clubName];
-  }
-}
-// Default fallback: fuzzy lookup and create if not found
-```
+**Stadium resolution order** (in `ensureStadium()`):
+1. **Persistent alias table** — `SELECT entity_id FROM entity_name_aliases WHERE entity_type='stadium' AND alias_name=$1 AND sport_id=$2` (instant, no user interaction)
+2. **User entity-review mapping** — `stadiumMappings[venueName]` from the draft review record
+3. **Exact match** — `WHERE unaccent(lower(name)) = unaccent(lower($1))`
+4. **Normalized match** — strip all non-alphanumeric characters and compare
+5. **Canonical match** — run `canonicalizeName()` on both sides (strips stadium words, noise words, sorts alphabetically); check alias table first, then compare all stadiums in the same sport+city
+6. **Flexible substring match** — `LIKE '%' || normalizedName || '%'`
+7. **INSERT** new stadium record
 
-**Stadium handling** (in `ensureStadium()`):
-```typescript
-if (stadiumMappings && stadiumMappings[stadiumName] !== undefined) {
-  if (stadiumMappings[stadiumName] === null) {
-    // User chose "Create New Stadium"
-  } else {
-    // User selected existing stadium ID
-    return stadiumMappings[stadiumName];
-  }
-}
-// Default fallback: exact lookup and create if not found
-```
+On steps 4–6, the resolved `(aliasName → stadiumId)` pair is auto-saved to `entity_name_aliases` so future payloads resolve instantly at step 1.
+
+**Club resolution order** (in `findOrCreateClub()`):
+1. **Persistent alias table** — `SELECT entity_id FROM entity_name_aliases WHERE entity_type='club' AND alias_name=$1 AND country_id=$2`
+2. **User entity-review mapping** — `clubMappings[clubName]`
+3. **Cache** — in-memory `clubCache`
+4. **Exact/ILIKE match** — `unaccent(lower(name)) = unaccent(lower($1))` / ILIKE
+5. **Normalization match** — `normalizeLookupKey()` on all country clubs
+6. **INSERT** new club record
+
+On steps 4–5, if the matched name differs from the incoming name the pair is auto-saved to `entity_name_aliases`.
 
 **League handling**: Applied during `applyFirstRowToApp()` when upserting the league record
 
@@ -679,7 +690,30 @@ The entity review UI follows the project's mobile-first responsive design:
 
 **Testing verified**: Layout adapts correctly from mobile (320px) through tablet (768px) to desktop (1920px+)
 
-#### 5.7.11 Common scenarios and outcomes
+#### 5.7.11 `saveEntityReview()` — persistence to alias table
+
+Previously, user-selected mappings were stored only in `api_transitional_entity_review` (scoped to one transitional row and discarded after load). Now `saveEntityReview()` additionally persists each resolved name into the permanent `entity_name_aliases` table:
+
+```typescript
+// Derive sport_id + country_id from the leagueMapping
+const leagueInfo = await pool.query(`SELECT sport_id, country_id FROM leagues WHERE id = $1`, [leagueMapping]);
+for (const [aliasName, entityId] of Object.entries(normalizedClubMappings)) {
+    await pool.query(
+        `INSERT INTO entity_name_aliases (entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source)
+         VALUES ('club', $1, $2, $3, $4, $5, 'user')
+         ON CONFLICT (...) DO UPDATE SET entity_id = EXCLUDED.entity_id, source = 'user'`,
+        [entityId, aliasName, canonicalizeName(aliasName), aliasSportId, aliasCountryId],
+    );
+}
+// same loop for stadiumMappings with entity_type='stadium'
+```
+
+Key properties:
+- `source = 'user'` marks these as human-verified (auto-resolved aliases use `source = 'auto'`)
+- User mappings use `ON CONFLICT DO UPDATE` — re-mapping an entity updates the stored alias
+- **These records are never deleted** after load. The `api_transitional_entity_review` record is cleaned up, but `entity_name_aliases` rows persist permanently
+
+#### 5.7.12 Common scenarios and outcomes
 
 | Scenario | League decision | Club/Stadium decisions | Result |
 |----------|----------------|----------------------|--------|
@@ -688,6 +722,125 @@ The entity review UI follows the project's mobile-first responsive design:
 | Subsequent load (same season) | (skipped) | (skipped) | Entities already resolved, fast-path load |
 | Different season, same league | Map to existing league | Map to existing clubs (if same teams) | Reuses league and clubs, new season_clubs bridges created |
 | Exact match for all entities | (auto-resolved) | (auto-resolved) | If exact matches found with high confidence, may skip review entirely |
+| Re-load after user has resolved names once | checked via alias table | checked via alias table | All previously mapped entities resolved from `entity_name_aliases` — no review shown |
+
+---
+
+## 5.8 Persistent Entity Aliases (Canonical Matching)
+
+Added in migration `0011_create_entity_name_aliases_table.sql`. This table permanently stores name→entity mappings so that entity resolution does not require human review on repeated loads.
+
+### Table: `entity_name_aliases`
+
+```sql
+CREATE TABLE entity_name_aliases (
+    id           SERIAL PRIMARY KEY,
+    entity_type  VARCHAR(20)  NOT NULL,       -- 'stadium' | 'club'
+    entity_id    INTEGER      NOT NULL,       -- FK to stadiums.id or clubs.id
+    alias_name   VARCHAR(300) NOT NULL,       -- exact incoming name from API payload
+    canonical_name VARCHAR(300) NOT NULL,     -- canonicalized form (see below)
+    sport_id     INTEGER      NULL,           -- scope: sport (NULL = any)
+    country_id   INTEGER      NULL,           -- scope: country (NULL = any)
+    source       VARCHAR(50)  DEFAULT 'user', -- 'user' | 'auto'
+    created_at   TIMESTAMPTZ  DEFAULT now()
+);
+-- Unique: one alias per (entity_type, alias_name, sport, country)
+CREATE UNIQUE INDEX ON entity_name_aliases (entity_type, alias_name, COALESCE(sport_id,0), COALESCE(country_id,0));
+-- Lookup by canonical form
+CREATE INDEX ON entity_name_aliases (entity_type, canonical_name, COALESCE(sport_id,0), COALESCE(country_id,0));
+```
+
+### `canonicalizeName()` helper (top of `api.service.ts`)
+
+Produces a stable, word-order-independent canonical form for any entity name:
+
+```typescript
+const STADIUM_WORDS = new Set(['stadium','estadio','stade','stadio','stadion','arena',
+  'ground','field','park','parque','coliseum','centre','center','complex','parc']);
+const NOISE_WORDS = new Set(['de','do','da','dos','das','del','della','dello','di',
+  'le','la','les','the','of','des','a','o','e','y','and','et','und']);
+
+const canonicalizeName = (raw: string): string => {
+    const stripped = raw.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const words = stripped.split(/\s+/);
+    const kept = words
+        .filter(w => !STADIUM_WORDS.has(w) && !NOISE_WORDS.has(w))
+        .map(w => w.replace(/[^a-z0-9]/g, ''))
+        .filter(w => w.length > 0);
+    kept.sort();
+    return kept.join(' ');
+};
+```
+
+**Examples**:
+
+| Incoming name | Canonical form | Matches DB name |
+|--------------|---------------|----------------|
+| `Estádio Beira-Rio` | `beira rio` | `Estádio Beira-Rio` |
+| `Beira Rio` | `beira rio` | ✅ same canonical |
+| `Arena do Grêmio` | `gremio` | `Gremio Arena` |
+| `Gremio Arena` | `gremio` | ✅ same canonical |
+| `St. James' Park` | `james st` | `St James Park` |
+| `St James Park` | `james st` | ✅ same canonical |
+
+### `saveAlias()` helper (inside `applyAllRowsToApp`)
+
+Reusable inner function used by both `ensureStadium` and `findOrCreateClub` to persist auto-resolved aliases:
+
+```typescript
+const saveAlias = async (entityType, entityId, aliasName, canonicalName, sportId, countryId, source) => {
+    await client.query(
+        `INSERT INTO entity_name_aliases (entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (entity_type, alias_name, COALESCE(sport_id,0), COALESCE(country_id,0)) DO NOTHING`,
+        [entityType, entityId, aliasName, canonicalName, sportId, countryId, source]
+    );
+};
+```
+
+### Alias sources
+
+| `source` value | When written | Overwrite policy |
+|--------------|-------------|------------------|
+| `'auto'` | Matching via normalized / canonical / flexible steps during `ensureStadium` / `findOrCreateClub` | `ON CONFLICT DO NOTHING` (first wins) |
+| `'user'` | User-submitted mappings in `saveEntityReview()` | `ON CONFLICT DO UPDATE SET entity_id = EXCLUDED.entity_id, source = 'user'` (user always wins) |
+
+**Persistence**: Records in this table are **never deleted** after load. The `api_transitional_entity_review` row is removed after a successful load, but `entity_name_aliases` rows are permanent.
+
+### 5.9 REST API Standings Creation (Matches Page)
+
+**Purpose**: When a user manually updates a match to `Finished` status in the admin Matches page (`/admin/matches/`), standings must be created for that round and all future rounds must be recalculated. This is the same logic the ETL uses, but triggered via the REST API instead of the ETL pipeline.
+
+**Flow**:
+1. Frontend `handleSaveMatches()` detects `match.status === 'Finished'`
+2. Calls `standingsApi.create()` → `POST /v1/standings` with `{ sportId, leagueId, seasonId, roundId, matchDate, groupId, homeClubId, awayClubId, homeScore, awayScore, matchId, matchDivisions }`
+3. Backend `StandingsService.create()` handles all logic:
+
+**Idempotency**: Before any calculation, checks `SELECT * FROM standings WHERE match_id = ?`. If standings already exist for this match, returns them immediately without creating duplicates.
+
+**Round-aware previous standing lookup**: Instead of using `ORDER BY id DESC` (which would incorrectly pick a round 38 standing as the base when creating round 20), the service uses:
+```sql
+SELECT s.* FROM standings s
+  JOIN rounds r ON r.id = s.round_id
+WHERE s.club_id = ? AND s.league_id = ? AND s.season_id = ?
+  AND r.round_number < (SELECT round_number FROM rounds WHERE id = ?)
+ORDER BY r.round_number DESC LIMIT 1
+```
+This correctly finds the standing from the highest round **before** the current one (e.g., round 19 when creating round 20), regardless of database insertion order.
+
+**Cascade recalculation**: After inserting the two new standings rows, `cascadeClubStandings()` runs for both clubs:
+1. Finds all existing standings for the club in rounds **after** the current one (`round_number > currentRoundNumber`), ordered ascending
+2. For each future standing:
+   - Fetches the previous standing (highest round < this future round) — now includes the just-inserted row
+   - Fetches the opponent's previous standing
+   - Loads `match_divisions` for the future match
+   - Recalculates via `StandingsCalculatorService.calculate()`
+   - **UPDATEs** the existing future standings row with corrected cumulative totals
+3. Processes in ascending round order so each recalculated row becomes the correct base for the next
+
+> **Note**: This cascade logic mirrors the ETL's `cascadeClub()` / `_cascadeClub()` functions (§5.6) but is implemented using Drizzle ORM instead of raw SQL, since it runs inside the `StandingsService` rather than the raw-pool ETL transaction.
+
+**Frontend simplification**: The frontend `updateStandings()` function was simplified to a single `standingsApi.create()` call. The previous implementation had a bug where it checked for existing standings via `getByLeagueIdAndSeasonIdAndRoundIdClubId()`, which uses the display endpoint that fills missing clubs with fallback rows — so it **never** returned empty and the `create` branch was never entered. All intelligence (idempotency, round-aware lookup, cascade) is now in the backend.
 
 ---
 
@@ -697,7 +850,8 @@ The entity review UI follows the project's mobile-first responsive design:
 | Table | Purpose |
 |-------|---------|
 | `api_transitional` | Raw API response storage. Columns: `id, league, season, sport, origin, source_url, payload (JSONB), status, fetched_at` |
-| `api_transitional_entity_review` | Entity deduplication mappings per transitional row. Columns: `transitional_id (PK), league_mapping, club_mappings (JSONB), stadium_mappings (JSONB)` |
+| `api_transitional_entity_review` | Entity deduplication mappings per transitional row. Columns: `transitional_id (PK), league_mapping, club_mappings (JSONB), stadium_mappings (JSONB)`. Deleted after successful load. |
+| `entity_name_aliases` | **Persistent** alias→entity mappings. Columns: `id, entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source ('user'\|'auto'), created_at`. Never deleted. Migration: `0011_create_entity_name_aliases_table.sql` |
 | `api_transitional_round_review` | Persisted draft round overrides per transitional row |
 | `api_transitional_audit` | Audit trail of apply operations (dry-run or real) |
 | `api_import_log` | Error/diagnostic log for failed imports |
@@ -1003,6 +1157,9 @@ The following items are known areas that still need implementation or refinement
 - **Integration testing**: No automated test covers the full ETL pipeline end-to-end; verification has been manual.
 - **Error recovery**: If a load fails partway through, the transaction rolls back completely. There's no partial-apply or resume capability.
 - **Performance**: The per-row processing loop makes many individual DB queries (club lookup, city lookup, etc.). For very large payloads this could be optimized with batch operations.
+- **Alias table UI**: There is no admin page yet to view or edit `entity_name_aliases` records. Currently the only way to correct a wrong auto-resolved alias is via a direct DB update.
+- **Stadium/Club canonical matching + persistent aliases (IMPLEMENTED)**: `canonicalizeName()` helper strips venue/noise words, removes diacritics/punctuation, and sorts words alphabetically so that word-order variants and prefix differences resolve to the same canonical form. The `entity_name_aliases` table persists all resolved mappings permanently so user decisions are never lost when a new payload is fetched. `ensureStadium()` now checks aliases first (step 0), runs canonical matching (step 4), and auto-saves aliases on every match hit. `findOrCreateClub()` also checks aliases first. `detectEntitiesForReview()` skips entities that already have an alias. `saveEntityReview()` persists user mappings (`source='user'`) in addition to the existing draft review record. Migration: `0011_create_entity_name_aliases_table.sql`.
+
 - **ESPN league-specific timezone config (IMPLEMENTED)**: The `LEAGUE_TIMEZONE` is now configurable per-league instead of being hardcoded to `America/Brasilia`. League-specific timezone values are stored and used during parsing and date computations so that local-day clustering and date-based logic (e.g., grouping matches that occur on the same local calendar day) respect the league's timezone and DST rules.
 
 - **Admin timezone correction UI (NEW)**: An admin page was added to allow manual corrections of match datetimes for a selected League (required) and optionally Season, one or multiple Rounds, or a single Match. The page supports three adjustment modes:
@@ -1012,3 +1169,7 @@ The following items are known areas that still need implementation or refinement
   The admin flow updates only the `matches.date` field (it does NOT touch `standings`) and supports batch updates across non-sequential round selections.
 - **Enrichment standings update**: After ESPN enrichment writes real partial scores into `match_divisions`, the standings rows already in the DB were calculated with `home_score = 0, away_score = 0` for those divisions. If the standings calculator relies on division data (e.g., overtime wins from `match_divisions`), those standings rows may be slightly incorrect. A post-enrichment standings recalculation step is not yet implemented.
 - **Enrichment retry on partial failure**: If enrichment fails for a subset of matches (e.g., ESPN rate-limits mid-batch), there is no automatic retry. Re-running the full T&L load would skip already-finished matches (upsert guard), so the only current workaround is to manually trigger enrichment or re-run after clearing the affected division scores.
+
+- **ESPN status mapping — `fixture.status.state` (IMPLEMENTED)**: Both ESPN parsers (`parseTransitionalEspn` and `parseTransitionalEspnLightweight`) now emit `fixture.status.state` from ESPN's `status.type.state` field. The status mapping in both load paths (`applyAllRowsToApp` first-load at ~line 3619 and subsequent-load fast path at ~line 3213) was updated from `statusShort === 'FT'` to `(statusShort === 'FT' || statusState === 'post')`. This correctly handles ESPN matches with non-FT shortDetails like `'ABN'` (abandoned), `'AET'` (after extra time), or clock-time strings like `"90'+6'"` — all of which have `state: 'post'` when the game is over.
+
+- **REST API standings creation with cascade (IMPLEMENTED)**: `StandingsService.create()` was overhauled with three fixes: (1) **Idempotency** — checks if standings for the given `matchId` already exist before creating. (2) **Round-aware previous standing lookup** — uses `round_number` ordering via JOIN with rounds table instead of `ORDER BY id DESC`, which would pick the wrong base when creating a mid-season standing retroactively. (3) **Cascade recalculation** — new `cascadeClubStandings()` private method recalculates all future-round standings for both clubs after insertion, mirroring the ETL's `cascadeClub()` logic. The frontend `updateStandings()` in the Matches page was simplified to just call `standingsApi.create()` directly, removing a broken existence check that used a display endpoint (with fallback fill) which never returned empty. See §5.9.

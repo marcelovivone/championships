@@ -20,6 +20,7 @@ export default function FilterBar({
     showTop = true,
     showBottom = true,
     compact = false,
+    effectiveMaxRound,
 }: any) {
     const dateInputRef = React.useRef<HTMLInputElement | null>(null);
     const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
@@ -43,6 +44,9 @@ export default function FilterBar({
         }
     };
     const getLeagueMaxRounds = (l: any) => {
+        // Prefer the season-specific max derived from actual rounds data; this handles
+        // leagues that change team count (and thus number of rounds) per season.
+        if (effectiveMaxRound) return effectiveMaxRound;
         if (!l) return undefined;
         return Number(l.number_of_rounds_matches ?? l.numberOfRoundsMatches ?? l.numberOfRounds ?? l.number_of_rounds ?? l.numberOfRoundsMatches ?? 0) || undefined;
     };
