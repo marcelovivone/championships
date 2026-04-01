@@ -790,6 +790,24 @@ const MatchesPage = () => {
                         
                         // 3 - Update standings based on the match results only if the match is finished. This way, we can allow users to save matches in scheduled or in-progress status without affecting the standings until the match is actually finished. This also allows users to enter match results in any order without worrying about the impact on standings until they mark the match as finished.
                         if (match.status === 'Finished') {
+                            // Detect score correction: an already-Finished match whose scores were changed
+                            // (e.g. a court/legal decision changing a 1-1 draw to a 2-0 win).
+                            const originalMatch = originalMatches.find((om: any) => om.id === match.id);
+                            const isScoreCorrection = savedMatchId
+                                && originalMatch
+                                && originalMatch.status === 'Finished'
+                                && (Number(originalMatch.homeScore) !== Number(match.homeScore)
+                                    || Number(originalMatch.awayScore) !== Number(match.awayScore));
+
+                            if (isScoreCorrection) {
+                                // Update match divisions in DB to reflect the corrected partial scores
+                                await createMatchDivisions(savedMatchId, match.matchDivisions);
+                                // Delete old standings so they can be recreated with the correct scores.
+                                // The subsequent updateStandings call will insert new standings and
+                                // cascade-recalculate all future rounds for both clubs.
+                                await deleteStandings(savedMatchId);
+                            }
+
                             // 3 - Create or update standings based on the match results
                             try {
                                 await updateStandings(
@@ -1440,9 +1458,9 @@ const MatchesPage = () => {
                                     value={match.status || 'Scheduled'}
                                     onChange={(e) => updateMatchField(index, 'status', e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    disabled={
-                                        (match.id && (match.status === 'Finished' || match.status === 'Cancelled'))
-                                    }
+                                    // disabled={
+                                    //     (match.id && (match.status === 'Finished' || match.status === 'Cancelled'))
+                                    // }
                                 >
                                     <option value="Scheduled">Scheduled</option>
                                     <option value="Finished">Finished</option>

@@ -135,7 +135,7 @@ export interface League {
   numberOfRoundsMatches: number;
   minDivisionsNumber: number;
   maxDivisionsNumber: number;
-  divisionsTime?: number;
+  divisionTime?: number;
   hasOvertimeOverride?: boolean;
   hasPenaltiesOverride?: boolean;
   hasAscends: boolean;
@@ -389,7 +389,7 @@ export interface CreateLeagueDto {
   numberOfRoundsMatches: number;
   minDivisionsNumber: number;
   maxDivisionsNumber: number;
-  divisionsTime?: number;
+  divisionTime?: number;
   hasOvertimeOverride?: boolean;
   hasPenaltiesOverride?: boolean;
   hasAscends: boolean;

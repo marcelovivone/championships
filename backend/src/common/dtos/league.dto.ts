@@ -55,7 +55,7 @@ export class CreateLeagueDto {
   @ApiProperty({ example: 45, description: 'Time per division in minutes (optional override)', required: false })
   @IsOptional()
   @IsInt()
-  divisionsTime?: number;
+  divisionTime?: number;
 
   @ApiProperty({ example: false, description: 'Override sport overtime rule', required: false })
   @IsOptional()

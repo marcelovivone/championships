@@ -66,7 +66,7 @@ export default function LeaguesPage() {
       numberOfRoundsMatches: 0,
       minDivisionsNumber: 0,
       maxDivisionsNumber: 0,
-      divisionsTime: 0,
+      divisionTime: 0,
       hasOvertimeOverride: undefined,
       hasPenaltiesOverride: undefined,
       hasAscends: false,
@@ -154,7 +154,7 @@ export default function LeaguesPage() {
       numberOfRoundsMatches: 0,
       minDivisionsNumber: 0,
       maxDivisionsNumber: 0,
-      divisionsTime: 0,
+      divisionTime: 0,
       hasOvertimeOverride: undefined,
       hasPenaltiesOverride: undefined,
       hasAscends: false,
@@ -181,7 +181,7 @@ export default function LeaguesPage() {
       numberOfRoundsMatches: 0,
       minDivisionsNumber: 0,
       maxDivisionsNumber: 0,
-      divisionsTime: 0,
+      divisionTime: 0,
       hasOvertimeOverride: undefined,
       hasPenaltiesOverride: undefined,
       hasAscends: false,
@@ -209,7 +209,7 @@ export default function LeaguesPage() {
       numberOfRoundsMatches: league.numberOfRoundsMatches || 0,
       minDivisionsNumber: league.minDivisionsNumber,
       maxDivisionsNumber: league.maxDivisionsNumber,
-      divisionsTime: league.divisionsTime || 0,
+      divisionTime: league.divisionTime || 0,
       hasOvertimeOverride: league.hasOvertimeOverride,
       hasPenaltiesOverride: league.hasPenaltiesOverride,
       hasAscends: league.hasAscends,
@@ -279,7 +279,7 @@ export default function LeaguesPage() {
     // Validation: Match Division rules
     const minDiv = Number(data.minDivisionsNumber) || 0;
     const maxDiv = Number(data.maxDivisionsNumber) || 0;
-    const divTime = Number(data.divisionsTime) || 0;
+    const divTime = Number(data.divisionTime) || 0;
 
     // Both min and max must be 0 or both > 0
     if ((minDiv === 0 && maxDiv > 0) || (minDiv > 0 && maxDiv === 0)) {
@@ -335,7 +335,7 @@ export default function LeaguesPage() {
       numberOfRoundsMatches: Number(data.numberOfRoundsMatches),
       minDivisionsNumber: minDiv,
       maxDivisionsNumber: maxDiv,
-      divisionsTime: divTime > 0 ? divTime : undefined,
+      divisionTime: divTime > 0 ? divTime : undefined,
       hasOvertimeOverride: data.hasOvertimeOverride || undefined,
       hasPenaltiesOverride: data.hasPenaltiesOverride || undefined,
       hasAscends: data.hasAscends,
@@ -784,7 +784,7 @@ export default function LeaguesPage() {
               <input
                 type="number"
                 min="0"
-                {...register('divisionsTime', { valueAsNumber: true })}
+                {...register('divisionTime', { valueAsNumber: true })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-right"
                 placeholder="Optional override"
               />

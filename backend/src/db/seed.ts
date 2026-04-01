@@ -557,7 +557,7 @@ async function main() {
       numberOfRoundsMatches: 82,
       minDivisionsNumber: 4,
       maxDivisionsNumber: 4,
-      divisionsTime: null, // Use sport default
+      divisionTime: null, // Use sport default
       hasOvertimeOverride: null,
       hasPenaltiesOverride: null,
       hasAscends: false,
@@ -580,7 +580,7 @@ async function main() {
       numberOfRoundsMatches: 82,
       minDivisionsNumber: 3,
       maxDivisionsNumber: 3,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: true, // Allow OT in regular season
       hasPenaltiesOverride: true, // Shootouts in regular season
       hasAscends: false,
@@ -603,7 +603,7 @@ async function main() {
       numberOfRoundsMatches: 68,
       minDivisionsNumber: 3,
       maxDivisionsNumber: 3,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: true,
       hasPenaltiesOverride: true,
       hasAscends: false,
@@ -627,7 +627,7 @@ async function main() {
       numberOfRoundsMatches: 38,
       minDivisionsNumber: 2,
       maxDivisionsNumber: 2,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: null,
       hasPenaltiesOverride: null,
       hasAscends: false,
@@ -652,7 +652,7 @@ async function main() {
       numberOfRoundsMatches: 38,
       minDivisionsNumber: 2,
       maxDivisionsNumber: 2,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: null, // Use sport default (false for league)
       hasPenaltiesOverride: null,
       hasAscends: true,
@@ -675,7 +675,7 @@ async function main() {
       numberOfRoundsMatches: 8, // Example: 4 groups, 2 rounds of matches
       minDivisionsNumber: 2,
       maxDivisionsNumber: 2,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: true,
       hasPenaltiesOverride: false,
       hasAscends: false,
@@ -698,7 +698,7 @@ async function main() {
       numberOfRoundsMatches: 4,
       minDivisionsNumber: 2,
       maxDivisionsNumber: 2,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: true,
       hasPenaltiesOverride: true,
       hasAscends: false,
@@ -721,7 +721,7 @@ async function main() {
       numberOfRoundsMatches: 3,
       minDivisionsNumber: 3,
       maxDivisionsNumber: 5,
-      divisionsTime: null,
+      divisionTime: null,
       hasOvertimeOverride: null,
       hasPenaltiesOverride: null,
       hasAscends: false,

@@ -9,7 +9,7 @@ export declare class CreateLeagueDto {
     numberOfRoundsMatches: number;
     minDivisionsNumber: number;
     maxDivisionsNumber: number;
-    divisionsTime?: number;
+    divisionTime?: number;
     hasOvertimeOverride?: boolean;
     hasPenaltiesOverride?: boolean;
     hasAscends: boolean;

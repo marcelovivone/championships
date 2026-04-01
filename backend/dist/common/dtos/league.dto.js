@@ -80,7 +80,7 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
-], CreateLeagueDto.prototype, "divisionsTime", void 0);
+], CreateLeagueDto.prototype, "divisionTime", void 0);
 __decorate([
     (0, swagger_2.ApiProperty)({ example: false, description: 'Override sport overtime rule', required: false }),
     (0, class_validator_1.IsOptional)(),
