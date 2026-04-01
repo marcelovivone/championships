@@ -526,11 +526,12 @@ export class ApiService {
         resolved_at TIMESTAMPTZ NULL
       );
     `);
-        // Add league_mapping column if it doesn't exist (for existing tables)
-        await pool.query(`
-      ALTER TABLE api_transitional_entity_review 
-      ADD COLUMN IF NOT EXISTS league_mapping INTEGER NULL;
-    `);
+        // Add any columns missing from older table versions
+        await pool.query(`ALTER TABLE api_transitional_entity_review ADD COLUMN IF NOT EXISTS league_mapping INTEGER NULL`);
+        await pool.query(`ALTER TABLE api_transitional_entity_review ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'draft'`);
+        await pool.query(`ALTER TABLE api_transitional_entity_review ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ NULL`);
+        // Older schema used transitional_id as PK (no id column). Add id if missing.
+        await pool.query(`ALTER TABLE api_transitional_entity_review ADD COLUMN IF NOT EXISTS id SERIAL`);
     }
 
     async getEntityReview(id: number) {
@@ -539,7 +540,7 @@ export class ApiService {
         try {
             await this.ensureEntityReviewTable(pool);
             const res = await pool.query(
-                `SELECT * FROM api_transitional_entity_review WHERE transitional_id = $1 ORDER BY id DESC LIMIT 1`,
+                `SELECT * FROM api_transitional_entity_review WHERE transitional_id = $1 ORDER BY created_at DESC LIMIT 1`,
                 [id],
             );
             return res.rows[0] || null;
@@ -563,7 +564,7 @@ export class ApiService {
                 `INSERT INTO api_transitional_entity_review (transitional_id, league_mapping, club_mappings, stadium_mappings, status, updated_at, resolved_at)
          VALUES ($1, $2, $3, $4, 'draft', now(), NULL)
          ON CONFLICT (transitional_id)
-         DO UPDATE SET league_mapping = EXCLUDED.league_mapping, club_mappings = EXCLUDED.club_mappings, stadium_mappings = EXCLUDED.stadium_mappings, status = 'draft', updated_at = now(), resolved_at = NULL
+         DO UPDATE SET league_mapping = COALESCE(EXCLUDED.league_mapping, api_transitional_entity_review.league_mapping), club_mappings = EXCLUDED.club_mappings, stadium_mappings = EXCLUDED.stadium_mappings, status = 'draft', updated_at = now(), resolved_at = NULL
          RETURNING *`,
                 [id, leagueMapping, normalizedClubMappings, normalizedStadiumMappings],
             );
@@ -576,6 +577,28 @@ export class ApiService {
                 if (leagueInfo.rows.length) {
                     aliasSportId = leagueInfo.rows[0].sport_id;
                     aliasCountryId = leagueInfo.rows[0].country_id;
+                }
+            } else {
+                // "Create New League" path: leagueMapping is null so we can't look up the league.
+                // Derive sport_id and country_id from the transitional row itself so aliases are stored
+                // with the correct scope. Without this, future loads of the same competition (new season)
+                // would fail to find these aliases because the lookup is country-scoped.
+                try {
+                    const tRes = await pool.query(`SELECT sport, payload, origin FROM api_transitional WHERE id = $1 LIMIT 1`, [id]);
+                    if (tRes.rows.length) {
+                        const tRow = tRes.rows[0];
+                        aliasSportId = tRow.sport ?? null;
+                        const meta = this.extractLeagueMetadata(tRow);
+                        if (meta.leagueCountry) {
+                            const cRes = await pool.query(
+                                `SELECT id FROM countries WHERE unaccent(lower(name)) = unaccent(lower($1)) OR unaccent(lower(code)) = unaccent(lower($1)) LIMIT 1`,
+                                [String(meta.leagueCountry).trim()],
+                            );
+                            if (cRes.rows.length) aliasCountryId = cRes.rows[0].id;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore — aliases will be stored with null scope; still usable as a fallback.
                 }
             }
             for (const [aliasName, entityId] of Object.entries(normalizedClubMappings)) {
@@ -705,7 +728,7 @@ export class ApiService {
                     `SELECT id, country_id FROM leagues 
                      WHERE unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1))
                      LIMIT 1`,
-                    [`%${leagueName}%`],
+                    [leagueName],
                 );
                 // If exact match fails, try fuzzy match
                 if (!leagueRes.rows.length) {
@@ -801,11 +824,11 @@ export class ApiService {
                         if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) {
                             continue;
                         }
-                        // Check persistent alias table
+                        // Check persistent alias table (null-scoped aliases act as universal wildcards)
                         const clubAlias = await pool.query(
                             `SELECT entity_id FROM entity_name_aliases
                              WHERE entity_type = 'club' AND alias_name = $1
-                               AND COALESCE(country_id, 0) = COALESCE($2, 0)
+                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
                              LIMIT 1`,
                             [clubName, leagueCountryId],
                         );
@@ -865,11 +888,11 @@ export class ApiService {
                         continue;
                     }
 
-                    // Check persistent alias table
-                    const stadiumAlias = await pool.query(
-                        `SELECT entity_id FROM entity_name_aliases
-                         WHERE entity_type = 'stadium' AND alias_name = $1
-                           AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+// Check persistent alias table (null-scoped aliases act as universal wildcards)
+                        const stadiumAlias = await pool.query(
+                            `SELECT entity_id FROM entity_name_aliases
+                             WHERE entity_type = 'stadium' AND alias_name = $1
+                               AND (sport_id IS NULL OR COALESCE(sport_id, 0) = COALESCE($2, 0))
                          LIMIT 1`,
                         [venueName, sportId || 36],
                     );
@@ -2322,7 +2345,7 @@ export class ApiService {
     }
 
     // Apply first-row processing: upsert country, league, season based on parsed first row
-    async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number> } = {}) {
+    async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number>; leagueId?: number } = {}) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         const client = await pool.connect();
@@ -2460,7 +2483,16 @@ export class ApiService {
 
             // Upsert league: try to find by original_name or secondary_name using country and sport if available
             let leagueId: number | null = null;
-            if (leagueName) {
+            if (options.leagueId) {
+                // Entity review league mapping provided — use it directly, skip name-based lookup/create.
+                // This honours the explicit user choice made in the entity review UI for both Api-Football
+                // and Api-Espn origins, preventing duplicate leagues from being created when the incoming
+                // name differs from the stored name (e.g. "LaLiga EA Sports" → "La Liga").
+                leagueId = options.leagueId;
+                // Re-derive countryId from the selected league so season and club lookups use the right scope.
+                const lcRes = await client.query(`SELECT country_id FROM leagues WHERE id = $1 LIMIT 1`, [leagueId]);
+                if (lcRes.rows.length && lcRes.rows[0].country_id) countryId = lcRes.rows[0].country_id;
+            } else if (leagueName) {
                 const sportId = options.sportId ?? 36;
                 // For ESPN-origin payloads, attempt to find league by espn_id first
                 let espnLeagueId: string | null = null;
@@ -2845,7 +2877,14 @@ export class ApiService {
                 rows = parsed.rows || [];
                 // Resolve league/season if not already known
                 if (!leagueId || !seasonId) {
-                    const firstRowResult = await this.applyFirstRowToApp(id, { sportId, roundOverrides: options.roundOverrides });
+                    // Fetch entity mappings early so the league mapping (if any) is honoured inside applyFirstRowToApp.
+                    // This prevents a duplicate league from being created when the incoming name differs from the DB value.
+                    const preEntityMappings = await this.getDraftEntityMappings(id);
+                    const firstRowResult = await this.applyFirstRowToApp(id, {
+                        sportId,
+                        roundOverrides: options.roundOverrides,
+                        leagueId: preEntityMappings.league ?? undefined,
+                    });
                     if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
                     leagueId = firstRowResult.leagueId;
                     seasonId = firstRowResult.seasonId;
@@ -2987,11 +3026,11 @@ export class ApiService {
                 const venueName = normalizeText(venueNameRaw);
                 if (!venueName || !cityId) return null;
 
-                // Step 0: Check persistent alias table
+                // Step 0: Check persistent alias table (null-scoped aliases act as universal wildcards)
                 const aliasRes = await client.query(
                     `SELECT entity_id FROM entity_name_aliases
                      WHERE entity_type = 'stadium' AND alias_name = $1
-                       AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+                       AND (sport_id IS NULL OR COALESCE(sport_id, 0) = COALESCE($2, 0))
                      LIMIT 1`,
                     [venueName, sportId],
                 );
@@ -3048,7 +3087,7 @@ export class ApiService {
                     const canonicalAlias = await client.query(
                         `SELECT entity_id FROM entity_name_aliases
                          WHERE entity_type = 'stadium' AND canonical_name = $1
-                           AND COALESCE(sport_id, 0) = COALESCE($2, 0)
+                           AND (sport_id IS NULL OR COALESCE(sport_id, 0) = COALESCE($2, 0))
                          LIMIT 1`,
                         [incomingCanonical, sportId],
                     );
@@ -3471,11 +3510,11 @@ export class ApiService {
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName) return null;
 
-                        // Step 0: Check persistent alias table
+                        // Step 0: Check persistent alias table (null-scoped aliases act as universal wildcards)
                         const clubAlias = await client.query(
                             `SELECT entity_id FROM entity_name_aliases
                              WHERE entity_type = 'club' AND alias_name = $1
-                               AND COALESCE(country_id, 0) = COALESCE($2, 0)
+                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
                              LIMIT 1`,
                             [clubName, leagueCountryId],
                         );

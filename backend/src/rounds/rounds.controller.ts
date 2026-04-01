@@ -38,21 +38,30 @@ export class RoundsController {
     @Query('limit') limit?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
+    @Query('date') date?: string,
+    @Query('flgCurrent') flgCurrent?: string,
+    @Query('roundNumber') roundNumber?: string,
   ): Promise<any> {
-    if (seasonId) {
-      return this.roundsService.findBySeason(parseInt(seasonId, 10));
+    // Non-paginated lookups used by standings/matches pages (no `page` param)
+    if (!page) {
+      if (seasonId) return this.roundsService.findBySeason(parseInt(seasonId, 10));
+      if (leagueId) return this.roundsService.findByLeague(parseInt(leagueId, 10));
     }
-    if (leagueId) {
-      return this.roundsService.findByLeague(parseInt(leagueId, 10));
-    }
-    
-    // Handle pagination
+
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const sort = sortBy || 'roundNumber';
     const order = sortOrder === 'desc' ? 'desc' : 'asc';
 
-    return this.roundsService.findAllPaginated(pageNum, limitNum, sort, order);
+    const filters = {
+      leagueId: leagueId ? parseInt(leagueId, 10) : undefined,
+      seasonId: seasonId ? parseInt(seasonId, 10) : undefined,
+      date: date || undefined,
+      flgCurrent: flgCurrent === 'true' ? true : flgCurrent === 'false' ? false : undefined,
+      roundNumber: roundNumber ? parseInt(roundNumber, 10) : undefined,
+    };
+
+    return this.roundsService.findAllPaginated(pageNum, limitNum, sort, order, filters);
   }
 
   /**

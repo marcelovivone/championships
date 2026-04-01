@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, sql, asc, desc } from 'drizzle-orm';
+import { eq, and, sql, asc, desc, gte, lte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { rounds, seasons, leagues } from '../db/schema';
 import { CreateRoundDto, UpdateRoundDto } from '../common/dtos';
@@ -37,7 +37,13 @@ export class RoundsService {
   /**
    * Get all rounds with pagination
    */
-  async findAllPaginated(page: number, limit: number, sortBy: string, sortOrder: 'asc' | 'desc') {
+  async findAllPaginated(
+    page: number,
+    limit: number,
+    sortBy: string,
+    sortOrder: 'asc' | 'desc',
+    filters?: { leagueId?: number; seasonId?: number; date?: string; flgCurrent?: boolean; roundNumber?: number },
+  ) {
     const offset = (page - 1) * limit;
 
     // Define sortable columns for rounds including related fields
@@ -73,7 +79,20 @@ export class RoundsService {
           break;
       }
 
-      const data = await this.db
+      // Build WHERE conditions from filters
+      const conditions: any[] = [];
+      if (filters?.leagueId) conditions.push(eq(rounds.leagueId, filters.leagueId));
+      if (filters?.seasonId) conditions.push(eq(rounds.seasonId, filters.seasonId));
+      if (filters?.roundNumber) conditions.push(eq(rounds.roundNumber, filters.roundNumber));
+      if (filters?.date) {
+        const d = new Date(filters.date);
+        conditions.push(lte(rounds.startDate, d));
+        conditions.push(gte(rounds.endDate, d));
+      }
+      if (filters?.flgCurrent !== undefined) conditions.push(eq(rounds.flgCurrent, filters.flgCurrent));
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const baseQuery = this.db
         .select({
           id: rounds.id,
           seasonId: rounds.seasonId,
@@ -95,16 +114,20 @@ export class RoundsService {
         })
         .from(rounds)
         .leftJoin(schema.leagues, eq(rounds.leagueId, schema.leagues.id))
-        .leftJoin(schema.seasons, eq(rounds.seasonId, schema.seasons.id))
-        .orderBy(orderByClause, asc(rounds.id))  // Added secondary sort by ID for consistency
+        .leftJoin(schema.seasons, eq(rounds.seasonId, schema.seasons.id));
+
+      const data = await (whereClause ? baseQuery.where(whereClause) : baseQuery)
+        .orderBy(orderByClause, asc(rounds.id))
         .limit(limit)
         .offset(offset);
 
-      const totalResult = await this.db
+      const countQuery = this.db
         .select({ count: sql<number>`count(*)` })
         .from(rounds)
         .leftJoin(schema.leagues, eq(rounds.leagueId, schema.leagues.id))
         .leftJoin(schema.seasons, eq(rounds.seasonId, schema.seasons.id));
+
+      const totalResult = await (whereClause ? countQuery.where(whereClause) : countQuery);
       const total = Number(totalResult[0].count);
       return { data, total, page, limit };
     } catch (error) {

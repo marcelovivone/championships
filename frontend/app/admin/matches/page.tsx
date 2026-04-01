@@ -1486,6 +1486,7 @@ const MatchesPage = () => {
                                 <MatchDetailsEditor
                                 sport={sportConfig}
                                 matchId={match.id}
+                                matchStatus={match.status}
                                 value={match.matchDivisions}
                                 onChange={(divisions) => {
                                     const updated = [...matchesList];

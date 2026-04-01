@@ -1375,7 +1375,12 @@ export default function EtlPage() {
                                                     stadiumMappings 
                                                 }),
                                             });
-                                            const result = await response.json();
+                                            if (!response.ok) {
+                                                const errBody = await response.text();
+                                                alert(`Failed to save entity mappings (HTTP ${response.status}): ${errBody}`);
+                                                return;
+                                            }
+                                            await response.json();
                                         } catch (e) {
                                             alert('Failed to save entity mappings. Check console for details.');
                                             return;

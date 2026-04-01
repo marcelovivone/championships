@@ -148,7 +148,34 @@ export const seasonsApi = {
   }
 };
 
-export const roundsApi = createCrudApi<Round, CreateRoundDto>('rounds');
+export const roundsApi = {
+  ...createCrudApi<Round, CreateRoundDto>('rounds'),
+  getAll: async (params?: {
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    leagueId?: number;
+    seasonId?: number;
+    date?: string;
+    flgCurrent?: boolean;
+    roundNumber?: number;
+  }): Promise<{ data: Round[]; total: number; page: number; limit: number }> => {
+    const { page = 1, limit = 10, sortBy, sortOrder, leagueId, seasonId, date, flgCurrent, roundNumber } = params || {};
+    let url = `/v1/rounds?page=${page}&limit=${limit}`;
+    if (sortBy) url += `&sortBy=${sortBy}`;
+    if (sortOrder) url += `&sortOrder=${sortOrder}`;
+    if (leagueId) url += `&leagueId=${leagueId}`;
+    if (seasonId) url += `&seasonId=${seasonId}`;
+    if (date) url += `&date=${encodeURIComponent(date)}`;
+    if (typeof flgCurrent === 'boolean') url += `&flgCurrent=${flgCurrent}`;
+    if (roundNumber) url += `&roundNumber=${roundNumber}`;
+    const response = await apiClient.get(url);
+    const result = response.data as any;
+    if (result.data && result.total !== undefined) return result;
+    return { data: Array.isArray(result) ? result : [], total: Array.isArray(result) ? result.length : 0, page, limit };
+  },
+};
 export const groupsApi = createCrudApi<Group, CreateGroupDto>('groups');
 
 // Season Clubs API with custom methods

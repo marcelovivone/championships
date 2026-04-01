@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { matchDivisionsApi } from '@/lib/api/entities';
 import { MatchDivision } from '@/lib/api/types'; // Import MatchDivision from shared types
+import { match } from 'assert';
 
 export type SportConfig = {
     divisionType: 'period' | 'quarter' | 'set';
@@ -15,6 +16,7 @@ export type SportConfig = {
 interface MatchDetailsEditorProps {
     sport: SportConfig;
     matchId: number;
+    matchStatus?: string;
     value?: MatchDivision[];
     onChange: (divisions: MatchDivision[]) => void;
     // Optional callback that receives checkbox state per row:
@@ -23,7 +25,7 @@ interface MatchDetailsEditorProps {
     onCheckboxStateChange?: (states: (boolean | null)[]) => void;
 }
 
-const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxStateChange }: MatchDetailsEditorProps) => {
+const MatchDetailsEditor = ({ sport, matchId, matchStatus, value = [], onChange, onCheckboxStateChange }: MatchDetailsEditorProps) => {
     const [divisions, setDivisions] = useState<MatchDivision[]>(value);
     const [hasOvertime, setHasOvertime] = useState(
         value.some(d => d.divisionType === 'OVERTIME' || d.id === -10)
@@ -264,7 +266,7 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxSt
                                         type="checkbox"
                                         checked={(d.id === -10 || d.divisionType === 'OVERTIME') ? hasOvertime : (d.id === -11 || d.divisionType === 'PENALTIES') ? hasPenalties : false}
                                         disabled={
-                                            (d.matchId !== 0)
+                                            (d.matchId !== 0 && matchStatus !== 'Scheduled')
                                         }
                                         onChange={(e) => {
                                             const checked = e.target.checked;
@@ -285,9 +287,9 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxSt
                                 sport.divisionType.charAt(0).toUpperCase() + sport.divisionType.slice(1) + ' ' + d.divisionNumber
                             )}
                         </span>
-                        )}
+                        )} 
 
-                        <input
+                       <input
                             type="number"
                             min="0"
                             value={d.homeScore ?? ''}
@@ -295,7 +297,7 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxSt
                             className="w-25 px-2 py-1 border rounded text-center bg-white"
                             placeholder="Home"
                             disabled={
-                                (d.matchId !== 0) ||
+                                (d.matchId !== 0 && matchStatus !== 'Scheduled') ||
                                 ((d.id === -10 || d.divisionType === 'OVERTIME') && !hasOvertime) ||
                                 ((d.id === -11 || d.divisionType === 'PENALTIES') && !hasPenalties)
                             }
@@ -309,7 +311,7 @@ const MatchDetailsEditor = ({ sport, matchId, value = [], onChange, onCheckboxSt
                             className="w-25 px-2 py-1 border rounded text-center bg-white"
                             placeholder="Away"
                             disabled={
-                                (d.matchId !== 0) ||
+                                (d.matchId !== 0 && matchStatus !== 'Scheduled') ||
                                 ((d.id === -10 || d.divisionType === 'OVERTIME') && !hasOvertime) ||
                                 ((d.id === -11 || d.divisionType === 'PENALTIES') && !hasPenalties)
                             }

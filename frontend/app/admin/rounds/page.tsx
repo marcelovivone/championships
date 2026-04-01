@@ -21,6 +21,14 @@ export default function RoundsPage() {
   const [pageInput, setPageInput] = useState('1');
   const [sortBy, setSortBy] = useState('roundNumber');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Filter state
+  const [filterLeagueId, setFilterLeagueId] = useState<string>('');
+  const [filterSeasonId, setFilterSeasonId] = useState<string>('');
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [filterFlgCurrent, setFilterFlgCurrent] = useState<string>('');
+  const [filterRoundNumber, setFilterRoundNumber] = useState<string>('');
+
   const queryClient = useQueryClient();
 
   // Sync pageInput with page state
@@ -29,8 +37,18 @@ export default function RoundsPage() {
   }, [page]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['rounds', page, limit, sortBy, sortOrder],
-    queryFn: () => roundsApi.getAll({ page, limit, sortBy, sortOrder }),
+    queryKey: ['rounds', page, limit, sortBy, sortOrder, filterLeagueId, filterSeasonId, filterDate, filterFlgCurrent, filterRoundNumber],
+    queryFn: () => roundsApi.getAll({
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      leagueId: filterLeagueId ? Number(filterLeagueId) : undefined,
+      seasonId: filterSeasonId ? Number(filterSeasonId) : undefined,
+      date: filterDate || undefined,
+      flgCurrent: filterFlgCurrent === 'true' ? true : filterFlgCurrent === 'false' ? false : undefined,
+      roundNumber: filterRoundNumber ? Number(filterRoundNumber) : undefined,
+    }),
   });
 
   const rounds = data?.data || [];
@@ -57,6 +75,13 @@ export default function RoundsPage() {
   });
 
   const seasons = seasonsData?.data || [];
+
+  // Seasons available for the filter — dependent on selected filter league
+  const filterSeasons = filterLeagueId
+    ? seasons
+        .filter((s: any) => s.leagueId === Number(filterLeagueId))
+        .sort((a: any, b: any) => b.startYear - a.startYear)
+    : [];
 
   const { register, handleSubmit, reset, watch, setValue, formState: { errors } } = useForm<CreateRoundForm>({
     defaultValues: {
@@ -177,6 +202,31 @@ export default function RoundsPage() {
     setPage(1);
   };
 
+  const handleFilterChange = (field: 'league' | 'season' | 'date' | 'current' | 'round', value: string) => {
+    setPage(1);
+    if (field === 'league') {
+      setFilterLeagueId(value);
+      setFilterSeasonId(''); // reset season when league changes
+    } else if (field === 'season') {
+      setFilterSeasonId(value);
+    } else if (field === 'date') {
+      setFilterDate(value);
+    } else if (field === 'round') {
+      setFilterRoundNumber(value);
+    } else {
+      setFilterFlgCurrent(value);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setFilterLeagueId('');
+    setFilterSeasonId('');
+    setFilterDate('');
+    setFilterFlgCurrent('');
+    setFilterRoundNumber('');
+    setPage(1);
+  };
+
   const onSubmit = (data: CreateRoundDto) => {
     const payload: any = {
       seasonId: Number(data.seasonId),
@@ -204,13 +254,6 @@ export default function RoundsPage() {
 
   const columns = [
     { header: 'Round #', accessor: 'roundNumber' as keyof Round, sortKey: 'roundNumber', sortable: true, width: '100px' },
-    {
-      header: 'Sport',
-      accessor: (round: Round) => round.league?.sport?.name || '-',
-      sortKey: 'sportName',
-      sortable: true,
-      width: '150px',
-    },
     {
       header: 'League',
       accessor: (round: Round) => round.league?.originalName || '-',
@@ -259,6 +302,91 @@ export default function RoundsPage() {
           <Plus size={20} />
           Add Round
         </button>
+      </div>
+
+      {/* Filter Panel */}
+      <div className="bg-white p-6 rounded-lg shadow mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+              {/* League */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">League</label>
+                <select
+                  value={filterLeagueId}
+                  onChange={(e) => handleFilterChange('league', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All leagues</option>
+                  {leagues.map((l: any) => (
+                    <option key={l.id} value={String(l.id)}>{l.originalName}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Season — only enabled when a league is selected */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Season</label>
+                <select
+                  value={filterSeasonId}
+                  onChange={(e) => handleFilterChange('season', e.target.value)}
+                  disabled={!filterLeagueId}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All seasons</option>
+                  {filterSeasons.map((s: any) => (
+                    <option key={s.id} value={String(s.id)}>{s.startYear}/{s.endYear}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Round number */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Round #</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={filterRoundNumber}
+                  onChange={(e) => handleFilterChange('round', e.target.value)}
+                  placeholder="Any"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Date — matches rounds whose start_date <= date <= end_date */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  value={filterDate}
+                  onChange={(e) => handleFilterChange('date', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Current */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current</label>
+                <select
+                  value={filterFlgCurrent}
+                  onChange={(e) => handleFilterChange('current', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All</option>
+                  <option value="true">Yes</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+              {/* Clear button placed in the last column for consistent alignment */}
+              <div className="flex items-end justify-end mb-1">
+                {(filterLeagueId || filterSeasonId || filterDate || filterFlgCurrent || filterRoundNumber) && (
+                  <button
+                    onClick={handleClearFilters}
+                    className="px-4 py-2 text-sm border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 whitespace-nowrap"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+        </div>
       </div>
 
       <DataTable
