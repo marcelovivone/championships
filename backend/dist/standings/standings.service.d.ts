@@ -46,46 +46,9 @@ export declare class StandingsService {
         updatedAt: Date;
     }[]>;
     private buildZeroRow;
-    findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string, clubId?: number): Promise<{
-        id: number;
-        sportId: number;
-        leagueId: number;
-        seasonId: number;
-        roundId: number;
-        matchDate: Date;
-        groupId: number;
-        clubId: number;
-        matchId: number;
-        points: number;
-        played: number;
-        wins: number;
-        draws: number;
-        losses: number;
-        goalsFor: number;
-        goalsAgainst: number;
-        overtimeWins: number;
-        overtimeLosses: number;
-        penaltyWins: number;
-        penaltyLosses: number;
-        setsWon: number;
-        setsLost: number;
-        homeGamesPlayed: number;
-        awayGamesPlayed: number;
-        homePoints: number;
-        awayPoints: number;
-        homeWins: number;
-        homeLosses: number;
-        homeDraws: number;
-        homeGoalsFor: number;
-        homeGoalsAgainst: number;
-        awayWins: number;
-        awayLosses: number;
-        awayDraws: number;
-        awayGoalsFor: number;
-        awayGoalsAgainst: number;
-        createdAt: Date;
-        updatedAt: Date;
-    }[]>;
+    private buildZeroMatchDateRow;
+    private compareStandingRows;
+    findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string, clubId?: number): Promise<any[]>;
     constructor(db: NodePgDatabase<typeof schema>, calculator: StandingsCalculatorService);
     findAll(): Promise<{
         id: number;
@@ -290,16 +253,14 @@ export declare class StandingsService {
     create(createStandingDto: CreateStandingDto): Promise<{
         home: {
             id: number;
-            createdAt: Date;
             sportId: number;
-            clubId: number;
             leagueId: number;
             seasonId: number;
-            groupId: number;
             roundId: number;
-            updatedAt: Date;
-            matchId: number;
             matchDate: Date;
+            groupId: number;
+            clubId: number;
+            matchId: number;
             points: number;
             played: number;
             wins: number;
@@ -327,19 +288,19 @@ export declare class StandingsService {
             awayDraws: number;
             awayGoalsFor: number;
             awayGoalsAgainst: number;
+            createdAt: Date;
+            updatedAt: Date;
         };
         away: {
             id: number;
-            createdAt: Date;
             sportId: number;
-            clubId: number;
             leagueId: number;
             seasonId: number;
-            groupId: number;
             roundId: number;
-            updatedAt: Date;
-            matchId: number;
             matchDate: Date;
+            groupId: number;
+            clubId: number;
+            matchId: number;
             points: number;
             played: number;
             wins: number;
@@ -367,15 +328,18 @@ export declare class StandingsService {
             awayDraws: number;
             awayGoalsFor: number;
             awayGoalsAgainst: number;
+            createdAt: Date;
+            updatedAt: Date;
         };
     }>;
+    private cascadeClubStandings;
     remove(id: number): Promise<{
         id: number;
-        createdAt: Date;
         sportId: number;
-        clubId: number;
+        createdAt: Date;
         leagueId: number;
         seasonId: number;
+        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
@@ -412,11 +376,11 @@ export declare class StandingsService {
     recordRoundStats(roundId: number, groupId: number, clubId: number, newStats: any): Promise<void>;
     removeByClubLeagueSeason(clubId: number, leagueId: number, seasonId: number, standingId: number): Promise<{
         id: number;
-        createdAt: Date;
         sportId: number;
-        clubId: number;
+        createdAt: Date;
         leagueId: number;
         seasonId: number;
+        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
@@ -452,11 +416,11 @@ export declare class StandingsService {
     }[]>;
     removeByMatchId(matchId: number): Promise<{
         id: number;
-        createdAt: Date;
         sportId: number;
-        clubId: number;
+        createdAt: Date;
         leagueId: number;
         seasonId: number;
+        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;

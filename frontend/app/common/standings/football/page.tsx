@@ -30,7 +30,7 @@ export default function FootballStandingsPage() {
   return (
     <BaseStandings
       title="Standings — Football"
-      hasGroups
+      hasGroups={false}
       standings={mockStandings}
       games={mockGames}
       leagues={leagues}

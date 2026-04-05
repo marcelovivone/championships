@@ -111,6 +111,16 @@ export class MatchesController {
         throw new BadRequestException('Invalid filter parameters');
       }
     }
+
+    // If only leagueId and seasonId are provided (without sportId), filter by league+season
+    if (leagueId && seasonId) {
+      const leagueIdNum = parseInt(leagueId, 10);
+      const seasonIdNum = parseInt(seasonId, 10);
+      if (isNaN(leagueIdNum) || leagueIdNum <= 0 || isNaN(seasonIdNum) || seasonIdNum <= 0) {
+        throw new BadRequestException('leagueId and seasonId must be positive integers.');
+      }
+      return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum);
+    }
     
     // // Then check individual filters
     // if (roundId) {

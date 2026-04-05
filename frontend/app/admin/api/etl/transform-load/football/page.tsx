@@ -1,9 +1,12 @@
 'use client';
 
 import React, { Fragment, useEffect, useState, useRef, useLayoutEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import DataTable from '@/components/ui/data-table';
-import { Table as TableIcon, Database, Trash2 } from 'lucide-react';
+import { Table as TableIcon, Database, Trash2, RefreshCw } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
+import { sportsApi, countriesApi, clubsApi } from '@/lib/api/entities';
+
 function downloadFile(filename: string, data: string) {
     const blob = new Blob([data], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -72,6 +75,9 @@ function collectManualRoundOverrides(
 }
 
 export default function EtlPage() {
+    const [clubCountrySelections, setClubCountrySelections] = useState<Record<string, number | undefined>>({});
+    const [clubsByCountry, setClubsByCountry] = useState<Record<number, any[]>>({});
+    const [allCountries, setAllCountries] = useState<any[]>([]);
     const [rows, setRows] = useState<any[]>([]);
     const [selected, setSelected] = useState<any | null>(null);
     const [page, setPage] = useState(1);
@@ -92,16 +98,20 @@ export default function EtlPage() {
     const [strayInputs, setStrayInputs] = useState<Record<string, string>>({});
     const [accumulatedOverrides, setAccumulatedOverrides] = useState<Record<string, number>>({});
     const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
+    const [footballSportId, setFootballSportId] = useState<number | null>(null);
     const [isSubsequentLoad, setIsSubsequentLoad] = useState(false);
     const [roundReviewSummary, setRoundReviewSummary] = useState<any[]>([]);
     const [expandedRoundDetails, setExpandedRoundDetails] = useState<Record<string, boolean>>({});
     const [targetColumns, setTargetColumns] = useState<string[] | null>(null);
     const [viewMode, setViewMode] = useState<'table' | 'json'>('table');
+    const [countryForReview, setCountryForReview] = useState<any | null>(null);
+    const [countryMapping, setCountryMapping] = useState<number | null | undefined>(undefined);
     const [leagueForReview, setLeagueForReview] = useState<any | null>(null);
     const [leagueMapping, setLeagueMapping] = useState<number | null | undefined>(undefined);
     const [clubsForReview, setClubsForReview] = useState<any[]>([]);
     const [stadiumsForReview, setStadiumsForReview] = useState<any[]>([]);
-    const [clubMappings, setClubMappings] = useState<Record<string, string>>({});
+    const [payloadCountryForClubs, setPayloadCountryForClubs] = useState<any | null>(null);
+    const [clubMappings, setClubMappings] = useState<Record<string, number | null | undefined>>({});
     const [stadiumMappings, setStadiumMappings] = useState<Record<string, string>>({});
     const [pendingEntityReviewApplyId, setPendingEntityReviewApplyId] = useState<number | null>(null);
     const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -119,6 +129,64 @@ export default function EtlPage() {
             return 100;
         }
     });
+
+    // Query countries via react-query (normalize paginated responses)
+    const countriesQuery = useQuery({
+        queryKey: ['countries'],
+        queryFn: () => countriesApi.getAll({ page: 1, limit: 1000 }),
+    });
+
+    useEffect(() => {
+        const countriesData = countriesQuery.data as any;
+        const arr = countriesData?.data || countriesData?.items || countriesData || [];
+        setAllCountries(Array.isArray(arr) ? arr.map((c: any) => ({ id: Number(c.id), name: c.name })) : []);
+    }, [countriesQuery.data, payloadCountryForClubs]);
+
+    // Query clubs via react-query and build clubsByCountry map
+    const clubsQuery = useQuery({
+        queryKey: ['clubs'],
+        queryFn: () => clubsApi.getAll({ page: 1, limit: 1000 }),
+    });
+
+    useEffect(() => {
+        const data = clubsQuery.data as any;
+        const arr = data?.data || data?.items || data || [];
+        if (!Array.isArray(arr)) {
+            setClubsByCountry({});
+            return;
+        }
+        const byCountry: Record<number, any[]> = {};
+        arr.forEach((club: any) => {
+            const cid = club.country_id ?? club.countryId ?? club.country?.id ?? null;
+            if (cid == null) return;
+            const key = Number(cid);
+            if (!byCountry[key]) byCountry[key] = [];
+            byCountry[key].push(club);
+        });
+        setClubsByCountry(byCountry);
+    }, [clubsQuery.data]);
+
+    useEffect(() => {
+        if (!clubsForReview.length || !allCountries.length) return;
+        setClubCountrySelections((prev) => {
+            const next = { ...prev };
+            clubsForReview.forEach((club: any) => {
+                const key = (club.name && String(club.name)) || (club.id != null ? String(club.id) : '');
+                if (!key) return;
+                if (next[key] !== undefined) return;
+                let defaultCountryId = undefined;
+                if (club.country_id) {
+                    defaultCountryId = club.country_id;
+                } else if (payloadCountryForClubs?.id) {
+                    defaultCountryId = payloadCountryForClubs.id;
+                } else if (countryForReview?.suggestions?.length > 0) {
+                    defaultCountryId = countryForReview.suggestions[0].id;
+                }
+                next[key] = defaultCountryId;
+            });
+            return next;
+        });
+    }, [clubsForReview, allCountries, countryForReview, payloadCountryForClubs]);
 
     useLayoutEffect(() => {
         const measure = () => {
@@ -159,26 +227,66 @@ export default function EtlPage() {
         };
     }, [selected, parsedRowsData]);
 
+    // useEffect(() => {
+    //     setLoadingRows(true);
+    //     fetch(`${API_BASE}/v1/api/transitional`)
+    //         .then((r) => r.json())
+    //         .then((d) => setRows(d.items || d.data?.items || []))
+    //         .catch((e) => console.error(e))
+    //         .finally(() => setLoadingRows(false));
+    // }, []);
+
     useEffect(() => {
+        (async () => {
+            try {
+                const res = await sportsApi.getAll({ page: 1, limit: 100 });
+                const normalized = Array.isArray(res.data) ? res.data : [];
+                const fball = normalized.find((s: any) => typeof s.name === 'string' && s.name.toLowerCase().includes('football'));
+                if (fball) setFootballSportId(fball.id);
+            } catch (e) {
+                console.error('[ETL Football] failed to fetch sports', e);
+            }
+        })();
+    }, []);
+
+    useEffect(() => {
+        if (footballSportId == null) return;
         setLoadingRows(true);
         fetch(`${API_BASE}/v1/api/transitional`)
             .then((r) => r.json())
-            .then((d) => setRows(d.items || d.data?.items || []))
+            .then((d) => {
+                const all = d.items || d.data?.items || [];
+                setRows(all.filter((r: any) => r.sport === footballSportId));
+            })
             .catch((e) => console.error(e))
             .finally(() => setLoadingRows(false));
-    }, []);
+    }, [footballSportId]);
 
     // keep page input in sync with page
     useEffect(() => {
         setPageInput(page.toString());
     }, [page]);
 
-    const reloadRows = async () => {
+    // const reloadRows = async () => {
+    //     setLoadingRows(true);
+    //     try {
+    //         const r = await fetch(`${API_BASE}/v1/api/transitional`);
+    //         const j = await r.json();
+    //         setRows(j.items || j.data?.items || []);
+    //     } catch (e) {
+    //         console.error(e);
+    //     } finally {
+    //         setLoadingRows(false);
+    //     }
+    // };
+
+        const reloadRows = async () => {
         setLoadingRows(true);
         try {
             const r = await fetch(`${API_BASE}/v1/api/transitional`);
             const j = await r.json();
-            setRows(j.items || j.data?.items || []);
+            const all = j.items || j.data?.items || [];
+            setRows(all.filter((r: any) => r.sport === footballSportId));
         } catch (e) {
             console.error(e);
         } finally {
@@ -363,13 +471,17 @@ export default function EtlPage() {
           try {
             
             // Always check for entity conflicts - backend will use existing mappings if available
-            const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/entity-suggestions?sportId=36`);
+            const rowSportId = rows.find((r: any) => r.id === id)?.sport ?? footballSportId ?? 34;
+            const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/entity-suggestions?sportId=${rowSportId}`);
             const entityCheckJson = await entityCheckResp.json();
             const entityData = entityCheckJson?.data ?? entityCheckJson;
             
             // If there are any entities that need review, show the UI
-            if (entityData?.needsReview && (entityData?.league || entityData?.clubs?.length || entityData?.stadiums?.length)) {
+            if (entityData?.needsReview && (entityData?.country || entityData?.league || entityData?.clubs?.length || entityData?.stadiums?.length)) {
                 // Entity review needed — show the mapping UI
+                setCountryForReview(entityData.country || null);
+                setPayloadCountryForClubs(entityData.payloadCountry || null);
+                setCountryMapping(undefined);
                 setLeagueForReview(entityData.league || null);
                 setLeagueMapping(undefined);
                 setClubsForReview(entityData.clubs || []);
@@ -380,6 +492,7 @@ export default function EtlPage() {
                         (entityData.clubs || []).map((club: any) => [club.name, undefined])
                     )
                 );
+                setClubCountrySelections({});
                 setStadiumMappings(
                     Object.fromEntries(
                         (entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])
@@ -450,17 +563,39 @@ export default function EtlPage() {
             const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-all-rows`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sportId: 36, dryRun: isDryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
+                // body: JSON.stringify({ sportId: 36, dryRun: isDryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
+                body: JSON.stringify({ sportId: rows.find((r: any) => r.id === id)?.sport ?? footballSportId ?? 36, dryRun: isDryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
             });
             const j = await resp.json();
-            const payload = j?.data ?? j;
-            setLoadResult(payload ?? payload?.result ?? j);
+            let payload = j?.data ?? j;
+
+            // Background mode: poll until the job completes
+            if (payload?.background) {
+                let jobDone = false;
+                while (!jobDone) {
+                    await new Promise<void>((r) => setTimeout(r, 3000));
+                    try {
+                        const statusResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-status`);
+                        const statusJson = await statusResp.json();
+                        const statusData = statusJson?.data ?? statusJson;
+                        if (statusData?.status === 'done' || statusData?.status === 'error') {
+                            jobDone = true;
+                            payload = statusData.result ?? statusData;
+                            setLoadResult(payload);
+                        }
+                    } catch {
+                        jobDone = true;
+                    }
+                }
+            } else {
+                setLoadResult(payload ?? payload?.result ?? j);
+            }
 
             const detailedConflictMessage = payload?.error || payload?.details?.message;
             const isLogicalFailure = payload?.reason === 'round_assignment_conflict' || payload?.applied === 0 && !!detailedConflictMessage;
 
             if (!forceDryRun) {
-                if (!resp.ok || isLogicalFailure) {
+                if ((!resp.ok && !j?.background) || isLogicalFailure) {
                     const missingTeams = Array.isArray(payload?.details?.missingTeams)
                         ? ` Missing teams: ${payload.details.missingTeams.map((team: any) => team?.name || team?.id).join(', ')}.`
                         : '';
@@ -525,6 +660,7 @@ export default function EtlPage() {
         setPendingApplyId(null);
         setExpandedRoundDetails({});
         setIsSubsequentLoad(false);
+        setPayloadCountryForClubs(null);
         setViewMode('table');
         // Scroll up to top of page
         setTimeout(() => {
@@ -799,6 +935,31 @@ export default function EtlPage() {
                                                 <button onClick={() => handleToDbTables(r.id, undefined, r)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
                                                     <Database size={18} />
                                                 </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        if (!confirm('Repair division scores from payload linescores? This will delete & recreate match_divisions for this row.')) return;
+                                                        setRunningLoad(true);
+                                                        try {
+                                                            const rowSportId = r.sport ?? footballSportId ?? 36;
+                                                            const resp = await fetch(`${API_BASE}/v1/api/transitional/${r.id}/repair-divisions`, {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify({ sportId: rowSportId }),
+                                                            });
+                                                            const j = await resp.json();
+                                                            alert(`Repair done: ${JSON.stringify(j)}`);
+                                                        } catch (e) {
+                                                            alert(`Repair failed: ${String(e)}`);
+                                                        } finally {
+                                                            setRunningLoad(false);
+                                                        }
+                                                    }}
+                                                    disabled={runningLoad}
+                                                    className={`text-blue-600 hover:text-blue-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                                    title="Repair division scores from payload"
+                                                >
+                                                    <RefreshCw size={18} />
+                                                </button>
                                                 <button onClick={() => handleDeleteRow(r.id)} className="text-red-600 hover:text-red-900" title="Delete">
                                                     <Trash2 size={18} />
                                                 </button>
@@ -946,8 +1107,8 @@ export default function EtlPage() {
                                 <div className="text-1xl text-blue-600">{loadResult.createdStadiums ?? 0}</div>
                             </div>
                             <div>
-                                <div className="text-gray-600">Rounds Created</div>
-                                <div className="text-1xl text-blue-600">{loadResult.createdRounds ?? 0}</div>
+                                <div className="text-gray-600">{loadResult.isDateBased ? 'Days Created' : 'Rounds Created'}</div>
+                                <div className="text-1xl text-blue-600">{loadResult.isDateBased ? (loadResult.createdDays ?? 0) : (loadResult.createdRounds ?? 0)}</div>
                             </div>
                         </div>
                     </div>
@@ -1171,15 +1332,58 @@ export default function EtlPage() {
                                 </button>
                             </div>
                         )}
-                        {(leagueForReview || clubsForReview.length > 0 || stadiumsForReview.length > 0) && (
+                        {(countryForReview || leagueForReview || clubsForReview.length > 0 || stadiumsForReview.length > 0) && (
                             <div data-entity-review-section className="mb-4 rounded border border-purple-300 bg-purple-50 p-4 text-sm text-purple-950">
                                 <div className="mb-2 text-base font-semibold">Entity Review Required</div>
                                 <p className="mb-4 max-w-5xl">
-                                    {leagueForReview 
+                                    {countryForReview
+                                        ? 'The country for this data could not be determined from the payload. Please select the country this league belongs to.'
+                                        : leagueForReview 
                                         ? 'The league in this data was not found in the database. Please select an existing league to map this data to.'
                                         : 'Some clubs or stadiums in this data are not found in the database. You can choose to map them to existing entities or create new ones. Review each item and make your selection below.'
                                     }
                                 </p>
+
+                                {countryForReview && (
+                                    <div className="mb-4 overflow-auto rounded border bg-white">
+                                        <div className="border-b bg-purple-100 px-3 py-2 font-medium">
+                                            Country Mapping Required
+                                        </div>
+                                        <div className="p-3">
+                                            <div className="mb-2 font-medium text-purple-900">
+                                                The payload has no country information
+                                            </div>
+                                            <div className="mb-3 text-xs text-gray-600">
+                                                Select the country this league belongs to:
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-4 bg-gray-50 border p-3 rounded text-sm">
+                                                <div className="flex items-baseline gap-3">
+                                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                        Select Country:
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-baseline gap-3">
+                                                    <select
+                                                        className="w-full rounded border border-purple-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                                                        value={countryMapping === undefined ? '' : (countryMapping === null ? '' : String(countryMapping))}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            if (val === '') setCountryMapping(undefined);
+                                                            else setCountryMapping(Number(val));
+                                                        }}
+                                                    >
+                                                        <option value="">-- Select a country --</option>
+                                                        {countryForReview.suggestions.map((suggestion: any) => (
+                                                            <option key={suggestion.id} value={suggestion.id}>
+                                                                {suggestion.name}{suggestion.code ? ` (${suggestion.code})` : ''}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 {leagueForReview && (
                                     <div className="mb-4 overflow-auto rounded border bg-white">
@@ -1247,37 +1451,56 @@ export default function EtlPage() {
                                             Clubs for review ({clubsForReview.length})
                                         </div>
                                         <div className="p-3 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                            {clubsForReview.map((club: any) => (
+                                            {clubsForReview.map((club: any) => {
+                                                const selectedCountryId = clubCountrySelections[club.name];
+                                                const clubsList = selectedCountryId && clubsByCountry[selectedCountryId] ? clubsByCountry[selectedCountryId] : [];
+                                                return (
                                                 <div key={club.name} className="border border-gray-300 rounded bg-white p-3 shadow-sm min-w-0">
                                                     <div className="mb-2 font-medium text-purple-900">
                                                         Incoming: {club.name}
                                                     </div>
                                                     <div className="text-xs text-gray-600 mb-2">
-                                                        {club.suggestions.length > 0 
-                                                            ? `${club.suggestions.length} existing clubs available - select one or create new:`
-                                                            : 'No existing clubs found - you can create a new one:'}
+                                                        {clubsList.length > 0
+                                                            ? `${clubsList.length} clubs in selected country - select one, create new, or ignore:`
+                                                            : 'No clubs found for this country - you can create a new one or ignore:'}
                                                     </div>
                                                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                                        {club.suggestions.length > 0 && (
-                                                            <select
-                                                                className="flex-1 rounded border border-gray-300 p-2 text-sm"
-                                                                value={clubMappings[club.name] === null ? '' : (clubMappings[club.name] || '')}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value;
-                                                                    setClubMappings(prev => ({ 
-                                                                        ...prev, 
-                                                                        [club.name]: val === '' ? undefined : parseInt(val) 
-                                                                    }));
-                                                                }}
-                                                            >
-                                                                <option value="">-- Select a club --</option>
-                                                                {club.suggestions.map((suggestion: any) => (
-                                                                    <option key={suggestion.id} value={suggestion.id}>
-                                                                        {suggestion.shortName || suggestion.name} (ID: {suggestion.id})
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        )}
+                                                        <select
+                                                            className="w-full md:w-56 border rounded px-2 py-1"
+                                                            value={selectedCountryId ?? ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value ? Number(e.target.value) : undefined;
+                                                                setClubCountrySelections((prev) => ({ ...prev, [club.name]: val }));
+                                                                setClubMappings((prev) => ({
+                                                                    ...prev,
+                                                                    [club.name]: prev[club.name] === null || prev[club.name] === -1 ? prev[club.name] : undefined,
+                                                                }));
+                                                            }}
+                                                        >
+                                                            <option value="">-- Select country --</option>
+                                                            {allCountries.map((country: any) => (
+                                                                <option key={country.id} value={country.id}>{country.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        <select
+                                                            className="w-full md:w-72 border rounded px-2 py-1"
+                                                            value={clubMappings[club.name] === null || clubMappings[club.name] === -1 ? '' : (clubMappings[club.name] ?? '')}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setClubMappings((prev) => ({
+                                                                    ...prev,
+                                                                    [club.name]: val === '' ? undefined : Number(val),
+                                                                }));
+                                                            }}
+                                                            disabled={!selectedCountryId}
+                                                        >
+                                                            <option value="">-- Select a club --</option>
+                                                            {clubsList.map((suggestion: any) => (
+                                                                <option key={suggestion.id} value={suggestion.id}>
+                                                                    {suggestion.name} (ID: {suggestion.id})
+                                                                </option>
+                                                            ))}
+                                                        </select>
                                                         <div className="hidden sm:flex items-center gap-1 flex-shrink-0 text-gray-400">
                                                             <span>-</span><span>OR</span><span>-</span>
                                                         </div>
@@ -1292,9 +1515,26 @@ export default function EtlPage() {
                                                         >
                                                             {clubMappings[club.name] === null ? '✓ Creating New Club' : '✨ Create New Club'}
                                                         </button>
+                                                        <div className="hidden sm:flex items-center gap-1 flex-shrink-0 text-gray-400">
+                                                            <span>-</span><span>OR</span><span>-</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            className={`sm:whitespace-nowrap rounded px-3 py-2 text-sm font-medium text-center ${
+                                                                clubMappings[club.name] === -1
+                                                                    ? 'bg-red-600 text-white'
+                                                                    : 'bg-red-50 text-red-700 border border-red-300 hover:bg-red-100'
+                                                            }`}
+                                                            onClick={() => setClubMappings(prev => ({ 
+                                                                ...prev, 
+                                                                [club.name]: (prev[club.name] as any) === -1 ? undefined : -1 
+                                                            }))}
+                                                        >
+                                                            {clubMappings[club.name] === -1 ? '⊘ Ignoring (undo)' : '⊘ Ignore team'}
+                                                        </button>
                                                     </div>
                                                 </div>
-                                            ))}
+                                            )})}
                                         </div>
                                     </div>
                                 )}
@@ -1360,6 +1600,7 @@ export default function EtlPage() {
                                 <button
                                     className="mt-1 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                     disabled={
+                                        (countryForReview && countryMapping === undefined) ||
                                         (leagueForReview && leagueMapping === undefined) ||
                                         clubsForReview.some((club: any) => clubMappings[club.name] === undefined) ||
                                         stadiumsForReview.some((stadium: any) => stadiumMappings[stadium.name] === undefined)
@@ -1370,6 +1611,7 @@ export default function EtlPage() {
                                                 method: 'PATCH',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ 
+                                                    countryMapping: countryMapping === undefined ? null : countryMapping,
                                                     leagueMapping: leagueMapping === undefined ? null : leagueMapping,
                                                     clubMappings, 
                                                     stadiumMappings 
@@ -1386,38 +1628,54 @@ export default function EtlPage() {
                                             return;
                                         }
                                         
-                                        // Check if we only selected a league (no clubs/stadiums yet)
+                                        // Track what step we just completed so the re-check knows what to show next.
                                         const hasClubsOrStadiums = clubsForReview.length > 0 || stadiumsForReview.length > 0;
+                                        const wasShowingCountryOnly = !!countryForReview && !leagueForReview && !hasClubsOrStadiums;
+                                        const wasShowingLeagueOnly  = !!leagueForReview && !hasClubsOrStadiums;
                                         
                                         if (pendingEntityReviewApplyId !== null) {
                                             const applyId = pendingEntityReviewApplyId;
                                             
-                                            if (leagueForReview && !hasClubsOrStadiums) {
-                                                // We just mapped the league - now check for clubs/stadiums
+                                            // Re-check only when we just handled a single step (country-only or league-only).
+                                            // Once clubs/stadiums are shown we proceed directly.
+                                            if (wasShowingCountryOnly || wasShowingLeagueOnly) {
+                                                // Clear the step we just completed
+                                                setCountryForReview(null);
+                                                setCountryMapping(undefined);
                                                 setLeagueForReview(null);
                                                 setLeagueMapping(undefined);
                                                 
                                                 try {
-                                                    const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?sportId=36`);
+                                                    // const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?sportId=36`);
+                                                    const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?sportId=${rows.find((r: any) => r.id === applyId)?.sport ?? footballSportId ?? 36}`);
                                                     const entityCheckJson = await entityCheckResp.json();
                                                     const entityData = entityCheckJson?.data ?? entityCheckJson;
                                                     
-                                                    if (entityData?.clubs?.length > 0 || entityData?.stadiums?.length > 0) {
-                                                        setClubsForReview(entityData.clubs || []);
-                                                        setStadiumsForReview(entityData.stadiums || []);
-                                                        // Initialize mappings state with no selections (undefined means user must choose)
-                                                        setClubMappings(
-                                                            Object.fromEntries(
-                                                                (entityData.clubs || []).map((club: any) => [club.name, undefined])
-                                                            )
-                                                        );
-                                                        setStadiumMappings(
-                                                            Object.fromEntries(
-                                                                (entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])
-                                                            )
-                                                        );
-                                                        // Keep pending ID, don't proceed yet
-                                                        return;
+                                                    if (entityData?.needsReview) {
+                                                        if (wasShowingCountryOnly) {
+                                                            // After country: show league or clubs/stadiums — NOT country again
+                                                            if (entityData.league || entityData.clubs?.length > 0 || entityData.stadiums?.length > 0) {
+                                                                    setLeagueForReview(entityData.league || null);
+                                                                    setPayloadCountryForClubs(entityData.payloadCountry || null);
+                                                                    setClubsForReview(entityData.clubs || []);
+                                                                    setStadiumsForReview(entityData.stadiums || []);
+                                                                setClubMappings(Object.fromEntries((entityData.clubs || []).map((club: any) => [club.name, undefined])));
+                                                                setClubCountrySelections({});
+                                                                setStadiumMappings(Object.fromEntries((entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])));
+                                                                return;
+                                                            }
+                                                        } else if (wasShowingLeagueOnly) {
+                                                            // After league: show ONLY clubs/stadiums — NOT league or country again
+                                                            if (entityData.clubs?.length > 0 || entityData.stadiums?.length > 0) {
+                                                                    setPayloadCountryForClubs(entityData.payloadCountry || null);
+                                                                    setClubsForReview(entityData.clubs || []);
+                                                                    setStadiumsForReview(entityData.stadiums || []);
+                                                                    setClubMappings(Object.fromEntries((entityData.clubs || []).map((club: any) => [club.name, undefined])));
+                                                                    setClubCountrySelections({});
+                                                                    setStadiumMappings(Object.fromEntries((entityData.stadiums || []).map((stadium: any) => [stadium.name, undefined])));
+                                                                return;
+                                                            }
+                                                        }
                                                     }
                                                 } catch (e) {
                                                     // console.warn('[ETL] Second entity check failed:', e);
@@ -1426,20 +1684,24 @@ export default function EtlPage() {
                                             
                                             // Clear state and proceed to load
                                             setPendingEntityReviewApplyId(null);
+                                            setCountryForReview(null);
+                                            setCountryMapping(undefined);
                                             setLeagueForReview(null);
                                             setLeagueMapping(undefined);
                                             setClubsForReview([]);
                                             setStadiumsForReview([]);
+                                            setClubCountrySelections({});
                                             setClubMappings({});
                                             setStadiumMappings({});
+                                            setPayloadCountryForClubs(null);
                                             // Pass skipEntityReview=true to skip checks since we just completed entity review
                                             handleToDbTables(applyId, undefined, undefined, false, true);
                                         }
                                     }}
                                 >
                                     {pendingEntityReviewApplyId !== null 
-                                        ? (leagueForReview && clubsForReview.length === 0 && stadiumsForReview.length === 0
-                                            ? 'Continue to check clubs/stadiums'
+                                        ? ((countryForReview || leagueForReview) && clubsForReview.length === 0 && stadiumsForReview.length === 0
+                                            ? 'Save & continue'
                                             : 'Apply mappings and proceed')
                                         : 'Save mappings'}
                                 </button>

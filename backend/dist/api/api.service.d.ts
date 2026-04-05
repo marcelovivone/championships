@@ -13,7 +13,19 @@ export declare class ApiService {
         firstRow: Record<string, any>;
         matches: Record<string, any>[];
     }>;
-    fetchAndStore(league: string, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string, seasonStatus?: boolean | string, isSeasonDefault?: boolean, sameYears?: boolean, scheduleType?: string, isLeagueDefault?: boolean, hasDivisions?: boolean, runInBackground?: boolean): Promise<void>;
+    fetchAndStore(league: string, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string, seasonStatus?: boolean | string, isSeasonDefault?: boolean, sameYears?: boolean, scheduleType?: string, isLeagueDefault?: boolean, hasDivisions?: boolean, hasGroups?: boolean, numberOfGroups?: number, runInBackground?: boolean, inferClubs?: boolean): Promise<{
+        id: number;
+        fetched_at: any;
+        background: boolean;
+        startDate: string;
+        endDate: string;
+    } | {
+        id: any;
+        fetched_at: any;
+        background?: undefined;
+        startDate?: undefined;
+        endDate?: undefined;
+    }>;
     listTransitional(limit?: number): Promise<any[]>;
     getTransitional(id: number): Promise<any>;
     private ensureRoundReviewTable;
@@ -22,6 +34,84 @@ export declare class ApiService {
     resolveRoundReview(id: number, overrides?: Record<string, number>): Promise<any>;
     deleteRoundReview(id: number): Promise<{
         deleted: boolean;
+    }>;
+    private ensureEntityReviewTable;
+    getEntityReview(id: number): Promise<any>;
+    saveEntityReview(id: number, leagueMapping: number | null, clubMappings: Record<string, number>, stadiumMappings: Record<string, number>, countryMapping?: number | null): Promise<any>;
+    deleteEntityReview(id: number): Promise<{
+        deleted: boolean;
+    }>;
+    private ensureApplyJobColumns;
+    startApplyJob(id: number): Promise<void>;
+    finishApplyJob(id: number, result: any): Promise<void>;
+    failApplyJob(id: number, error: string): Promise<void>;
+    getApplyStatus(id: number): Promise<{
+        status: any;
+        result: any;
+    }>;
+    repairDivisionsFromPayload(id: number, sportId?: number): Promise<{
+        repaired: number;
+        skipped: number;
+        errors: number;
+    }>;
+    private getDraftEntityMappings;
+    detectEntitiesForReview(id: number, sportId?: number): Promise<{
+        found: boolean;
+        reason: string;
+        country?: undefined;
+        league?: undefined;
+        clubs?: undefined;
+        stadiums?: undefined;
+        needsReview?: undefined;
+    } | {
+        found: boolean;
+        country: {
+            incomingName: any;
+            suggestions: {
+                id: any;
+                name: any;
+                code: any;
+            }[];
+        };
+        league: any;
+        clubs: any[];
+        stadiums: any[];
+        needsReview: boolean;
+        reason?: undefined;
+    } | {
+        found: boolean;
+        league: {
+            incomingName: any;
+            suggestions: {
+                id: any;
+                originalName: any;
+                secondaryName: any;
+                countryId: any;
+            }[];
+        };
+        clubs: {
+            name: string;
+            suggestions: any[];
+        }[];
+        stadiums: any[];
+        needsReview: boolean;
+        reason?: undefined;
+        country?: undefined;
+    } | {
+        found: boolean;
+        clubs: {
+            name: string;
+            suggestions: any[];
+        }[];
+        stadiums: {
+            name: string;
+            city: string;
+            suggestions: any[];
+        }[];
+        needsReview: boolean;
+        reason?: undefined;
+        country?: undefined;
+        league?: undefined;
     }>;
     private getDraftRoundOverrides;
     deleteTransitional(id: number): Promise<{
@@ -132,18 +222,16 @@ export declare class ApiService {
         details?: undefined;
     } | {
         found: boolean;
+        reason?: undefined;
+        details?: undefined;
     } | {
-        isSubsequentLoad: boolean;
         found: boolean;
         reason: string;
-        columns?: undefined;
-        rows?: undefined;
-    } | {
-        isSubsequentLoad: boolean;
-        found: boolean;
-        columns: string[];
-        rows: any[];
-        reason?: undefined;
+        details: {
+            message: string;
+            leagueId: number;
+            seasonId: any;
+        };
     }>;
     private parseTransitionalEspn;
     applyTransitional(id: number, options?: {
@@ -211,7 +299,14 @@ export declare class ApiService {
     getTableColumns(tableName: string): Promise<any[]>;
     createMatchDivisions(client: any, sportId: number, matchId: number, matchRow: Record<string, any>, flgHasDivisions?: boolean): Promise<{
         created: number;
+        hasLinescores: boolean;
+    } | {
+        created: number;
+        hasLinescores?: undefined;
     }>;
+    private formatEspnDate;
+    private fetchEspnScoreboardByDate;
+    private fetchEspnSeasonByDay;
     private fetchEspnEventLinescores;
     enrichMatchDivisionsFromEspn(sportName: string, leagueCode: string, matchesForEnrichment: Array<{
         matchId: number;
@@ -224,6 +319,8 @@ export declare class ApiService {
     applyFirstRowToApp(id: number, options?: {
         sportId?: number;
         roundOverrides?: Record<string, number>;
+        leagueId?: number;
+        countryId?: number;
     }): Promise<{
         applied: boolean;
         reason: any;

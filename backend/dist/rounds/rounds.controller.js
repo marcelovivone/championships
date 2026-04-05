@@ -21,18 +21,25 @@ let RoundsController = class RoundsController {
     constructor(roundsService) {
         this.roundsService = roundsService;
     }
-    async findAll(seasonId, leagueId, page, limit, sortBy, sortOrder) {
-        if (seasonId) {
-            return this.roundsService.findBySeason(parseInt(seasonId, 10));
-        }
-        if (leagueId) {
-            return this.roundsService.findByLeague(parseInt(leagueId, 10));
+    async findAll(seasonId, leagueId, page, limit, sortBy, sortOrder, date, flgCurrent, roundNumber) {
+        if (!page) {
+            if (seasonId)
+                return this.roundsService.findBySeason(parseInt(seasonId, 10));
+            if (leagueId)
+                return this.roundsService.findByLeague(parseInt(leagueId, 10));
         }
         const pageNum = page ? parseInt(page, 10) : 1;
         const limitNum = limit ? parseInt(limit, 10) : 10;
         const sort = sortBy || 'roundNumber';
         const order = sortOrder === 'desc' ? 'desc' : 'asc';
-        return this.roundsService.findAllPaginated(pageNum, limitNum, sort, order);
+        const filters = {
+            leagueId: leagueId ? parseInt(leagueId, 10) : undefined,
+            seasonId: seasonId ? parseInt(seasonId, 10) : undefined,
+            date: date || undefined,
+            flgCurrent: flgCurrent === 'true' ? true : flgCurrent === 'false' ? false : undefined,
+            roundNumber: roundNumber ? parseInt(roundNumber, 10) : undefined,
+        };
+        return this.roundsService.findAllPaginated(pageNum, limitNum, sort, order, filters);
     }
     async findOne(id) {
         const round = await this.roundsService.findOne(id);
@@ -94,8 +101,11 @@ __decorate([
     __param(3, (0, common_1.Query)('limit')),
     __param(4, (0, common_1.Query)('sortBy')),
     __param(5, (0, common_1.Query)('sortOrder')),
+    __param(6, (0, common_1.Query)('date')),
+    __param(7, (0, common_1.Query)('flgCurrent')),
+    __param(8, (0, common_1.Query)('roundNumber')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], RoundsController.prototype, "findAll", null);
 __decorate([

@@ -3,6 +3,27 @@
 import React from 'react';
 import { apiClient } from '@/lib/api/client';
 
+function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+    return (
+        <svg
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            className="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.25"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+        >
+            {direction === 'left' ? (
+                <path d="M9.75 3.25 5 8l4.75 4.75" />
+            ) : (
+                <path d="M6.25 3.25 11 8l-4.75 4.75" />
+            )}
+        </svg>
+    );
+}
+
 export default function FilterBar({
     season,
     setSeason,
@@ -21,6 +42,8 @@ export default function FilterBar({
     showBottom = true,
     compact = false,
     effectiveMaxRound,
+    combineGroups = false,
+    setCombineGroups = () => {},
 }: any) {
     const dateInputRef = React.useRef<HTMLInputElement | null>(null);
     const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
@@ -122,8 +145,14 @@ export default function FilterBar({
                 <label className="text-sm text-gray-600">{scheduleIsDate ? 'Date' : 'Round'}</label>
                 <div className="mt-0 flex items-center gap-2 whitespace-nowrap">
                     {scheduleIsDate ? (
-                        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm">
-                            <button onClick={() => adjustDate(-1)} className="px-3 py-2 text-blue-600 hover:bg-blue-50">◀</button>
+                        <div className="flex items-center overflow-hidden rounded-md border bg-white shadow-sm">
+                            <button
+                                onClick={() => adjustDate(-1)}
+                                className="flex h-10 w-10 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                                aria-label="Previous date"
+                            >
+                                <ChevronIcon direction="left" />
+                            </button>
                             <input
                                 ref={dateInputRef}
                                 type="date"
@@ -131,26 +160,16 @@ export default function FilterBar({
                                 value={roundOrDay || ''}
                                 onChange={(e) => setRoundOrDay(e.target.value)}
                             />
-                            <button onClick={() => adjustDate(1)} className="px-3 py-2 text-blue-600 hover:bg-blue-50">▶</button>
                             <button
-                                onClick={() => {
-                                    if (dateInputRef.current) {
-                                        try {
-                                            // @ts-ignore
-                                            if (typeof dateInputRef.current.showPicker === 'function') dateInputRef.current.showPicker();
-                                        } catch (e) {
-                                            dateInputRef.current.focus();
-                                        }
-                                    }
-                                }}
-                                className="px-3 py-2 text-blue-600 hover:bg-blue-50"
-                                aria-label="Open calendar"
+                                onClick={() => adjustDate(1)}
+                                className="flex h-10 w-10 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                                aria-label="Next date"
                             >
-                                📅
+                                <ChevronIcon direction="right" />
                             </button>
                         </div>
                     ) : (
-                        <div className="flex items-center border rounded-md overflow-hidden bg-white shadow-sm">
+                        <div className="flex items-center overflow-hidden rounded-md border bg-white shadow-sm">
                             <button onClick={() => {
                                 const cur = Number(roundOrDay || 1);
                                 const min = 1;
@@ -159,7 +178,7 @@ export default function FilterBar({
                                 const clamped = next > max ? max : next;
                                 setRoundOrDay(clamped);
                                 setInputRoundValue(String(clamped));
-                            }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">◀</button>
+                            }} className="flex h-10 w-10 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Previous round"><ChevronIcon direction="left" /></button>
                             <input
                                 type="number"
                                 min={1}
@@ -196,7 +215,7 @@ export default function FilterBar({
                                 const clamped = next < min ? min : next;
                                 setRoundOrDay(clamped);
                                 setInputRoundValue(String(clamped));
-                            }} className="px-3 py-2 text-blue-600 hover:bg-blue-50">▶</button>
+                            }} className="flex h-10 w-10 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Next round"><ChevronIcon direction="right" /></button>
                         </div>
                     )}
                 </div>
@@ -242,6 +261,18 @@ export default function FilterBar({
                             </div>
                         )}
 
+                        {seasonHasGroups && group === 'all' && (
+                            <label className="flex items-center gap-2 text-sm text-gray-600 whitespace-nowrap">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(combineGroups)}
+                                    onChange={(e) => setCombineGroups(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>Combine groups</span>
+                            </label>
+                        )}
+
                         <div className="flex-1" />
 
                         <div className="flex items-center gap-2 text-sm">
@@ -261,6 +292,18 @@ export default function FilterBar({
                                     ))}
                                 </select>
                             </div>
+                        )}
+
+                        {seasonHasGroups && group === 'all' && (
+                            <label className="flex items-center gap-2 text-sm text-gray-600 mt-2 sm:mt-0">
+                                <input
+                                    type="checkbox"
+                                    checked={Boolean(combineGroups)}
+                                    onChange={(e) => setCombineGroups(e.target.checked)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span>Combine groups</span>
+                            </label>
                         )}
                     </>
                 )}

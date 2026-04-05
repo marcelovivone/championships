@@ -8,6 +8,7 @@ import { STATIC_STATUS_PAGE_GET_INITIAL_PROPS_ERROR } from 'next/dist/lib/consta
 export default function AdminApiPage() {
   const [payload, setPayload] = useState('');
   const [result, setResult] = useState<any>(null);
+  const [isBackgroundFetch, setIsBackgroundFetch] = useState(false);
   const [processingRowId, setProcessingRowId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [league, setLeague] = useState('eng.1');
@@ -19,7 +20,10 @@ export default function AdminApiPage() {
   const [isSeasonDefault, setIsSeasonDefault] = useState<boolean>(false);
   const [isLeagueDefault, setIsLeagueDefault] = useState<boolean>(false);
   const [scheduleType, setScheduleType] = useState<string>('Date');
-  const [hasDivisions, setHasDivisions] = useState<boolean>(true);
+  const [hasDivisions, setHasDivisions] = useState<boolean>(false);
+  const [hasGroups, setHasGroups] = useState<boolean>(false);
+  const [numberOfGroups, setNumberOfGroups] = useState<number>(0);
+  const [inferClubs, setInferClubs] = useState<boolean>(true);
   const [runInBackground, setRunInBackground] = useState<boolean>(true);
   const [sports, setSports] = useState<any[]>([]);
   const [sportId, setSportId] = useState<number>(36);
@@ -49,6 +53,11 @@ export default function AdminApiPage() {
         const normalized = Array.isArray(res.data) ? res.data.map((s: any) => ({ id: s.id, name: s.name })) : [];
         setSports(normalized);
         if (normalized.length && !normalized.find((s: any) => s.id === sportId)) setSportId(normalized[0].id);
+
+        // force both flgs to false and number of groups to 0 (don't know why declarations not working when opening the page first time)
+        setHasGroups(false);
+        setNumberOfGroups(0);
+        setHasDivisions(false);
       } catch (e) {
         // ignore
       }
@@ -72,16 +81,32 @@ export default function AdminApiPage() {
   useEffect(() => {
     try {
       if (origin === 'Api-Espn') {
-        setHasDivisions(false); // ESPN payloads: no divisions
-        setRunInBackground(true); // ESPN: run in background by default
+        const sp = sports.find((s: any) => s.id === sportId);
+        const isFootball = !!(sp && typeof sp.name === 'string' && sp.name.toLowerCase().includes('football'));
+        if (isFootball) {
+            setHasDivisions(false); // ESPN football payloads: no divisions
+            setHasGroups(false); // ESPN football payloads: no groups
+            setNumberOfGroups(0); // ESPN football payloads: no groups
+            setRunInBackground(true); // ESPN: run in background by default
+            setInferClubs(true); // ESPN football payloads: always try to infer
+        } else {
+            setHasDivisions(true); // ESPN non-football payloads: has divisions
+            setHasGroups(true); // ESPN non-football payloads: has groups
+            setNumberOfGroups(2); // ESPN non-football payloads: has groups
+            setRunInBackground(false); // ESPN non-football payloads: do not run in background by default
+            setInferClubs(false); // ESPN non-football payloads: do not try to infer
+        }
       } else if (origin === 'Api-Football') {
         setHasDivisions(true); // Api-Football: has divisions
+        setHasGroups(false); // Api-Football: no groups
+        setNumberOfGroups(0); // Api-Football: no groups
         setRunInBackground(false); // Api-Football: do not run in background by default
+        setInferClubs(true); // Api-Football: always try to infer
       }
     } catch (e) {
       // noop
     }
-  }, [origin]);
+  }, [origin, sportId]);
 
   // Keep `sameYears` in sync with the start/end date years.
   // If the years are equal, check the box; otherwise uncheck it.
@@ -181,6 +206,7 @@ export default function AdminApiPage() {
 
   const handleFetchAndStore = async () => {
     setLoading(true);
+    setIsBackgroundFetch(false);
     try {
       controllerRef.current = new AbortController();
       const timeout = setTimeout(() => controllerRef.current?.abort(), TIMEOUT_MS);
@@ -200,7 +226,10 @@ export default function AdminApiPage() {
           scheduleType,
           isLeagueDefault,
           hasDivisions,
+          hasGroups,
+          numberOfGroups,
           runInBackground,
+          inferClubs,
         }),
         signal: controllerRef.current.signal,
       });
@@ -210,8 +239,13 @@ export default function AdminApiPage() {
       try { data = JSON.parse(txt); } catch (e) { data = txt; }
       setResult({ status: res.status, body: data });
       // if backend returned created transitional id, show processing result and link to ETL preview
-      const createdId = data?.id ?? data?.stored?.id ?? data?.created?.id ?? null;
-      if (createdId) setProcessingRowId(Number(createdId));
+      const storedData = data?.stored ?? data;
+      const createdId = storedData?.id ?? data?.id ?? data?.created?.id ?? null;
+      const background = storedData?.background === true;
+      if (createdId) {
+        setProcessingRowId(Number(createdId));
+        setIsBackgroundFetch(background);
+      }
     } catch (err) {
       setResult({ error: String(err) });
     } finally {
@@ -230,6 +264,7 @@ export default function AdminApiPage() {
   const handleClearResults = () => {
     setResult(null);
     setProcessingRowId(null);
+    setIsBackgroundFetch(false);
   };
 
   return (
@@ -364,7 +399,7 @@ export default function AdminApiPage() {
       </div>
 
       {/* League section: league input moved here and visible only for Api-Football */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-6">
         <div>
             <label className="block text-sm text-gray-600">League (used by the API server originally)</label>
             <input className="w-full p-2 border rounded" value={league} onChange={(e) => setLeague(e.target.value)} />
@@ -382,6 +417,27 @@ export default function AdminApiPage() {
             <input
             id="league-default-checkbox"
             type="checkbox"
+            checked={hasGroups}
+            onChange={(e) => setHasGroups(e.target.checked)}
+            className="h-4 w-4"
+            />
+            <label htmlFor="league-default-checkbox" className="text-sm text-gray-600">Has Groups</label>
+        </div>
+
+        <div>
+            <label className="block text-sm text-gray-600">Number of Groups</label>
+            <input className="w-full p-2 border rounded" 
+                   type="number" 
+                   value={numberOfGroups} 
+                   onChange={(e) => setNumberOfGroups(Number(e.target.value))}
+                   disabled={!hasGroups}
+            />
+        </div>
+
+        <div className="flex items-center gap-2 ml-10 mt-6 md:mt-0">
+            <input
+            id="league-default-checkbox"
+            type="checkbox"
             checked={isLeagueDefault}
             onChange={(e) => setIsLeagueDefault(e.target.checked)}
             className="h-4 w-4"
@@ -389,8 +445,6 @@ export default function AdminApiPage() {
             <label htmlFor="league-default-checkbox" className="text-sm text-gray-600">Default</label>
         </div>
       </div>
-
-
 
       <div className="w-full my-4" aria-hidden>
         <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
@@ -425,12 +479,41 @@ export default function AdminApiPage() {
         </div>
       </div>
 
+      <div className="w-full my-4" aria-hidden>
+        <div style={{ height: '1px', background: '#e6e6e6', boxShadow: '0 1px 0 rgba(0,0,0,0.06)' }} />
+        <div className="mt-3 mb-4 text-sm text-gray-600 flex items-center gap-3">
+          <span className="text-gray-700 text-lg">Club Information</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+          <div className="flex items-center gap-2">
+            <input
+              id="md-always-infer"
+              type="checkbox"
+                checked={inferClubs}
+                onChange={(e) => setInferClubs(e.target.checked)}
+                disabled={origin === 'Api-Espn' || origin === 'Api-Football'}
+              className="h-4 w-4"
+            />
+            <label htmlFor="md-always-infer" className="text-sm text-gray-600">Always try to infer</label>
+          </div>
+        </div>
+      </div>
+
       {processingRowId && (
-        <div className="mt-4 bg-yellow-50 border p-3 rounded">
+        <div className={`mt-4 border p-3 rounded ${isBackgroundFetch ? 'bg-blue-50 border-blue-200' : 'bg-yellow-50'}`}>
           <div className="flex items-center justify-between mb-2">
-            <div className="font-medium">Result</div>
+            <div className="font-medium">
+              {isBackgroundFetch ? '⏳ Fetching in background…' : 'Result'}
+            </div>
             <div className="text-sm text-gray-600">Transitional ID: {processingRowId}</div>
           </div>
+          {isBackgroundFetch && (
+            <p className="text-sm text-blue-700 mb-3">
+              The day-by-day fetch is running on the server. It may take a few minutes to complete.
+              The row will appear in the transitional list once it is ready — refresh the list to check.
+            </p>
+          )}
           <div className="flex gap-2">
             <button
               onClick={() => window.open(`/admin/api/etl/football?rowId=${processingRowId}`, '_blank')}
@@ -439,7 +522,7 @@ export default function AdminApiPage() {
               Open ETL Preview
             </button>
             <button
-              onClick={() => setProcessingRowId(null)}
+              onClick={() => { setProcessingRowId(null); setIsBackgroundFetch(false); }}
               className="px-3 py-2 border rounded bg-white hover:bg-gray-50"
             >
               Dismiss

@@ -32,7 +32,10 @@ export class ApiController {
       scheduleType?: string;
       isLeagueDefault?: boolean;
       hasDivisions?: boolean;
+      hasGroups?: boolean;
+      numberOfGroups?: number;
       runInBackground?: boolean;
+      inferClubs?: boolean;
     },
   ) {
     const result = await this.apiService.fetchAndStore(
@@ -48,7 +51,10 @@ export class ApiController {
       body.scheduleType,
       body.isLeagueDefault,
       body.hasDivisions,
+      body.hasGroups,
+      body.numberOfGroups,
       body.runInBackground,
+      body.inferClubs,
     );
     return { stored: result };
   }
@@ -121,19 +127,21 @@ export class ApiController {
   @Get('transitional/:id/entity-review')
   async getEntityReview(@Param('id', ParseIntPipe) id: number) {
     const review = await this.apiService.getEntityReview(id);
+    // console.log('Got entity review:', review);
     return { found: !!review, item: review };
   }
 
   @Patch('transitional/:id/entity-review')
   async patchEntityReview(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { leagueMapping?: number | null, clubMappings?: Record<string, number>, stadiumMappings?: Record<string, number> },
+    @Body() body: { leagueMapping?: number | null, clubMappings?: Record<string, number>, stadiumMappings?: Record<string, number>, countryMapping?: number | null },
   ) {
     const review = await this.apiService.saveEntityReview(
       id, 
       body?.leagueMapping ?? null, 
       body?.clubMappings ?? {}, 
-      body?.stadiumMappings ?? {}
+      body?.stadiumMappings ?? {},
+      body?.countryMapping ?? null,
     );
     return { success: true, item: review };
   }
@@ -149,7 +157,9 @@ export class ApiController {
     @Param('id', ParseIntPipe) id: number,
     @Query('sportId') sportId?: string,
   ) {
+    // console.log(`Getting entity suggestions for transitional row ${id} with sportId=${sportId}`);
     const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined);
+    // console.log('Got entity suggestions:', result);
     return result;
   }
 
@@ -164,8 +174,34 @@ export class ApiController {
     @Param('id', ParseIntPipe) id: number,
     @Body() body: { sportId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> },
   ) {
-    const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides });
-    return result;
+    const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides };
+    // Dry runs are always synchronous (need immediate feedback for previewing)
+    if (opts.dryRun) {
+      return await this.apiService.applyAllRowsToApp(id, opts);
+    }
+    // Real runs: start immediately in the background — return at once so the HTTP request
+    // does not time out while processing hundreds of events.
+    await this.apiService.startApplyJob(id);
+    setImmediate(() => {
+      this.apiService
+        .applyAllRowsToApp(id, opts)
+        .then((result) => this.apiService.finishApplyJob(id, result))
+        .catch((err) => this.apiService.failApplyJob(id, String(err)));
+    });
+    return { background: true, status: 'running' };
+  }
+
+  @Get('transitional/:id/apply-status')
+  async getApplyStatus(@Param('id', ParseIntPipe) id: number) {
+    return this.apiService.getApplyStatus(id);
+  }
+
+  @Post('transitional/:id/repair-divisions')
+  async repairDivisions(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { sportId?: number },
+  ) {
+    return this.apiService.repairDivisionsFromPayload(id, body?.sportId);
   }
 
   @Post('transitional/:id/load')

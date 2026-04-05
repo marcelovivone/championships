@@ -92,14 +92,14 @@ export declare class SeasonsController {
     }>;
     create(createDto: any): Promise<{
         id: number;
-        flgDefault: boolean;
-        flgEspnApiPartialScores: boolean;
-        createdAt: Date;
+        status: string;
         sportId: number;
+        flgDefault: boolean;
+        createdAt: Date;
+        flgEspnApiPartialScores: boolean;
         leagueId: number;
         startYear: number;
         endYear: number;
-        status: string;
         numberOfGroups: number;
     }>;
     update(id: number, updateDto: any): Promise<{
@@ -116,14 +116,14 @@ export declare class SeasonsController {
     }>;
     remove(id: number): Promise<{
         id: number;
-        flgDefault: boolean;
-        flgEspnApiPartialScores: boolean;
-        createdAt: Date;
+        status: string;
         sportId: number;
+        flgDefault: boolean;
+        createdAt: Date;
+        flgEspnApiPartialScores: boolean;
         leagueId: number;
         startYear: number;
         endYear: number;
-        status: string;
         numberOfGroups: number;
     }>;
 }

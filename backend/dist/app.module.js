@@ -30,6 +30,7 @@ const users_module_1 = require("./users/users.module");
 const auth_module_1 = require("./auth/auth.module");
 const menu_items_module_1 = require("./menu-items/menu-items.module");
 const permissions_module_1 = require("./permissions/permissions.module");
+const admin_module_1 = require("./admin/admin.module");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
@@ -66,6 +67,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             menu_items_module_1.MenuItemsModule,
             permissions_module_1.PermissionsModule,
+            admin_module_1.AdminModule,
         ],
         providers: [
             {

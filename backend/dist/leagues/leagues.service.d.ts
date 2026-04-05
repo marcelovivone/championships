@@ -68,18 +68,16 @@ export declare class LeaguesService {
     create(createLeagueDto: CreateLeagueDto): Promise<{
         typeOfSchedule: "Round" | "Date";
         id: number;
-        divisionTime: number;
-        flgDefault: boolean;
-        imageUrl: string;
-        createdAt: Date;
-        countryId: number;
-        cityId: number;
-        sportId: number;
         originalName: string;
         secondaryName: string;
+        countryId: number;
+        sportId: number;
+        cityId: number;
+        flgDefault: boolean;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -89,6 +87,8 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
+        imageUrl: string;
+        createdAt: Date;
     }>;
     update(id: number, updateLeagueDto: UpdateLeagueDto): Promise<{
         typeOfSchedule: "Round" | "Date";
@@ -117,18 +117,17 @@ export declare class LeaguesService {
     }>;
     remove(id: number): Promise<{
         id: number;
-        divisionTime: number;
-        flgDefault: boolean;
-        imageUrl: string;
-        createdAt: Date;
-        countryId: number;
-        cityId: number;
-        sportId: number;
         originalName: string;
         secondaryName: string;
+        countryId: number;
+        sportId: number;
+        cityId: number;
+        flgDefault: boolean;
+        typeOfSchedule: string;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
+        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -138,7 +137,8 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
-        typeOfSchedule: string;
+        imageUrl: string;
+        createdAt: Date;
     }>;
     addLink(leagueId: number, label: string, url: string): Promise<{
         id: number;

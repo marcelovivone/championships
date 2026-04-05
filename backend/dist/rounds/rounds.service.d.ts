@@ -14,7 +14,13 @@ export declare class RoundsService {
         flgCurrent: boolean;
         createdAt: Date;
     }[]>;
-    findAllPaginated(page: number, limit: number, sortBy: string, sortOrder: 'asc' | 'desc'): Promise<{
+    findAllPaginated(page: number, limit: number, sortBy: string, sortOrder: 'asc' | 'desc', filters?: {
+        leagueId?: number;
+        seasonId?: number;
+        date?: string;
+        flgCurrent?: boolean;
+        roundNumber?: number;
+    }): Promise<{
         data: {
             id: number;
             seasonId: number;
@@ -70,12 +76,12 @@ export declare class RoundsService {
     }[]>;
     create(createRoundDto: CreateRoundDto): Promise<{
         id: number;
-        createdAt: Date;
         startDate: Date;
         endDate: Date;
+        roundNumber: number;
+        createdAt: Date;
         leagueId: number;
         seasonId: number;
-        roundNumber: number;
         flgCurrent: boolean;
     }>;
     update(id: number, updateRoundDto: UpdateRoundDto): Promise<{

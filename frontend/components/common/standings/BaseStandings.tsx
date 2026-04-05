@@ -33,7 +33,7 @@ export default function BaseStandings({
   const [league, setLeague] = React.useState<string>(
     initialLeagueId ? String(initialLeagueId) : (leagues && leagues.length > 0 ? String(leagues[0].id) : '')
   );
-  const [roundOrDay, setRoundOrDay] = React.useState<number | string>(1);
+  const [roundOrDay, setRoundOrDay] = React.useState<number | string>('');
   const [debouncedRoundOrDay, setDebouncedRoundOrDay] = React.useState<number | string>(roundOrDay);
   // Track which league we've already auto-selected the default season for, so that
   // a background React Query refetch of seasons data doesn't override the user's
@@ -46,6 +46,7 @@ export default function BaseStandings({
   const [displayRoundForStandings, setDisplayRoundForStandings] = React.useState<number | string>(roundOrDay);
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
+  const [combineGroups, setCombineGroups] = React.useState(false);
   const [showUserTimezone, setShowUserTimezone] = useState(true);
 
   // Fetch seasons for the selected league
@@ -54,11 +55,40 @@ export default function BaseStandings({
     queryFn: () => (league ? seasonsApi.getByLeague(Number(league)) : Promise.resolve([])),
     enabled: Boolean(league),
     staleTime: 1000 * 60 * 5,
-  });
-  
-  
+  });  
 
   const seasons = seasonsData || [];
+  const selectedSeason = Array.isArray(seasons)
+    ? seasons.find((item: any) => String(item.id) === String(season))
+    : null;
+  const selectedSeasonData: Record<string, unknown> | null = selectedSeason
+    ? (selectedSeason as unknown as Record<string, unknown>)
+    : null;
+  const seasonHasGroups = Boolean(
+    hasGroups || Number(selectedSeasonData?.numberOfGroups ?? selectedSeasonData?.number_of_groups ?? 0) > 0
+  );
+  const seasonGroupsQuery = useQuery({
+    queryKey: ['seasonGroups', season],
+    queryFn: async ({ signal }: { signal?: AbortSignal }) => {
+      if (!season) return [];
+      try {
+        const resp = await apiClient.get(`/v1/groups?seasonId=${Number(season)}`, { signal });
+        const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+        return data;
+      } catch (e) {
+        return [];
+      }
+    },
+    enabled: Boolean(season && seasonHasGroups),
+    staleTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+  });
+  const seasonGroups = Array.isArray(seasonGroupsQuery.data) ? seasonGroupsQuery.data : [];
+
+  React.useEffect(() => {
+    setCombineGroups(false);
+  }, [season]);
+
   // Fetch rounds for the selected league+season once and cache via React Query
   const roundsQuery = useQuery({
     queryKey: ['rounds', league, season],
@@ -127,7 +157,7 @@ export default function BaseStandings({
         return [];
       }
     },
-    enabled: Boolean(league && season && debouncedRoundOrDay !== undefined && debouncedRoundOrDay !== null),
+    enabled: Boolean(league && season && debouncedRoundOrDay),
     
     staleTime: 1000 * 60 * 2,
     refetchOnWindowFocus: false,
@@ -196,7 +226,7 @@ export default function BaseStandings({
         return [];
       }
     },
-    enabled: Boolean(league && season && debouncedRoundOrDay !== undefined && debouncedRoundOrDay !== null),
+    enabled: Boolean(league && season && debouncedRoundOrDay),
     
     staleTime: 1000 * 60 * 2,
     refetchOnWindowFocus: false,
@@ -232,6 +262,11 @@ export default function BaseStandings({
 
   // Map of clubId -> clubName (populated from matches and fetched as needed)
   const [clubsMap, setClubsMap] = React.useState<Record<string, string>>({});
+
+  const getGroupId = React.useCallback((item: any) => String(item?.groupId ?? item?.group?.id ?? item?.group_id ?? ''), []);
+  const filterItemsByGroup = React.useCallback((items: any[], groupId: string) => {
+    return items.filter((item: any) => getGroupId(item) === String(groupId));
+  }, [getGroupId]);
 
 
   // Populate clubsMap from matches when matches change
@@ -360,10 +395,11 @@ export default function BaseStandings({
   //   finished season → last round (highest roundNumber in the season)
   //   planned/unknown → round 1
   // An AbortController cancels any stale in-flight fetch when league/season changes again.
+
   React.useEffect(() => {
     if (!season || !league) {
-      setRoundOrDay(1);
-      setDebouncedRoundOrDay(1);
+      setRoundOrDay('');
+      setDebouncedRoundOrDay('');
       return;
     }
 
@@ -376,17 +412,83 @@ export default function BaseStandings({
     const active = seasonObj && isSeasonActive(seasonObj);
     const finished = seasonObj && isSeasonFinished(seasonObj);
 
-    if (!active && !finished) {
-      // Planned or unknown — start at round 1
-      setRoundOrDay(1);
-      setDebouncedRoundOrDay(1);
-      return;
+    // If date-based schedule, set day to today (active) or last match date (finished)
+    if (scheduleIsDate) {
+      let mounted = true;
+      const controller = new AbortController();
+      (async () => {
+        try {
+          // Fetch all matches for this league/season (include sportId to ensure correct filtering)
+          const sportParam = sportId ? `&sportId=${Number(sportId)}` : '';
+          const url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}${sportParam}`;
+          const resp = await apiClient.get(url, { signal: controller.signal });
+          const matches = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
+          if (!mounted) return;
+          if (matches.length === 0) {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            setRoundOrDay(todayStr);
+            setDebouncedRoundOrDay(todayStr);
+            return;
+          }
+          // Extract all unique match dates in the season
+          const matchDates = matches
+            .map((m: any) => m.date ?? m.matchDate ?? m.datetime ?? m.dateTime)
+            .filter(Boolean)
+            .map((d: any) => d.slice(0, 10));
+          const uniqueDates = Array.from(new Set(matchDates)).sort();
+          if (uniqueDates.length === 0) {
+            const todayStr = new Date().toISOString().slice(0, 10);
+            setRoundOrDay(todayStr);
+            setDebouncedRoundOrDay(todayStr);
+            return;
+          }
+          const todayStr = new Date().toISOString().slice(0, 10);
+          if (active) {
+            // Find the closest date >= today, else closest before today
+            let picked = uniqueDates.find((d) => d >= todayStr);
+            if (!picked) {
+              // Fallback: last date before today
+              picked = uniqueDates.filter((d) => d < todayStr).at(-1);
+            }
+            setRoundOrDay(picked ?? uniqueDates[0]);
+            setDebouncedRoundOrDay(picked ?? uniqueDates[0]);
+          } else if (finished) {
+            // Use the last match date in the season
+            setRoundOrDay(uniqueDates.at(-1));
+            setDebouncedRoundOrDay(uniqueDates.at(-1));
+          } else {
+            // Planned/unknown
+            setRoundOrDay(uniqueDates[0]);
+            setDebouncedRoundOrDay(uniqueDates[0]);
+          }
+        } catch (e) {
+          if ((e as any)?.name === 'CanceledError' || (e as any)?.message === 'canceled') return;
+          if (!mounted) return;
+          const todayStr = new Date().toISOString().slice(0, 10);
+          setRoundOrDay(todayStr);
+          setDebouncedRoundOrDay(todayStr);
+        }
+      })();
+      return () => {
+        mounted = false;
+        controller.abort();
+      };
     }
 
-    // Active or finished — fetch rounds to find the right starting round.
+    // Non-date-based: use round logic as before
+    if (!active && !finished) {
+      if (scheduleIsDate) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        setRoundOrDay(todayStr);
+        setDebouncedRoundOrDay(todayStr);
+      } else {
+        setRoundOrDay(1);
+        setDebouncedRoundOrDay(1);
+      }
+      return;
+    }
     let mounted = true;
     const controller = new AbortController();
-
     (async () => {
       try {
         const resp = await apiClient.get(
@@ -396,11 +498,8 @@ export default function BaseStandings({
         const data = (resp.data && Array.isArray(resp.data))
           ? resp.data
           : (Array.isArray(resp) ? resp : []);
-
         if (!mounted) return;
-
         if (finished) {
-          // Finished season: jump to the last round that exists in DB.
           const nums = (data as any[])
             .map((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number))
             .filter((n: number) => !isNaN(n) && n > 0);
@@ -408,7 +507,6 @@ export default function BaseStandings({
           setRoundOrDay(lastRound);
           setDebouncedRoundOrDay(lastRound);
         } else {
-          // Active season: use flgCurrent round.
           const current = data.find((rr: any) =>
             rr.flgCurrent || rr.flg_current || rr.isCurrent || rr.current
           );
@@ -429,12 +527,11 @@ export default function BaseStandings({
         setDebouncedRoundOrDay(1);
       }
     })();
-
     return () => {
       mounted = false;
       controller.abort();
     };
-  }, [league, season]);
+  }, [league, season, scheduleIsDate, sportId]);
 
   // If leagues prop changes and there's no selected league, initialize it
   React.useEffect(() => {
@@ -479,8 +576,8 @@ export default function BaseStandings({
           // Reset the auto-season ref so the new league's default season is auto-selected.
           autoSeasonLeagueRef.current = '';
           setSeason('');
-          setRoundOrDay(1);
-          setDebouncedRoundOrDay(1);
+          setRoundOrDay('');
+          setDebouncedRoundOrDay('');
           setLeague(v);
           setTimeout(() => refetchSeasons(), 0);
         }}
@@ -496,14 +593,16 @@ export default function BaseStandings({
         showTop={true}
         showBottom={false}
         effectiveMaxRound={effectiveMaxRound}
+        combineGroups={combineGroups}
+        setCombineGroups={setCombineGroups}
       />
 
       <div className="mt-6 flex flex-col lg:flex-row gap-6">
         <div className="lg:basis-2/3 lg:flex-1">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-4 w-full">
-              <h2 className="text-lg font-semibold">STANDING</h2>
-              <div className="flex-1 ml-3">
+              <h2 className="text-lg font-semibold mt-1">STANDING</h2>
+              <div className="flex-1 ml-3 mt-1">
                 <FilterBar
                   season={season}
                   setSeason={setSeason}
@@ -511,8 +610,8 @@ export default function BaseStandings({
                   setLeague={(v: any) => {
                     autoSeasonLeagueRef.current = '';
                     setSeason('');
-                    setRoundOrDay(1);
-                    setDebouncedRoundOrDay(1);
+                    setRoundOrDay('');
+                    setDebouncedRoundOrDay('');
                     setLeague(v);
                     setTimeout(() => refetchSeasons(), 0);
                   }}
@@ -529,6 +628,8 @@ export default function BaseStandings({
                   showBottom={true}
                   compact={true}
                   effectiveMaxRound={effectiveMaxRound}
+                  combineGroups={combineGroups}
+                  setCombineGroups={setCombineGroups}
                 />
               </div>
             </div>
@@ -541,11 +642,14 @@ export default function BaseStandings({
               const source = standingsQuery.data !== undefined ? standingsQuery.data : standings;
               const filtered = (Array.isArray(source) ? source : []).filter((s: any) => {
                 if (!group || group === 'all') return true;
-                return String(s.groupId ?? s.group?.id ?? s.group_id ?? '') === String(group);
+                return getGroupId(s) === String(group);
               });
               // determine cutoff / historical-match set for Last-5 / Last-10 computation
               let cutoffDate: string | undefined = undefined;
-              let historicalMatchesForTable: any[] = (allMatchesQuery.data || []) as any[];
+              // Prefer server-wide matches when available, otherwise fall back to the `games` prop
+              let historicalMatchesForTable: any[] = Array.isArray(allMatchesQuery.data) && allMatchesQuery.data.length > 0
+                ? (allMatchesQuery.data as any[])
+                : (Array.isArray(games) ? games : []);
 
               if (scheduleIsDate) {
                 cutoffDate = String(roundOrDay);
@@ -584,7 +688,58 @@ export default function BaseStandings({
               }
 
               const currentMatches = (matchesQuery.data !== undefined ? matchesQuery.data : games) as any[];
-              return <StandingsTable rows={filtered} clubsMap={clubsMap} historicalMatches={historicalMatchesForTable} cutoffDate={cutoffDate} currentMatches={currentMatches} viewType={viewType} />;
+              const buildTable = (rows: any[], _activeGroupId?: string, teamHeaderLabel?: string) => {
+                // Pass ALL historical matches — StandingsTable filters by clubId internally.
+                // Filtering by group here would lose cross-group games needed for LAST 5/10.
+                return (
+                  <StandingsTable
+                    rows={rows}
+                    clubsMap={clubsMap}
+                    historicalMatches={historicalMatchesForTable}
+                    cutoffDate={cutoffDate}
+                    currentMatches={currentMatches}
+                    viewType={viewType}
+                    teamHeaderLabel={teamHeaderLabel}
+                  />
+                );
+              };
+
+              const shouldRenderSeparateGroups = seasonHasGroups && group === 'all' && !combineGroups;
+              if (!shouldRenderSeparateGroups) {
+                return (
+                  <StandingsTable
+                    rows={filtered}
+                    clubsMap={clubsMap}
+                    historicalMatches={historicalMatchesForTable}
+                    cutoffDate={cutoffDate}
+                    currentMatches={currentMatches}
+                    viewType={viewType}
+                  />
+                );
+              }
+
+              const fallbackGroups = Array.from(new Set(filtered.map((row: any) => getGroupId(row)).filter(Boolean))).map((groupId) => ({
+                id: groupId,
+                name: `Group ${groupId}`,
+              }));
+              const groupsToRender = seasonGroups.length > 0 ? seasonGroups : fallbackGroups;
+
+              return (
+                <div className="space-y-6">
+                  {groupsToRender.map((seasonGroup: any) => {
+                    const seasonGroupId = String(seasonGroup.id);
+                    const groupRows = filterItemsByGroup(filtered, seasonGroupId);
+                    if (groupRows.length === 0) return null;
+
+                    const groupName = seasonGroup.name ?? seasonGroup.originalName ?? seasonGroup.code ?? `Group ${seasonGroupId}`;
+                    return (
+                      <section key={seasonGroupId}>
+                        {buildTable(groupRows, seasonGroupId, `TEAM (${groupName})`)}
+                      </section>
+                    );
+                  })}
+                </div>
+              );
             })()
           )}
         </div>

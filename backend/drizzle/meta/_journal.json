@@ -85,6 +85,27 @@
       "when": 1774876930327,
       "tag": "0011_create_entity_name_aliases_table",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775211160031,
+      "tag": "0012_add_flginferclubs_to_api_transitional_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775284107462,
+      "tag": "0013_add_flghasgroups_to_api_transitional_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775321477101,
+      "tag": "0014_add_numberofgroups_to_api_transitional_table",
+      "breakpoints": true
     }
   ]
 }

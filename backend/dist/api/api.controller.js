@@ -27,19 +27,21 @@ let ApiController = class ApiController {
         return { created: Array.isArray(created) ? created.length : 0, items: created };
     }
     async fetchAndStore(body) {
-        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate, body.seasonStatus, body.isSeasonDefault, body.sameYears, body.scheduleType, body.isLeagueDefault, body.hasDivisions, body.runInBackground);
+        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate, body.seasonStatus, body.isSeasonDefault, body.sameYears, body.scheduleType, body.isLeagueDefault, body.hasDivisions, body.hasGroups, body.numberOfGroups, body.runInBackground, body.inferClubs);
         return { stored: result };
     }
     async listTransitional(limit) {
         const l = limit ? Number(limit) : 100;
         const rows = await this.apiService.listTransitional(l);
-        return { count: rows.length, items: rows };
+        const items = rows.map(({ payload, ...rest }) => rest);
+        return { count: rows.length, items };
     }
     async getTransitional(id) {
         const row = await this.apiService.getTransitional(id);
         if (!row)
             return { found: false };
-        return { found: true, item: row };
+        const { payload, ...rest } = row;
+        return { found: true, item: rest };
     }
     async parseTransitional(id, roundOverridesJson) {
         let roundOverrides;
@@ -76,13 +78,45 @@ let ApiController = class ApiController {
         const result = await this.apiService.deleteRoundReview(id);
         return { success: !!result?.deleted };
     }
+    async getEntityReview(id) {
+        const review = await this.apiService.getEntityReview(id);
+        return { found: !!review, item: review };
+    }
+    async patchEntityReview(id, body) {
+        const review = await this.apiService.saveEntityReview(id, body?.leagueMapping ?? null, body?.clubMappings ?? {}, body?.stadiumMappings ?? {}, body?.countryMapping ?? null);
+        return { success: true, item: review };
+    }
+    async deleteEntityReview(id) {
+        const result = await this.apiService.deleteEntityReview(id);
+        return { success: !!result?.deleted };
+    }
+    async getEntitySuggestions(id, sportId) {
+        const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined);
+        return result;
+    }
     async applyFirstRow(id, body) {
         const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
         return result;
     }
     async applyAllRows(id, body) {
-        const result = await this.apiService.applyAllRowsToApp(id, { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides });
-        return result;
+        const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides };
+        if (opts.dryRun) {
+            return await this.apiService.applyAllRowsToApp(id, opts);
+        }
+        await this.apiService.startApplyJob(id);
+        setImmediate(() => {
+            this.apiService
+                .applyAllRowsToApp(id, opts)
+                .then((result) => this.apiService.finishApplyJob(id, result))
+                .catch((err) => this.apiService.failApplyJob(id, String(err)));
+        });
+        return { background: true, status: 'running' };
+    }
+    async getApplyStatus(id) {
+        return this.apiService.getApplyStatus(id);
+    }
+    async repairDivisions(id, body) {
+        return this.apiService.repairDivisionsFromPayload(id, body?.sportId);
     }
     async loadTransitional(id, body) {
         const result = await this.apiService.applyTransitional(id, {
@@ -184,6 +218,36 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "deleteRoundReview", null);
 __decorate([
+    (0, common_1.Get)('transitional/:id/entity-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getEntityReview", null);
+__decorate([
+    (0, common_1.Patch)('transitional/:id/entity-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "patchEntityReview", null);
+__decorate([
+    (0, common_1.Delete)('transitional/:id/entity-review'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "deleteEntityReview", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id/entity-suggestions'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Query)('sportId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, String]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getEntitySuggestions", null);
+__decorate([
     (0, common_1.Post)('transitional/:id/apply-first-row'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Body)()),
@@ -199,6 +263,21 @@ __decorate([
     __metadata("design:paramtypes", [Number, Object]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "applyAllRows", null);
+__decorate([
+    (0, common_1.Get)('transitional/:id/apply-status'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "getApplyStatus", null);
+__decorate([
+    (0, common_1.Post)('transitional/:id/repair-divisions'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Number, Object]),
+    __metadata("design:returntype", Promise)
+], ApiController.prototype, "repairDivisions", null);
 __decorate([
     (0, common_1.Post)('transitional/:id/load'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),

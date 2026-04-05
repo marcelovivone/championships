@@ -745,6 +745,56 @@ async findOne(id: number) {
     }
 
     /**
+     * Get matches by league and season (without requiring sportId)
+     */
+    async findByLeagueAndSeason(leagueId: number, seasonId: number) {
+        try {
+            const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
+            const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
+            const results = await this.db
+                .select({
+                    id: matches.id,
+                    sportId: matches.sportId,
+                    leagueId: matches.leagueId,
+                    seasonId: matches.seasonId,
+                    roundId: matches.roundId,
+                    groupId: matches.groupId,
+                    homeClubId: matches.homeClubId,
+                    awayClubId: matches.awayClubId,
+                    stadiumId: matches.stadiumId,
+                    date: matches.date,
+                    status: matches.status,
+                    homeScore: matches.homeScore,
+                    awayScore: matches.awayScore,
+                    createdAt: matches.createdAt,
+                    updatedAt: matches.updatedAt,
+                    sport: { id: schema.sports.id, name: schema.sports.name },
+                    league: { id: schema.leagues.id, originalName: schema.leagues.originalName },
+                    season: { id: schema.seasons.id, startYear: schema.seasons.startYear, endYear: schema.seasons.endYear },
+                    round: { id: schema.rounds.id, roundNumber: schema.rounds.roundNumber },
+                    homeClub: { id: homeClubAlias.id, name: homeClubAlias.name, shortName: homeClubAlias.shortName, imageUrl: homeClubAlias.imageUrl },
+                    awayClub: { id: awayClubAlias.id, name: awayClubAlias.name, shortName: awayClubAlias.shortName, imageUrl: awayClubAlias.imageUrl },
+                    stadium: { id: schemaStadiums.id, name: schemaStadiums.name },
+                    group: { id: schemaGroups.id, name: schemaGroups.name },
+                })
+                .from(matches)
+                .leftJoin(schema.sports, eq(matches.sportId, schema.sports.id))
+                .leftJoin(schema.leagues, eq(matches.leagueId, schema.leagues.id))
+                .leftJoin(schema.seasons, eq(matches.seasonId, schema.seasons.id))
+                .leftJoin(schema.rounds, eq(matches.roundId, schema.rounds.id))
+                .leftJoin(homeClubAlias, eq(matches.homeClubId, homeClubAlias.id))
+                .leftJoin(awayClubAlias, eq(matches.awayClubId, awayClubAlias.id))
+                .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
+                .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
+                .where(and(eq(matches.leagueId, leagueId), eq(matches.seasonId, seasonId)))
+                .orderBy(asc(matches.date), asc(matches.id));
+            return results.map(match => ({ ...match, status: match.status as MatchStatus }));
+        } catch (error) {
+            throw new BadRequestException('Failed to fetch matches by league and season');
+        }
+    }
+
+    /**
      * Get matches by season and round
      */
     async findBySeasonAndRound(seasonId: number, roundId: number) {

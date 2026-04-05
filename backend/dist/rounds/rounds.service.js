@@ -41,7 +41,7 @@ let RoundsService = class RoundsService {
             throw new common_1.BadRequestException('Failed to fetch rounds');
         }
     }
-    async findAllPaginated(page, limit, sortBy, sortOrder) {
+    async findAllPaginated(page, limit, sortBy, sortOrder, filters) {
         const offset = (page - 1) * limit;
         const sortableColumns = ['roundNumber', 'startDate', 'endDate', 'flgCurrent', 'createdAt', 'leagueName', 'seasonInfo'];
         const orderByField = sortableColumns.includes(sortBy) ? sortBy : 'roundNumber';
@@ -72,7 +72,22 @@ let RoundsService = class RoundsService {
                     orderByClause = order(schema_1.rounds.roundNumber);
                     break;
             }
-            const data = await this.db
+            const conditions = [];
+            if (filters?.leagueId)
+                conditions.push((0, drizzle_orm_1.eq)(schema_1.rounds.leagueId, filters.leagueId));
+            if (filters?.seasonId)
+                conditions.push((0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, filters.seasonId));
+            if (filters?.roundNumber)
+                conditions.push((0, drizzle_orm_1.eq)(schema_1.rounds.roundNumber, filters.roundNumber));
+            if (filters?.date) {
+                const d = new Date(filters.date);
+                conditions.push((0, drizzle_orm_1.lte)(schema_1.rounds.startDate, d));
+                conditions.push((0, drizzle_orm_1.gte)(schema_1.rounds.endDate, d));
+            }
+            if (filters?.flgCurrent !== undefined)
+                conditions.push((0, drizzle_orm_1.eq)(schema_1.rounds.flgCurrent, filters.flgCurrent));
+            const whereClause = conditions.length > 0 ? (0, drizzle_orm_1.and)(...conditions) : undefined;
+            const baseQuery = this.db
                 .select({
                 id: schema_1.rounds.id,
                 seasonId: schema_1.rounds.seasonId,
@@ -94,15 +109,17 @@ let RoundsService = class RoundsService {
             })
                 .from(schema_1.rounds)
                 .leftJoin(schema.leagues, (0, drizzle_orm_1.eq)(schema_1.rounds.leagueId, schema.leagues.id))
-                .leftJoin(schema.seasons, (0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, schema.seasons.id))
+                .leftJoin(schema.seasons, (0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, schema.seasons.id));
+            const data = await (whereClause ? baseQuery.where(whereClause) : baseQuery)
                 .orderBy(orderByClause, (0, drizzle_orm_1.asc)(schema_1.rounds.id))
                 .limit(limit)
                 .offset(offset);
-            const totalResult = await this.db
+            const countQuery = this.db
                 .select({ count: (0, drizzle_orm_1.sql) `count(*)` })
                 .from(schema_1.rounds)
                 .leftJoin(schema.leagues, (0, drizzle_orm_1.eq)(schema_1.rounds.leagueId, schema.leagues.id))
                 .leftJoin(schema.seasons, (0, drizzle_orm_1.eq)(schema_1.rounds.seasonId, schema.seasons.id));
+            const totalResult = await (whereClause ? countQuery.where(whereClause) : countQuery);
             const total = Number(totalResult[0].count);
             return { data, total, page, limit };
         }

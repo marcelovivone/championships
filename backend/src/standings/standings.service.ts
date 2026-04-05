@@ -1,6 +1,6 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc, asc, lt, gt } from 'drizzle-orm';
+import { eq, and, desc, asc, lt, gt, lte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { standings, seasons, leagues, groups, rounds, matches, matchDivisions, seasonClubs } from '../db/schema';
 import { CreateStandingDto } from '../common/dtos';
@@ -155,29 +155,133 @@ export class StandingsService {
             } as any;
         }
 
+        private buildZeroMatchDateRow(leagueId: number, seasonId: number, matchDate: Date, clubId: number, sportId: number, groupId: number | null) {
+            const now = new Date();
+            return {
+                id: 0,
+                sportId,
+                leagueId,
+                seasonId,
+                roundId: null,
+                matchDate,
+                groupId,
+                clubId,
+                matchId: null,
+                points: 0,
+                played: 0,
+                wins: 0,
+                draws: 0,
+                losses: 0,
+                goalsFor: 0,
+                goalsAgainst: 0,
+                overtimeWins: 0,
+                overtimeLosses: 0,
+                penaltyWins: 0,
+                penaltyLosses: 0,
+                setsWon: 0,
+                setsLost: 0,
+                homeGamesPlayed: 0,
+                awayGamesPlayed: 0,
+                homePoints: 0,
+                awayPoints: 0,
+                homeWins: 0,
+                homeLosses: 0,
+                homeDraws: 0,
+                homeGoalsFor: 0,
+                homeGoalsAgainst: 0,
+                awayWins: 0,
+                awayLosses: 0,
+                awayDraws: 0,
+                awayGoalsFor: 0,
+                awayGoalsAgainst: 0,
+                createdAt: now,
+                updatedAt: now,
+            } as any;
+        }
+
+        private compareStandingRows(a: any, b: any) {
+            const pointsDiff = Number(b.points ?? 0) - Number(a.points ?? 0);
+            if (pointsDiff !== 0) return pointsDiff;
+
+            const winsDiff = Number(b.wins ?? 0) - Number(a.wins ?? 0);
+            if (winsDiff !== 0) return winsDiff;
+
+            const goalDifferenceA = Number(a.goalsFor ?? 0) - Number(a.goalsAgainst ?? 0);
+            const goalDifferenceB = Number(b.goalsFor ?? 0) - Number(b.goalsAgainst ?? 0);
+            const goalDifferenceDiff = goalDifferenceB - goalDifferenceA;
+            if (goalDifferenceDiff !== 0) return goalDifferenceDiff;
+
+            const goalsForDiff = Number(b.goalsFor ?? 0) - Number(a.goalsFor ?? 0);
+            if (goalsForDiff !== 0) return goalsForDiff;
+
+            return Number(a.clubId ?? 0) - Number(b.clubId ?? 0);
+        }
+
         /**
          * Get standings by leagueId, seasonId, and matchDate
          */
         async findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string, clubId?: number) {
             try {
-                const date = new Date(matchDate);
-                if (isNaN(date.getTime())) {
+                const selectedDate = new Date(matchDate);
+                if (isNaN(selectedDate.getTime())) {
                     throw new BadRequestException('Invalid matchDate format');
                 }
-                console.warn("Service: Fetching standings for leagueId:", leagueId, "seasonId:", seasonId, "matchDate:", date, "clubId:", clubId);
-                return await this.db
+
+                const selectedDateEnd = new Date(selectedDate);
+                selectedDateEnd.setUTCHours(23, 59, 59, 999);
+
+                const seasonClubRows = await this.db
+                    .select()
+                    .from(seasonClubs)
+                    .where(
+                        and(
+                            eq(seasonClubs.leagueId, leagueId),
+                            eq(seasonClubs.seasonId, seasonId),
+                            clubId ? eq(seasonClubs.clubId, clubId) : undefined
+                        )
+                    )
+                    .orderBy(asc(seasonClubs.clubId));
+
+                const candidateRows = await this.db
                     .select()
                     .from(standings)
                     .where(
                         and(
                             eq(standings.leagueId, leagueId),
                             eq(standings.seasonId, seasonId),
-                            eq(standings.matchDate, date),
+                            lte(standings.matchDate, selectedDateEnd),
                             clubId ? eq(standings.clubId, clubId) : undefined
                         )
                     )
-                    .orderBy(desc(standings.points));
+                    .orderBy(desc(standings.matchDate), desc(standings.id));
+
+                const latestStandingByClub = new Map<number, any>();
+                for (const row of candidateRows) {
+                    if (!latestStandingByClub.has(row.clubId)) {
+                        latestStandingByClub.set(row.clubId, row);
+                    }
+                }
+
+                if (seasonClubRows.length === 0) {
+                    return Array.from(latestStandingByClub.values()).sort((a, b) => this.compareStandingRows(a, b));
+                }
+
+                const mergedRows = seasonClubRows.map((seasonClubRow) => {
+                    return latestStandingByClub.get(seasonClubRow.clubId)
+                        ?? this.buildZeroMatchDateRow(
+                            leagueId,
+                            seasonId,
+                            selectedDate,
+                            seasonClubRow.clubId,
+                            seasonClubRow.sportId,
+                            seasonClubRow.groupId ?? null,
+                        );
+                });
+
+                mergedRows.sort((a, b) => this.compareStandingRows(a, b));
+                return mergedRows;
             } catch (error) {
+                if (error instanceof BadRequestException) throw error;
                 throw new BadRequestException('Failed to fetch standings by league, season, and matchDate');
             }
         }

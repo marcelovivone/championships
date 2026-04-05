@@ -63,6 +63,14 @@ let MatchesController = class MatchesController {
                 throw new common_1.BadRequestException('Invalid filter parameters');
             }
         }
+        if (leagueId && seasonId) {
+            const leagueIdNum = parseInt(leagueId, 10);
+            const seasonIdNum = parseInt(seasonId, 10);
+            if (isNaN(leagueIdNum) || leagueIdNum <= 0 || isNaN(seasonIdNum) || seasonIdNum <= 0) {
+                throw new common_1.BadRequestException('leagueId and seasonId must be positive integers.');
+            }
+            return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum);
+        }
         if (groupId) {
             const groupIdNum = parseInt(groupId, 10);
             if (isNaN(groupIdNum) || groupIdNum <= 0) {

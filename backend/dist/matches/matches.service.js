@@ -638,6 +638,53 @@ let MatchesService = class MatchesService {
             throw new common_1.BadRequestException('Failed to fetch matches by sport, league, season and group');
         }
     }
+    async findByLeagueAndSeason(leagueId, seasonId) {
+        try {
+            const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
+            const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
+            const results = await this.db
+                .select({
+                id: schema_1.matches.id,
+                sportId: schema_1.matches.sportId,
+                leagueId: schema_1.matches.leagueId,
+                seasonId: schema_1.matches.seasonId,
+                roundId: schema_1.matches.roundId,
+                groupId: schema_1.matches.groupId,
+                homeClubId: schema_1.matches.homeClubId,
+                awayClubId: schema_1.matches.awayClubId,
+                stadiumId: schema_1.matches.stadiumId,
+                date: schema_1.matches.date,
+                status: schema_1.matches.status,
+                homeScore: schema_1.matches.homeScore,
+                awayScore: schema_1.matches.awayScore,
+                createdAt: schema_1.matches.createdAt,
+                updatedAt: schema_1.matches.updatedAt,
+                sport: { id: schema.sports.id, name: schema.sports.name },
+                league: { id: schema.leagues.id, originalName: schema.leagues.originalName },
+                season: { id: schema.seasons.id, startYear: schema.seasons.startYear, endYear: schema.seasons.endYear },
+                round: { id: schema.rounds.id, roundNumber: schema.rounds.roundNumber },
+                homeClub: { id: homeClubAlias.id, name: homeClubAlias.name, shortName: homeClubAlias.shortName, imageUrl: homeClubAlias.imageUrl },
+                awayClub: { id: awayClubAlias.id, name: awayClubAlias.name, shortName: awayClubAlias.shortName, imageUrl: awayClubAlias.imageUrl },
+                stadium: { id: schema_1.stadiums.id, name: schema_1.stadiums.name },
+                group: { id: schema_1.groups.id, name: schema_1.groups.name },
+            })
+                .from(schema_1.matches)
+                .leftJoin(schema.sports, (0, drizzle_orm_1.eq)(schema_1.matches.sportId, schema.sports.id))
+                .leftJoin(schema.leagues, (0, drizzle_orm_1.eq)(schema_1.matches.leagueId, schema.leagues.id))
+                .leftJoin(schema.seasons, (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, schema.seasons.id))
+                .leftJoin(schema.rounds, (0, drizzle_orm_1.eq)(schema_1.matches.roundId, schema.rounds.id))
+                .leftJoin(homeClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.homeClubId, homeClubAlias.id))
+                .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
+                .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
+                .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId)))
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
+            return results.map(match => ({ ...match, status: match.status }));
+        }
+        catch (error) {
+            throw new common_1.BadRequestException('Failed to fetch matches by league and season');
+        }
+    }
     async findBySeasonAndRound(seasonId, roundId) {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');

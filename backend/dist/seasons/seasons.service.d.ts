@@ -138,14 +138,14 @@ export declare class SeasonsService {
     }>;
     create(createSeasonDto: CreateSeasonDto): Promise<{
         id: number;
-        flgDefault: boolean;
-        flgEspnApiPartialScores: boolean;
-        createdAt: Date;
+        status: string;
         sportId: number;
+        flgDefault: boolean;
+        createdAt: Date;
+        flgEspnApiPartialScores: boolean;
         leagueId: number;
         startYear: number;
         endYear: number;
-        status: string;
         numberOfGroups: number;
     }>;
     update(id: number, updateSeasonDto: UpdateSeasonDto): Promise<{
@@ -174,14 +174,14 @@ export declare class SeasonsService {
     }>;
     remove(id: number): Promise<{
         id: number;
-        flgDefault: boolean;
-        flgEspnApiPartialScores: boolean;
-        createdAt: Date;
+        status: string;
         sportId: number;
+        flgDefault: boolean;
+        createdAt: Date;
+        flgEspnApiPartialScores: boolean;
         leagueId: number;
         startYear: number;
         endYear: number;
-        status: string;
         numberOfGroups: number;
     }>;
 }

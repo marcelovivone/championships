@@ -123,20 +123,103 @@ let StandingsService = class StandingsService {
             updatedAt: now,
         };
     }
+    buildZeroMatchDateRow(leagueId, seasonId, matchDate, clubId, sportId, groupId) {
+        const now = new Date();
+        return {
+            id: 0,
+            sportId,
+            leagueId,
+            seasonId,
+            roundId: null,
+            matchDate,
+            groupId,
+            clubId,
+            matchId: null,
+            points: 0,
+            played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+            goalsFor: 0,
+            goalsAgainst: 0,
+            overtimeWins: 0,
+            overtimeLosses: 0,
+            penaltyWins: 0,
+            penaltyLosses: 0,
+            setsWon: 0,
+            setsLost: 0,
+            homeGamesPlayed: 0,
+            awayGamesPlayed: 0,
+            homePoints: 0,
+            awayPoints: 0,
+            homeWins: 0,
+            homeLosses: 0,
+            homeDraws: 0,
+            homeGoalsFor: 0,
+            homeGoalsAgainst: 0,
+            awayWins: 0,
+            awayLosses: 0,
+            awayDraws: 0,
+            awayGoalsFor: 0,
+            awayGoalsAgainst: 0,
+            createdAt: now,
+            updatedAt: now,
+        };
+    }
+    compareStandingRows(a, b) {
+        const pointsDiff = Number(b.points ?? 0) - Number(a.points ?? 0);
+        if (pointsDiff !== 0)
+            return pointsDiff;
+        const winsDiff = Number(b.wins ?? 0) - Number(a.wins ?? 0);
+        if (winsDiff !== 0)
+            return winsDiff;
+        const goalDifferenceA = Number(a.goalsFor ?? 0) - Number(a.goalsAgainst ?? 0);
+        const goalDifferenceB = Number(b.goalsFor ?? 0) - Number(b.goalsAgainst ?? 0);
+        const goalDifferenceDiff = goalDifferenceB - goalDifferenceA;
+        if (goalDifferenceDiff !== 0)
+            return goalDifferenceDiff;
+        const goalsForDiff = Number(b.goalsFor ?? 0) - Number(a.goalsFor ?? 0);
+        if (goalsForDiff !== 0)
+            return goalsForDiff;
+        return Number(a.clubId ?? 0) - Number(b.clubId ?? 0);
+    }
     async findByLeagueIdAndSeasonIdAndMatchDate(leagueId, seasonId, matchDate, clubId) {
         try {
-            const date = new Date(matchDate);
-            if (isNaN(date.getTime())) {
+            const selectedDate = new Date(matchDate);
+            if (isNaN(selectedDate.getTime())) {
                 throw new common_1.BadRequestException('Invalid matchDate format');
             }
-            console.warn("Service: Fetching standings for leagueId:", leagueId, "seasonId:", seasonId, "matchDate:", date, "clubId:", clubId);
-            return await this.db
+            const selectedDateEnd = new Date(selectedDate);
+            selectedDateEnd.setUTCHours(23, 59, 59, 999);
+            const seasonClubRows = await this.db
+                .select()
+                .from(schema_1.seasonClubs)
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.seasonClubs.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.seasonClubs.seasonId, seasonId), clubId ? (0, drizzle_orm_1.eq)(schema_1.seasonClubs.clubId, clubId) : undefined))
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.seasonClubs.clubId));
+            const candidateRows = await this.db
                 .select()
                 .from(schema_1.standings)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.standings.matchDate, date), clubId ? (0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId) : undefined))
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.points));
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId), (0, drizzle_orm_1.lte)(schema_1.standings.matchDate, selectedDateEnd), clubId ? (0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId) : undefined))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.matchDate), (0, drizzle_orm_1.desc)(schema_1.standings.id));
+            const latestStandingByClub = new Map();
+            for (const row of candidateRows) {
+                if (!latestStandingByClub.has(row.clubId)) {
+                    latestStandingByClub.set(row.clubId, row);
+                }
+            }
+            if (seasonClubRows.length === 0) {
+                return Array.from(latestStandingByClub.values()).sort((a, b) => this.compareStandingRows(a, b));
+            }
+            const mergedRows = seasonClubRows.map((seasonClubRow) => {
+                return latestStandingByClub.get(seasonClubRow.clubId)
+                    ?? this.buildZeroMatchDateRow(leagueId, seasonId, selectedDate, seasonClubRow.clubId, seasonClubRow.sportId, seasonClubRow.groupId ?? null);
+            });
+            mergedRows.sort((a, b) => this.compareStandingRows(a, b));
+            return mergedRows;
         }
         catch (error) {
+            if (error instanceof common_1.BadRequestException)
+                throw error;
             throw new common_1.BadRequestException('Failed to fetch standings by league, season, and matchDate');
         }
     }
@@ -243,6 +326,15 @@ let StandingsService = class StandingsService {
     }
     async create(createStandingDto) {
         try {
+            if (createStandingDto.matchId) {
+                const existingForMatch = await this.db
+                    .select()
+                    .from(schema_1.standings)
+                    .where((0, drizzle_orm_1.eq)(schema_1.standings.matchId, createStandingDto.matchId));
+                if (existingForMatch.length > 0) {
+                    return { home: existingForMatch[0], away: existingForMatch[1] ?? existingForMatch[0] };
+                }
+            }
             const [season, group, homeClub, awayClub] = await Promise.all([
                 this.db.select().from(schema_1.seasons).where((0, drizzle_orm_1.eq)(schema_1.seasons.id, createStandingDto.seasonId)).limit(1),
                 createStandingDto.groupId ? this.db.select().from(schema_1.groups).where((0, drizzle_orm_1.eq)(schema_1.groups.id, createStandingDto.groupId)).limit(1) : Promise.resolve([null]),
@@ -257,18 +349,52 @@ let StandingsService = class StandingsService {
                 throw new common_1.BadRequestException(`Home club with ID ${createStandingDto.homeClubId} not found`);
             if (!awayClub || awayClub.length === 0)
                 throw new common_1.BadRequestException(`Away club with ID ${createStandingDto.awayClubId} not found`);
-            const [latestHomeStanding] = await this.db
-                .select()
-                .from(schema_1.standings)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.homeClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId)))
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.id))
-                .limit(1);
-            const [latestAwayStanding] = await this.db
-                .select()
-                .from(schema_1.standings)
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.awayClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId)))
-                .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.id))
-                .limit(1);
+            const roundId = typeof createStandingDto.roundId === 'undefined' ? null : createStandingDto.roundId;
+            const groupId = typeof createStandingDto.groupId === 'undefined' ? null : createStandingDto.groupId;
+            let latestHomeStanding = null;
+            let latestAwayStanding = null;
+            if (roundId) {
+                const [currentRound] = await this.db
+                    .select()
+                    .from(schema_1.rounds)
+                    .where((0, drizzle_orm_1.eq)(schema_1.rounds.id, roundId))
+                    .limit(1);
+                if (currentRound) {
+                    const currentRoundNumber = currentRound.roundNumber;
+                    const prevHomeRows = await this.db
+                        .select({ standing: schema_1.standings, roundNumber: schema_1.rounds.roundNumber })
+                        .from(schema_1.standings)
+                        .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+                        .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.homeClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId), (0, drizzle_orm_1.lt)(schema_1.rounds.roundNumber, currentRoundNumber)))
+                        .orderBy((0, drizzle_orm_1.desc)(schema_1.rounds.roundNumber))
+                        .limit(1);
+                    latestHomeStanding = prevHomeRows.length > 0 ? prevHomeRows[0].standing : null;
+                    const prevAwayRows = await this.db
+                        .select({ standing: schema_1.standings, roundNumber: schema_1.rounds.roundNumber })
+                        .from(schema_1.standings)
+                        .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+                        .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.awayClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId), (0, drizzle_orm_1.lt)(schema_1.rounds.roundNumber, currentRoundNumber)))
+                        .orderBy((0, drizzle_orm_1.desc)(schema_1.rounds.roundNumber))
+                        .limit(1);
+                    latestAwayStanding = prevAwayRows.length > 0 ? prevAwayRows[0].standing : null;
+                }
+            }
+            else {
+                const [prevHome] = await this.db
+                    .select()
+                    .from(schema_1.standings)
+                    .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.homeClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId)))
+                    .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.id))
+                    .limit(1);
+                latestHomeStanding = prevHome ?? null;
+                const [prevAway] = await this.db
+                    .select()
+                    .from(schema_1.standings)
+                    .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, createStandingDto.awayClubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, createStandingDto.leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, createStandingDto.seasonId)))
+                    .orderBy((0, drizzle_orm_1.desc)(schema_1.standings.id))
+                    .limit(1);
+                latestAwayStanding = prevAway ?? null;
+            }
             const matchData = {
                 ...createStandingDto,
                 clubId: createStandingDto.homeClubId,
@@ -287,8 +413,6 @@ let StandingsService = class StandingsService {
             }
             const { home: homeStats, away: awayStats } = this.calculator.calculate(sportName, matchData, latestHomeStanding, latestAwayStanding);
             const matchDateObj = new Date(createStandingDto.matchDate);
-            const roundId = typeof createStandingDto.roundId === 'undefined' ? null : createStandingDto.roundId;
-            const groupId = typeof createStandingDto.groupId === 'undefined' ? null : createStandingDto.groupId;
             const [homeResult] = await this.db.insert(schema_1.standings).values({
                 sportId: createStandingDto.sportId,
                 leagueId: createStandingDto.leagueId,
@@ -363,6 +487,10 @@ let StandingsService = class StandingsService {
                 penaltyWins: awayStats.penaltyWins,
                 penaltyLosses: awayStats.penaltyLosses,
             }).returning();
+            if (roundId) {
+                await this.cascadeClubStandings(createStandingDto.homeClubId, createStandingDto.leagueId, createStandingDto.seasonId, createStandingDto.sportId, roundId, sportName);
+                await this.cascadeClubStandings(createStandingDto.awayClubId, createStandingDto.leagueId, createStandingDto.seasonId, createStandingDto.sportId, roundId, sportName);
+            }
             return { home: homeResult, away: awayResult };
         }
         catch (error) {
@@ -370,6 +498,119 @@ let StandingsService = class StandingsService {
                 throw error;
             console.error(error);
             throw error;
+        }
+    }
+    async cascadeClubStandings(clubId, leagueId, seasonId, sportId, currentRoundId, sportName) {
+        const [currentRound] = await this.db
+            .select()
+            .from(schema_1.rounds)
+            .where((0, drizzle_orm_1.eq)(schema_1.rounds.id, currentRoundId))
+            .limit(1);
+        if (!currentRound)
+            return;
+        const currentRoundNumber = currentRound.roundNumber;
+        const futureRows = await this.db
+            .select({
+            standingsId: schema_1.standings.id,
+            matchId: schema_1.standings.matchId,
+            roundId: schema_1.standings.roundId,
+            roundNumber: schema_1.rounds.roundNumber,
+            clubId: schema_1.standings.clubId,
+        })
+            .from(schema_1.standings)
+            .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId), (0, drizzle_orm_1.gt)(schema_1.rounds.roundNumber, currentRoundNumber)))
+            .orderBy((0, drizzle_orm_1.asc)(schema_1.rounds.roundNumber));
+        if (futureRows.length === 0)
+            return;
+        for (const futureRow of futureRows) {
+            if (!futureRow.matchId || !futureRow.roundId)
+                continue;
+            const [matchRow] = await this.db
+                .select()
+                .from(schema_1.matches)
+                .where((0, drizzle_orm_1.eq)(schema_1.matches.id, futureRow.matchId))
+                .limit(1);
+            if (!matchRow)
+                continue;
+            const divisionRows = await this.db
+                .select()
+                .from(schema_1.matchDivisions)
+                .where((0, drizzle_orm_1.eq)(schema_1.matchDivisions.matchId, futureRow.matchId))
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matchDivisions.divisionNumber));
+            const prevRows = await this.db
+                .select({ standing: schema_1.standings })
+                .from(schema_1.standings)
+                .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId), (0, drizzle_orm_1.lt)(schema_1.rounds.roundNumber, futureRow.roundNumber)))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.rounds.roundNumber))
+                .limit(1);
+            const prevStanding = prevRows.length > 0 ? prevRows[0].standing : null;
+            const isHome = matchRow.homeClubId === clubId;
+            const opponentId = isHome ? matchRow.awayClubId : matchRow.homeClubId;
+            const opPrevRows = await this.db
+                .select({ standing: schema_1.standings })
+                .from(schema_1.standings)
+                .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.standings.roundId, schema_1.rounds.id))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, opponentId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId), (0, drizzle_orm_1.lt)(schema_1.rounds.roundNumber, futureRow.roundNumber)))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.rounds.roundNumber))
+                .limit(1);
+            const opPrevStanding = opPrevRows.length > 0 ? opPrevRows[0].standing : null;
+            const fMatchData = {
+                sportId,
+                leagueId,
+                seasonId,
+                roundId: futureRow.roundId,
+                matchDate: matchRow.date,
+                groupId: matchRow.groupId,
+                homeClubId: matchRow.homeClubId,
+                awayClubId: matchRow.awayClubId,
+                homeScore: matchRow.homeScore ?? 0,
+                awayScore: matchRow.awayScore ?? 0,
+                matchId: futureRow.matchId,
+                matchDivisions: divisionRows.map(d => ({
+                    id: d.id,
+                    divisionNumber: d.divisionNumber,
+                    divisionType: d.divisionType,
+                    homeScore: d.homeScore,
+                    awayScore: d.awayScore,
+                })),
+            };
+            const { home: fHomeStats, away: fAwayStats } = this.calculator.calculate(sportName, fMatchData, isHome ? prevStanding : opPrevStanding, isHome ? opPrevStanding : prevStanding);
+            const clubStats = isHome ? fHomeStats : fAwayStats;
+            await this.db
+                .update(schema_1.standings)
+                .set({
+                points: clubStats.points,
+                played: clubStats.played,
+                wins: clubStats.wins,
+                draws: clubStats.draws,
+                losses: clubStats.losses,
+                goalsFor: clubStats.goalsFor,
+                goalsAgainst: clubStats.goalsAgainst,
+                setsWon: clubStats.setsWon,
+                setsLost: clubStats.setsLost,
+                homeGamesPlayed: clubStats.homeGamesPlayed || 0,
+                awayGamesPlayed: clubStats.awayGamesPlayed || 0,
+                homePoints: clubStats.homePoints || 0,
+                awayPoints: clubStats.awayPoints || 0,
+                homeWins: clubStats.homeWins || 0,
+                homeDraws: clubStats.homeDraws || 0,
+                homeLosses: clubStats.homeLosses || 0,
+                homeGoalsFor: clubStats.homeGoalsFor,
+                homeGoalsAgainst: clubStats.homeGoalsAgainst,
+                awayWins: clubStats.awayWins || 0,
+                awayDraws: clubStats.awayDraws || 0,
+                awayLosses: clubStats.awayLosses || 0,
+                awayGoalsFor: clubStats.awayGoalsFor,
+                awayGoalsAgainst: clubStats.awayGoalsAgainst,
+                overtimeWins: clubStats.overtimeWins,
+                overtimeLosses: clubStats.overtimeLosses,
+                penaltyWins: clubStats.penaltyWins,
+                penaltyLosses: clubStats.penaltyLosses,
+                updatedAt: new Date(),
+            })
+                .where((0, drizzle_orm_1.eq)(schema_1.standings.id, futureRow.standingsId));
         }
     }
     async remove(id) {

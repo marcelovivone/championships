@@ -3,7 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-03-31
+> **Last updated**: 2026-04-05
 
 ---
 
@@ -40,7 +40,14 @@
    - 9.6 [Background vs. inline execution](#96-background-vs-inline-execution)
    - 9.7 [Guards and safety conditions](#97-guards-and-safety-conditions)
    - 9.8 [Return value and logging](#98-return-value-and-logging)
-10. [Pending / Future Work](#10-pending--future-work)
+10. [Recent Additions Since 2026-03-31](#10-recent-additions-since-2026-03-31)
+  - 10.1 [New staging flags and fetch lifecycle](#101-new-staging-flags-and-fetch-lifecycle)
+  - 10.2 [ESPN non-football parse and division repair](#102-espn-non-football-parse-and-division-repair)
+  - 10.3 [Grouped seasons and group-aware load](#103-grouped-seasons-and-group-aware-load)
+  - 10.4 [Background apply jobs and polling](#104-background-apply-jobs-and-polling)
+  - 10.5 [Admin frontend additions](#105-admin-frontend-additions)
+  - 10.6 [Public standings pages and fallback logic](#106-public-standings-pages-and-fallback-logic)
+11. [Pending / Future Work](#11-pending--future-work)
 
 ---
 
@@ -97,12 +104,38 @@ The system supports two external API origins, stored in the `origin` column of `
 4. Backend calls the external API and stores the raw JSON response in `api_transitional` table
 5. The returned `transitional_id` is shown to the user with a link to open the ETL Preview (Transform & Load page)
 
+### Additional staging flags stored on `api_transitional`
+
+The extract step now persists more than the raw payload metadata. The row also carries execution flags that directly control both the load behavior and the frontend workflow:
+
+| Column | Purpose |
+|--------|---------|
+| `fetch_status` | Tracks asynchronous fetch lifecycle for long ESPN non-football imports: `fetching`, `done`, or `error` |
+| `flg_infer_clubs` | Enables club inference behavior during load for payloads where clubs are not guaranteed to be pre-resolved |
+| `flg_has_groups` | Declares that the incoming season is group-based |
+| `number_of_groups` | User-selected or inferred expected group count for the season |
+| `flg_run_in_background` | Controls whether long-running steps return immediately and continue asynchronously |
+
+These fields were added incrementally via migrations `0012_add_flginferclubs_to_api_transitional_table.sql`, `0013_add_flghasgroups_to_api_transitional_table.sql`, and `0014_add_numberofgroups_to_api_transitional_table.sql`, and are also guarded by runtime `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` checks inside `fetchAndStore()` for compatibility with already-existing databases.
+
 ### ESPN URL construction
 ```
 https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard?dates=20250801-20260531&limit=1000
 ```
 - Date range is built from startDate/endDate, formatted as `YYYYMMDD-YYYYMMDD`
 - `limit=1000` ensures all matches in the range are returned
+
+### ESPN non-football day-by-day fetches
+
+For soccer/football, ESPN supports season-range scoreboard queries. For non-football sports such as basketball, the backend now uses a different extraction strategy:
+
+1. Insert a placeholder row into `api_transitional` immediately with `payload = '{}'` and `fetch_status = 'fetching'`
+2. Return the new `transitional_id` to the frontend without waiting for the season fetch to complete
+3. Continue the real ESPN collection in the background using `fetchEspnSeasonByDay(...)`
+4. Update the same row with the final merged payload and set `fetch_status = 'done'`
+5. If the background request fails, mark the row as `fetch_status = 'error'`
+
+This avoids HTTP timeouts for long seasons such as the NBA, where a full day-by-day scoreboard collection can take over a minute.
 
 ### Api-Football URL construction
 ```
@@ -849,7 +882,7 @@ This correctly finds the standing from the highest round **before** the current 
 ### Staging / ETL tables
 | Table | Purpose |
 |-------|---------|
-| `api_transitional` | Raw API response storage. Columns: `id, league, season, sport, origin, source_url, payload (JSONB), status, fetched_at` |
+| `api_transitional` | Raw API response storage plus ETL execution flags. Important columns now include `id, league, season, sport, origin, source_url, payload (JSONB), status, fetched_at, fetch_status, flg_run_in_background, flg_infer_clubs, flg_has_groups, number_of_groups, apply_status, apply_result` |
 | `api_transitional_entity_review` | Entity deduplication mappings per transitional row. Columns: `transitional_id (PK), league_mapping, club_mappings (JSONB), stadium_mappings (JSONB)`. Deleted after successful load. |
 | `entity_name_aliases` | **Persistent** alias→entity mappings. Columns: `id, entity_type, entity_id, alias_name, canonical_name, sport_id, country_id, source ('user'\|'auto'), created_at`. Never deleted. Migration: `0011_create_entity_name_aliases_table.sql` |
 | `api_transitional_round_review` | Persisted draft round overrides per transitional row |
@@ -861,11 +894,12 @@ This correctly finds the standing from the highest round **before** the current 
 |-------|---------|
 | `countries` | Country reference |
 | `leagues` | League definitions with sport and country |
-| `seasons` | Season per league (start_year, end_year) |
+| `seasons` | Season per league (start_year, end_year) plus grouped-season metadata such as `number_of_groups` |
+| `groups` | Named season groups / conferences / divisions linked to sport, league, and season |
 | `rounds` | Round per league/season (round_number) |
 | `clubs` | Club with name, short_name, country |
 | `sport_clubs` | Club ↔ Sport bridging |
-| `season_clubs` | Club ↔ Season/League/Sport bridging |
+| `season_clubs` | Club ↔ Season/League/Sport bridging, now also carrying `group_id` when the season is grouped |
 | `cities` | City with country |
 | `stadiums` | Stadium with city and sport |
 | `club_stadiums` | Club ↔ Stadium bridging |
@@ -881,6 +915,12 @@ This correctly finds the standing from the highest round **before** the current 
 - **Top row**: Origin, Sport, Fetch & Store button
 - **Secondary row**: League, Season (Api-Football) or Start Date / End Date (ESPN)
 - On success: shows the transitional ID and a link to open the T&L page
+- **Operational toggles**: The page now exposes `Has groups`, `Number of groups`, `Run in background`, and `Infer clubs`
+- **Origin-aware defaults**:
+  - ESPN football defaults to round-based, no groups, background fetch enabled, infer clubs enabled
+  - ESPN non-football defaults to date-based, grouped, 2 groups, background fetch disabled, infer clubs disabled
+  - Api-Football defaults to divisions enabled, no groups, no background fetch, infer clubs enabled
+- **Fetch lifecycle awareness**: For long-running ESPN non-football extractions, the page receives a `background: true` response immediately and the stored row later transitions from `fetch_status = 'fetching'` to `done` or `error`
 
 ### Transform & Load page (`/admin/api/etl/transform-load/football/`)
 - **Available API Loads table**: Lists all `api_transitional` rows with actions:
@@ -902,6 +942,28 @@ This correctly finds the standing from the highest round **before** the current 
   - Full match list with editable round assignment inputs
   - Re-parse button to apply manual overrides
 - **`isSubsequentLoad` behavior**: When detected, skips round review and entity review entirely and goes straight to loading
+
+### Transform & Load page (`/admin/api/etl/transform-load/basketball/`)
+
+The basketball ETL page now mirrors the football workflow but is tailored to ESPN date-based, grouped payloads:
+
+- Uses the same transitional table and parse/apply endpoints
+- Polls `GET /v1/api/transitional/:id/apply-status` when a real apply runs in background mode
+- Preserves the selected transitional-row metadata in the UI while the load runs
+- Adds a dedicated `Repair division scores from payload` action that calls `POST /v1/api/transitional/:id/repair-divisions`
+- Keeps dry-runs synchronous, while real applies are usually backgrounded to avoid request timeouts
+
+### Common public standings pages (`/common/standings/*`)
+
+The final-user standings experience has been generalized into shared frontend components:
+
+- Route family: `/common/standings/football`, `/common/standings/basketball`, and sibling sport pages
+- Shared shell: `frontend/components/common/standings/BaseStandings.tsx`
+- Shared controls: `FilterBar.tsx`
+- Shared table rendering: `StandingsTable.tsx`
+- Shared fixtures list: `GamesList.tsx`
+
+The basketball page is no longer a purely mock-driven page. It now resolves the Basketball sport, fetches real leagues for that sport, selects a default league, and passes those inputs into `BaseStandings`, which in turn queries the backend for live standings and matches.
 
 ### Frontend logic for subsequent loads
 1. `loadRow()` receives `isSubsequentLoad: true` from parse response → stores in state
@@ -1147,12 +1209,201 @@ Three independent guards prevent enrichment from running at the wrong time, plus
 
 ---
 
-## 10. Pending / Future Work
+## 10. Recent Additions Since 2026-03-31
+
+This section captures the implementations added after the previous documentation baseline. It focuses on the delta so the earlier sections remain valid and this document stays readable.
+
+### 10.1 New staging flags and fetch lifecycle
+
+`api_transitional` has become the central execution-state record for ETL jobs, not just a raw payload bucket.
+
+New capabilities:
+
+- `fetch_status` tracks long ESPN day-by-day collections independently of the final load status
+- `flg_infer_clubs` allows the load path to decide whether it should try to infer clubs from grouped/date-based payloads
+- `flg_has_groups` and `number_of_groups` let the frontend declare grouped seasons before the load starts
+- `apply_status` and `apply_result` are used by background apply jobs so the frontend can poll for completion
+
+This means the ETL process now has two separate asynchronous lifecycles:
+
+1. **Fetch lifecycle**: `fetching` → `done` / `error`
+2. **Apply lifecycle**: `running` → `done` / `error`
+
+Those two lifecycles solve different timeout problems. Fetch status is needed for long upstream ESPN season downloads; apply status is needed for long database writes and standings generation.
+
+### 10.2 ESPN non-football parse and division repair
+
+The ESPN parse path now supports payloads where per-period scores are already present in each event, especially for basketball.
+
+#### Embedded linescores during parse
+
+`parseTransitionalEspn...` now extracts competitor `linescores` and writes them into the normalized flat row as:
+
+- `divisions.home.1`, `divisions.home.2`, ...
+- `divisions.away.1`, `divisions.away.2`, ...
+
+`createMatchDivisions()` checks for those fields first. If they exist, it uses them directly and returns `{ hasLinescores: true }`. This is now the preferred path because it avoids per-match ESPN summary requests when the scoreboard payload already contains period splits.
+
+#### `repairDivisionsFromPayload(id, sportId)`
+
+The backend now exposes `POST /v1/api/transitional/:id/repair-divisions`.
+
+Purpose:
+
+- Re-parse an already-loaded transitional row
+- Find rows that contain embedded linescores
+- Locate the already-imported `matches` row via `origin_api_id`
+- Delete and recreate `match_divisions` using the parsed per-period data
+
+Important constraint: this repair step intentionally does **not** modify matches, standings, clubs, or seasons. It is a surgical fix for division rows only.
+
+This was added to correct earlier basketball imports where total scores had been stored in each division instead of quarter-by-quarter values.
+
+### 10.3 Grouped seasons and group-aware load
+
+Grouped seasons are now fully supported end-to-end in the ETL path.
+
+#### Season bootstrap
+
+When `applyFirstRowToApp()` creates a new season and `flg_has_groups = true`, it performs additional initialization for ESPN grouped competitions.
+
+Current implemented special case:
+
+- NBA via ESPN standings endpoint
+
+Workflow:
+
+1. Create the `seasons` row
+2. Detect grouped-season mode from `api_transitional`
+3. Fetch ESPN standings for the season
+4. Create `groups` rows for each section returned by ESPN (for example, conferences)
+5. Resolve or create clubs found in those sections
+6. Insert or update `season_clubs.group_id` so the season already knows each club's group before match processing starts
+7. Update `seasons.number_of_groups` with the actual count returned by ESPN
+
+#### Group-aware per-row load
+
+During `applyAllRowsToApp()`:
+
+- Existing `season_clubs` rows with `group_id` are preloaded into both a `clubId -> groupId` map and a normalized `clubName -> groupId` map
+- `ensureSeasonClub()` uses those maps to assign the correct `group_id` when a club is first encountered in the parsed rows
+- If a `season_clubs` row already exists without a group and a group can now be inferred, that row is updated in place
+
+This is what allows later standings rows to carry `group_id` consistently, even when clubs are created or discovered incrementally during the load.
+
+#### Subsequent-load detection for date-based seasons
+
+The ETL no longer relies only on rounds to detect subsequent loads. For date-based competitions such as NBA, the load checks whether matches already exist for the league/season. If they do, the row is treated as a subsequent load even though there may be no `rounds` rows at all.
+
+### 10.4 Background apply jobs and polling
+
+Real apply runs are now backgrounded at the controller level:
+
+- `POST /v1/api/transitional/:id/apply-all-rows`
+  - Dry run: synchronous
+  - Real run: call `startApplyJob(id)`, return immediately, then execute `applyAllRowsToApp(...)` inside `setImmediate(...)`
+- `GET /v1/api/transitional/:id/apply-status`
+  - Returns the current `apply_status` and any serialized `apply_result`
+
+This architecture prevents HTTP timeouts when applying hundreds of rows, recalculating standings, and optionally enriching division scores.
+
+The frontend pattern is now:
+
+1. Start the apply
+2. If the response includes `background: true`, enter polling mode
+3. Poll `/apply-status` every few seconds
+4. Stop when status becomes `done` or `error`
+5. Show the stored result in the same “Last Operation Result” panel used by synchronous runs
+
+### 10.5 Admin frontend additions
+
+The admin ETL frontend has expanded from a football-only workflow into a more generic operational console.
+
+#### Extract page additions
+
+- Sport-aware schedule defaults (`Round` vs `Date`)
+- Toggle for grouped seasons and numeric group count input
+- Toggle for background execution
+- Toggle for club inference
+- Origin-aware defaults so ESPN football and ESPN basketball do not start from the same assumptions
+
+#### Basketball transform/load page additions
+
+- Shares the preview/apply behavior used by football
+- Supports background apply polling
+- Exposes `repair-divisions` from the action column
+- Keeps transitional metadata visible after processing instead of clearing the selected row aggressively
+
+The result is that basketball ETL is now operationally manageable from the UI without relying on manual SQL or one-off scripts.
+
+### 10.6 Public standings pages and fallback logic
+
+The biggest final-user change since the last documentation update is the move from simple round-table rendering to a shared standings experience that understands both round-based and date-based competitions.
+
+#### Backend date fallback: latest row on or before selected day
+
+`StandingsService.findByLeagueIdAndSeasonIdAndMatchDate(...)` no longer behaves like an exact-date lookup.
+
+Current behavior:
+
+1. Parse the selected date
+2. Fetch every standings row with `match_date <= selected day end`
+3. Keep only the most recent row per club
+4. Read the full club list from `season_clubs`
+5. For clubs that still have no earlier standing row, synthesize a zeroed row
+6. Preserve `group_id` from `season_clubs` in those synthetic rows
+7. Return the merged set sorted by a shared comparator
+
+This guarantees that a date-based standings screen always shows the full league table, even if some teams did not play on the selected day or had not yet played at all.
+
+#### Shared sorting rules
+
+The service now uses a dedicated comparator for fallback-filled standings rows:
+
+1. Points descending
+2. Wins descending
+3. Goal difference descending
+4. Goals for descending
+5. Club ID ascending as a stable final tie-breaker
+
+That keeps real rows and synthetic fallback rows ordered consistently.
+
+#### Frontend grouped-season rendering
+
+`BaseStandings.tsx` now detects grouped seasons from season metadata (`numberOfGroups` / `number_of_groups`) and fetches the season's groups from `/v1/groups?seasonId=...`.
+
+When the user selects `All groups`:
+
+- **Default mode**: render one standings table per group
+- **Optional mode**: if the user enables `Combine groups`, merge all rows into a single combined table
+
+The `Combine groups` checkbox lives in `FilterBar.tsx` and only appears when:
+
+- the season has groups, and
+- the selected group is `all`
+
+This preserves the user-requested default behavior: grouped competitions open with separated standings tables, not a forced merged table.
+
+#### Shared public page behavior
+
+`BaseStandings.tsx` now also handles:
+
+- season default selection per league
+- date-based default day selection for active and finished seasons
+- round-number to round-id translation for round-based APIs
+- group-aware filtering for both standings and matches
+- historical match loading used by `StandingsTable` for last-5 / last-10 summaries
+
+The basketball public page specifically resolves the Basketball sport and its leagues dynamically, then hands control to the same shared standings shell used by the other sports.
+
+---
+
+## 11. Pending / Future Work
 
 The following items are known areas that still need implementation or refinement:
 
 - **Multi-origin `origin_api_id`**: Currently the column is a plain text field. In the future, additional origins may be added, potentially requiring a reference table for origins.
-- **Other sports T&L pages**: The etl/transform-load folder has pages for basketball, volleyball, handball, ice-hockey, futsal — they share the same general structure but may need sport-specific parsing adjustments.
+- **Other sports T&L pages**: Basketball now has a dedicated T&L page, but volleyball, handball, ice-hockey, and futsal may still need sport-specific ETL validation and UI refinement.
 - **Volleyball standings**: The `calculateVolleyball` method is marked as TODO — the points-per-set logic is partially implemented but needs validation.
 - **Integration testing**: No automated test covers the full ETL pipeline end-to-end; verification has been manual.
 - **Error recovery**: If a load fails partway through, the transaction rolls back completely. There's no partial-apply or resume capability.

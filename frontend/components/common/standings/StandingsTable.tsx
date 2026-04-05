@@ -40,8 +40,9 @@ function Last5Chip({ c, tooltip }: { c: string; tooltip?: string | null }) {
   return chip;
 }
 
-export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType }: { rows?: any[]; isLoading?: boolean; error?: string | null; onRetry?: () => void; clubsMap?: Record<string,string>; historicalMatches?: any[]; cutoffDate?: string | undefined; currentMatches?: any[]; viewType?: 'all'|'home'|'away' }) {
+export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel }: { rows?: any[]; isLoading?: boolean; error?: string | null; onRetry?: () => void; clubsMap?: Record<string,string>; historicalMatches?: any[]; cutoffDate?: string | undefined; currentMatches?: any[]; viewType?: 'all'|'home'|'away'; teamHeaderLabel?: string }) {
   const list = Array.isArray(rows) ? rows : [];
+  // (no debug logs)
   const getAny = (obj: any, names: string[]) => {
     for (const n of names) {
       if (typeof obj[n] !== 'undefined' && obj[n] !== null) return obj[n];
@@ -123,7 +124,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
         <thead>
           <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
             <th className={clsx('w-10 px-5 py-5 font-normal', shouldShadeCol(0) && 'bg-gray-50')}>#</th>
-            <th className={clsx('px-3 py-3 font-normal', shouldShadeCol(1) && 'bg-gray-50')}>TEAM</th>
+            <th className={clsx('px-3 py-3 font-normal', shouldShadeCol(1) && 'bg-gray-50')}>{teamHeaderLabel ?? 'TEAM'}</th>
             <th className={clsx('w-16 px-3 py-3 text-center font-normal', shouldShadeCol(2) && 'bg-gray-50')}><Tooltip label="Points">Pts</Tooltip></th>
             <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(3) && 'bg-gray-50')}><Tooltip label="Played">Pl</Tooltip></th>
             <th className={clsx('w-10 px-3 py-3 text-center font-normal', shouldShadeCol(4) && 'bg-gray-50')}><Tooltip label="Won">W</Tooltip></th>
