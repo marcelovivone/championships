@@ -533,3 +533,31 @@ export interface CreateStandingDto {
 }
 
 export interface UpdateStandingDto extends Partial<CreateStandingDto> {}
+
+// Standing Zone Types
+export interface StandingZone {
+  id: number;
+  sportId: number;
+  leagueId: number;
+  seasonId?: number | null;
+  startPosition: number;
+  endPosition: number;
+  name: string;
+  typeOfStanding?: 'All' | 'Group' | 'Combined';
+  colorHex?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateStandingZoneDto {
+  sportId: number;
+  leagueId: number;
+  seasonId?: number;
+  startPosition: number;
+  endPosition: number;
+  name: string;
+  typeOfStanding?: 'All' | 'Group' | 'Combined';
+  colorHex?: string;
+}
+
+export interface UpdateStandingZoneDto extends Partial<CreateStandingZoneDto> {}

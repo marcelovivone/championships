@@ -22,3 +22,4 @@ export * from './user.dto';
 export * from './auth.dto';
 export * from './pagination.dto';
 export * from './filtering.dto';
+export * from './standing-zone.dto';

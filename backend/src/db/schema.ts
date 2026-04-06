@@ -211,6 +211,9 @@ export const matchStatusEnum = pgEnum('match_status', [
   'Cancelled',
 ]);
 
+// Enum for standing zone types
+export const typeOfStandingEnum = pgEnum('type_of_standing', ['All', 'Combined', 'Group']);
+
 export const matches = pgTable('matches', {
   id: serial('id').primaryKey(),
   sportId: integer('sport_id').references(() => sports.id).notNull(),
@@ -381,4 +384,21 @@ export const sportClubs = pgTable('sport_clubs', {
   name: varchar('name', { length: 100 }).default("").notNull(),
   flgActive: boolean('flg_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 24. STANDING_ZONES TABLE - Define standing zones for different sports, leagues, and seasons
+// ============================================================================
+export const standingZones = pgTable('standing_zones', {
+  id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
+  leagueId: integer('league_id').references(() => leagues.id).notNull(),
+  seasonId: integer('season_id').references(() => seasons.id),
+  startPosition: integer('start_position').notNull(),
+  endPosition: integer('end_position').notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  typeOfStanding: typeOfStandingEnum('type_of_standing').default('All').notNull(),
+  colorHex: varchar('color_hex', { length: 7 }).default('#FFFFFF').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

@@ -3,7 +3,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 
-export default function Tooltip({ children, label, className }: { children: React.ReactNode; label: string; className?: string }) {
+export default function Tooltip({ children, label, className }: { children: React.ReactNode; label: React.ReactNode | string; className?: string }) {
   const [show, setShow] = React.useState(false);
   const [coords, setCoords] = React.useState<{ left: number; top: number } | null>(null);
   const hostRef = React.useRef<HTMLSpanElement | null>(null);

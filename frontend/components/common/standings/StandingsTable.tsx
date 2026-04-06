@@ -20,7 +20,7 @@ type Row = {
   last10: { w: number; d: number; l: number };
 };
 
-function Last5Chip({ c, tooltip }: { c: string; tooltip?: string | null }) {
+function Last5Chip({ c, tooltip }: { c: string; tooltip?: React.ReactNode | null }) {
   const isLetter = c === 'W' || c === 'D' || c === 'L';
   if (!isLetter) {
     const empty = <div className="w-6 h-6" />;
@@ -40,7 +40,7 @@ function Last5Chip({ c, tooltip }: { c: string; tooltip?: string | null }) {
   return chip;
 }
 
-export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel }: { rows?: any[]; isLoading?: boolean; error?: string | null; onRetry?: () => void; clubsMap?: Record<string,string>; historicalMatches?: any[]; cutoffDate?: string | undefined; currentMatches?: any[]; viewType?: 'all'|'home'|'away'; teamHeaderLabel?: string }) {
+export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel, positionColorMap }: { rows?: any[]; isLoading?: boolean; error?: string | null; onRetry?: () => void; clubsMap?: Record<string,string>; historicalMatches?: any[]; cutoffDate?: string | undefined; currentMatches?: any[]; viewType?: 'all'|'home'|'away'; teamHeaderLabel?: string; positionColorMap?: Record<number,string> }) {
   const list = Array.isArray(rows) ? rows : [];
   // (no debug logs)
   const getAny = (obj: any, names: string[]) => {
@@ -125,15 +125,15 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
           <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
             <th className={clsx('w-10 px-5 py-5 font-normal', shouldShadeCol(0) && 'bg-gray-50')}>#</th>
             <th className={clsx('px-3 py-3 font-normal', shouldShadeCol(1) && 'bg-gray-50')}>{teamHeaderLabel ?? 'TEAM'}</th>
-            <th className={clsx('w-16 px-3 py-3 text-center font-normal', shouldShadeCol(2) && 'bg-gray-50')}><Tooltip label="Points">Pts</Tooltip></th>
+            <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(2) && 'bg-gray-50')}><Tooltip label="Points">Pts</Tooltip></th>
             <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(3) && 'bg-gray-50')}><Tooltip label="Played">Pl</Tooltip></th>
-            <th className={clsx('w-10 px-3 py-3 text-center font-normal', shouldShadeCol(4) && 'bg-gray-50')}><Tooltip label="Won">W</Tooltip></th>
-            <th className={clsx('w-10 px-3 py-3 text-center font-normal', shouldShadeCol(5) && 'bg-gray-50')}><Tooltip label="Drawn">D</Tooltip></th>
-            <th className={clsx('w-10 px-3 py-3 text-center font-normal', shouldShadeCol(6) && 'bg-gray-50')}><Tooltip label="Lost">L</Tooltip></th>
+            <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(4) && 'bg-gray-50')}><Tooltip label="Won">W</Tooltip></th>
+            <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(5) && 'bg-gray-50')}><Tooltip label="Drawn">D</Tooltip></th>
+            <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(6) && 'bg-gray-50')}><Tooltip label="Lost">L</Tooltip></th>
             <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(7) && 'bg-gray-50')}><Tooltip label="Goals For">GF</Tooltip></th>
             <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(8) && 'bg-gray-50')}><Tooltip label="Goals Against">GA</Tooltip></th>
             <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(9) && 'bg-gray-50')}><Tooltip label="Goal Difference">GD</Tooltip></th>
-            <th className={clsx('w-14 px-3 py-3 text-center font-normal', shouldShadeCol(10) && 'bg-gray-50')}><Tooltip label="Percentage">%</Tooltip></th>
+            <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(10) && 'bg-gray-50')}><Tooltip label="Percentage">%</Tooltip></th>
             <th className={clsx('w-40 px-3 py-3 text-center font-normal', shouldShadeCol(11) && 'bg-gray-50')}><Tooltip label="Last 5 results">LAST 5</Tooltip></th>
             <th className={clsx('w-28 px-3 py-3 text-center font-normal', shouldShadeCol(12) && 'bg-gray-50')}><Tooltip label="Last 10 results">LAST 10</Tooltip></th>
           </tr>
@@ -215,7 +215,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
             const pct = (typeof rawPct === 'number' && rawPct >= 0)
               ? rawPct
               : (pl > 0 ? Math.round((pts / (pl * Number(inferredPointsPerWin || 3))) * 100) : 0);
-            let last5: string[] = Array.isArray(r.last5) ? r.last5.map((x: any) => String(x)) : (Array.isArray(r.last5?.history) ? r.last5.history.map((x: any) => String(x)) : (r.last5String ? String(r.last5).split('') : []));
+            let last5: any[] = Array.isArray(r.last5) ? r.last5.map((x: any) => ({ result: String(x) })) : (Array.isArray(r.last5?.history) ? r.last5.history.map((x: any) => ({ result: String(x) })) : (r.last5String ? String(r.last5).split('').map((x: any) => ({ result: String(x) })) : []));
             // compute last10 from historicalMatches if provided
             let last10 = r.last10 ?? { w: r.winsLast10 ?? 0, d: r.drawsLast10 ?? 0, l: r.lossesLast10 ?? 0 };
             try {
@@ -288,18 +288,27 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
                 // compute last5: take up to 5 most recent scored matches (oldest->newest), map to W/D/L, pad to length 5
                 try {
                   const last5Candidates = sorted.slice(-5);
-                  const last5Chars = last5Candidates.map((m: any) => {
+                  const last5Objs = last5Candidates.map((m: any) => {
                     const home = Number(m.homeClubId ?? m.homeClub?.id ?? m.homeClubId);
                     const away = Number(m.awayClubId ?? m.awayClub?.id ?? m.awayClubId);
                     const hs = Number(m.homeScore);
                     const as = Number(m.awayScore);
-                    if (!Number.isFinite(hs) || !Number.isFinite(as)) return '';
-                    if (hs === as) return 'D';
-                    const isWin = (clubId === home && hs > as) || (clubId === away && as > hs);
-                    return isWin ? 'W' : 'L';
+                    const result = (!Number.isFinite(hs) || !Number.isFinite(as)) ? '' : (hs === as ? 'D' : ((clubId === home && hs > as) || (clubId === away && as > hs) ? 'W' : 'L'));
+                    return {
+                      result,
+                      homeShortName: m.homeShortName ?? m.home?.short_name ?? m.home?.shortName ?? m.homeName ?? m.home?.name ?? m.homeClubName ?? m.homeClub?.name,
+                      awayShortName: m.awayShortName ?? m.away?.short_name ?? m.away?.shortName ?? m.awayName ?? m.away?.name ?? m.awayClubName ?? m.awayClub?.name,
+                      homeScore: hs,
+                      awayScore: as,
+                      roundNumber: m.roundNumber ?? m.round?.roundNumber ?? m.round ?? m.roundName ?? null,
+                      stadiumName: m.stadiumName ?? m.stadium?.name ?? null,
+                      date: m.date ?? m.matchDate ?? m.datetime ?? m.dateTime ?? null,
+                      homeImage: m.homeImage ?? m.home?.imageUrl ?? m.home?.image_url ?? m.home?.logoUrl ?? m.homeClub?.imageUrl ?? m.homeClub?.logo,
+                      awayImage: m.awayImage ?? m.away?.imageUrl ?? m.away?.image_url ?? m.away?.logoUrl ?? m.awayClub?.imageUrl ?? m.awayClub?.logo,
+                    };
                   });
-                  const pad = Math.max(0, 5 - last5Chars.length);
-                  last5 = Array(pad).fill('').concat(last5Chars);
+                  const pad = Math.max(0, 5 - last5Objs.length);
+                  last5 = Array(pad).fill({ result: '' }).concat(last5Objs);
                 } catch (e) {
                   // fallback to any provided last5
                   last5 = Array.isArray(r.last5) ? r.last5.map((x: any) => String(x)) : last5;
@@ -311,7 +320,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
 
             return (
               <tr key={position} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className={clsx('px-3 py-3 text-sm text-gray-700', shouldShadeCol(0) && 'bg-gray-50')}>{position}</td>
+                  <td className={clsx('px-3 py-3 text-sm text-gray-800 text-center', shouldShadeCol(0) && 'bg-gray-50')} style={ positionColorMap && positionColorMap[position] ? { borderLeftStyle: 'solid', borderLeftWidth: '3px', borderLeftColor: positionColorMap[position] } : undefined }>{position}</td>
                   <td className={clsx('px-3 py-3 text-sm text-gray-800', shouldShadeCol(1) && 'bg-gray-50')}>{teamName}</td>
                   <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(2) && 'bg-gray-50')}>{pts}</td>
                   <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(3) && 'bg-gray-50')}>{pl}</td>
@@ -323,32 +332,56 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
                   <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(9) && 'bg-gray-50')}>{gd}</td>
                   <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(10) && 'bg-gray-50')}>{pct}%</td>
                   <td className={clsx('px-3 py-3', shouldShadeCol(11) && 'bg-gray-50')}>
-                  <Tooltip label={Array.isArray(last5) && last5.length ? `Last 5: ${last5.join(' ')}` : ''}>
                     <div className="flex gap-2">
                       {(last5 || []).map((c: any, i: number) => {
                         // c may be a simple char 'W'/'D'/'L' or a detailed object with match info
                         let char = String(c);
-                        let tooltipLabel: string | null = null;
+                        let tooltipNode: React.ReactNode | null = null;
                         if (typeof c === 'object' && c !== null) {
                           // try to extract match info
-                          const home = c.homeShortName ?? c.home?.short_name ?? c.home?.shortName ?? c.homeName ?? c.home?.name;
-                          const away = c.awayShortName ?? c.away?.short_name ?? c.away?.shortName ?? c.awayName ?? c.away?.name;
-                          const homeScore = c.homeScore ?? c.home_score ?? c.home?.score ?? c.home?.goals ?? '';
-                          const awayScore = c.awayScore ?? c.away_score ?? c.away?.score ?? c.away?.goals ?? '';
+                          const home = c.homeShortName ?? c.home?.short_name ?? c.home?.shortName ?? c.homeName ?? c.home?.name ?? c.homeClubName ?? c.homeClub?.name;
+                          const away = c.awayShortName ?? c.away?.short_name ?? c.away?.shortName ?? c.awayName ?? c.away?.name ?? c.awayClubName ?? c.awayClub?.name;
+                          const homeScore = c.homeScore ?? c.home_score ?? c.home?.score ?? c.home?.goals ?? c.homeGoals ?? '';
+                          const awayScore = c.awayScore ?? c.away_score ?? c.away?.score ?? c.away?.goals ?? c.awayGoals ?? '';
+                          const roundNum = c.roundNumber ?? c.round?.roundNumber ?? c.round ?? c.roundName ?? null;
+                          const stadium = c.stadiumName ?? c.stadium?.name ?? c.stadium ?? null;
+                          const dateStr = c.date ?? c.matchDate ?? c.datetime ?? c.dateTime ?? null;
+                          const homeImage = c.homeImage ?? c.home?.imageUrl ?? c.home?.image_url ?? c.home?.logoUrl ?? c.homeClub?.imageUrl ?? c.homeClub?.logo;
+                          const awayImage = c.awayImage ?? c.away?.imageUrl ?? c.away?.image_url ?? c.away?.logoUrl ?? c.awayClub?.imageUrl ?? c.awayClub?.logo;
+
                           char = (c.result ?? c.outcome ?? c.label ?? String(c.resultSymbol ?? c.symbol ?? char)).toString().charAt(0) || String(char);
-                          if (home || away || homeScore !== '' || awayScore !== '') {
-                            tooltipLabel = `${home ?? ''} ${homeScore ?? ''}-${awayScore ?? ''} ${away ?? ''}`.trim();
-                          }
+
+                          // Build a two-line tooltip: first line (round / stadium / date), second line (home img, home short, score - score, away img, away short)
+                          tooltipNode = (
+                            <div className="text-center">
+                              <div className="text-xs text-gray-600">
+                                {roundNum ? `R${roundNum}` : ''}{roundNum && stadium ? ' · ' : ''}{stadium ?? ''}{(roundNum || stadium) && dateStr ? ' · ' : ''}{dateStr ? new Date(dateStr).toLocaleString() : ''}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm">{home ?? ''}</span>
+                                  {homeImage ? <img src={homeImage} alt={home ?? 'home'} className="w-4 h-4 object-cover rounded"/> : null}
+                                </div>
+                                <div className="text-sm font-medium">{homeScore ?? ''}</div>
+                                <div className="text-sm">-</div>
+                                <div className="text-sm font-medium">{awayScore ?? ''}</div>
+                                <div className="flex items-center gap-2">
+                                  {awayImage ? <img src={awayImage} alt={away ?? 'away'} className="w-4 h-4 object-cover rounded"/> : null}
+                                  <span className="text-sm">{away ?? ''}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
                         } else if (typeof c === 'string' && c.length === 1) {
                           char = c;
                         }
 
+                        const fallbackTooltip = `Last 5: ${(Array.isArray(last5) ? last5.map((e: any) => (typeof e === 'object' ? (e.result ?? '') : String(e))).join(' ') : '')}`;
                         return (
-                          <div key={i} className="w-5 h-5"> <Last5Chip c={char} tooltip={tooltipLabel ?? undefined} /> </div>
+                          <div key={i} className="w-5 h-5"> <Last5Chip c={char} tooltip={tooltipNode ?? (fallbackTooltip || undefined)} /> </div>
                         );
                       })}
                     </div>
-                  </Tooltip>
                 </td>
                 <td className="px-3 py-3 text-sm text-gray-700 text-center">{`${last10?.w ?? 0}-${last10?.d ?? 0}-${last10?.l ?? 0}`}</td>
               </tr>

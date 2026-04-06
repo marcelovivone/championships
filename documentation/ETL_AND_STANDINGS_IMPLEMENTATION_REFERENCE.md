@@ -182,6 +182,7 @@ This is the heavyweight parser. It:
 | `league.season` | `firstEvent.season.year` |
 | `league.country` | `competition.venue.address.country` |
 | `league.round` | `derivedRounds.get(eventId)` ← from inference |
+| `league.season` | derived from ESPN season start date / calendar start date for cross-year leagues (e.g. NBA 2025/26 → `2025`) |
 | `goals.home` | `homeTeam.score` |
 | `goals.away` | `awayTeam.score` |
 | `teams.home.name` | `homeTeam.team.displayName` |
@@ -192,6 +193,7 @@ This is the heavyweight parser. It:
 | `fixture.status.long` | `status.description` |
 | `fixture.status.short` | `status.shortDetail` |
 | `fixture.status.state` | `status.state` — ESPN game state: `'pre'`, `'in'`, or `'post'` |
+| `fixture.status.completed` | `status.completed` — authoritative boolean used to decide whether the game is actually finished |
 | `origin_api_id` | `event.id` (string) |
 
 ### 4.3 ESPN parsing — Lightweight (subsequent load)
@@ -204,12 +206,14 @@ Produces the **exact same flat-row format** as the full parser BUT:
 - **Does NOT run round inference** (saves significant processing time and avoids round review)
 - Sets `league.round = null` for every row
 - The Load step will preserve the existing `round_id` from the database via `COALESCE`
+- Still emits `fixture.status.completed` and the normalized cross-year `league.season` value so update loads behave identically to first-load parsing for finished-state and season matching
 
 **Detection**: In `parseTransitional()`, before calling the full ESPN parser:
 1. Extract league metadata via `extractLeagueMetadata(row)`
 2. Look up the league and season in the DB
-3. Count rounds: `SELECT COUNT(*) FROM rounds WHERE league_id = ? AND season_id = ?`
-4. If count > 0 → it's a subsequent load → use lightweight parser and return `isSubsequentLoad: true`
+3. For round-based schedules: count rounds via `SELECT COUNT(*) FROM rounds WHERE league_id = ? AND season_id = ?`
+4. For date-based schedules: count matches instead of rounds, because leagues such as NBA do not rely on persisted round rows
+5. If an existing league/season is found → it's a subsequent load → use lightweight parser and return `isSubsequentLoad: true`
 
 ### 4.4 Round inference algorithm (ESPN)
 
@@ -978,8 +982,8 @@ Both the football and basketball pages are thin sport-specific wrappers around `
 
 Important difference:
 
-- Football passes `hasGroups` so grouped-season UI is enabled by default when football seasons expose group metadata
-- Basketball relies mainly on season metadata coming from the backend and does not force grouped mode at the page wrapper level
+- Football and basketball now both rely on season metadata coming from the backend to decide whether grouped-season UI should be enabled
+- The football page no longer forces grouped mode at the wrapper level; this avoids empty tables for normal round-based leagues with no groups
 
 The pages still pass mock arrays as fallback props, but real display behavior is now primarily driven by the live queries inside `BaseStandings`.
 
@@ -1412,6 +1416,13 @@ This preserves the user-requested default behavior: grouped competitions open wi
 - group-aware filtering for both standings and matches
 - historical match loading used by `StandingsTable` for last-5 / last-10 summaries
 
+Additional corrections now in place:
+
+- `typeOfSchedule = 1` is treated as date-based consistently across `BaseStandings.tsx` and `FilterBar.tsx`
+- round/date queries do not fire until `roundOrDay` has a real value
+- last-5 / last-10 always use the club's full historical season match set; group filtering is only applied to table rows, not to the historical match feed used for form calculation
+- when `All groups` is selected without `Combine groups`, each table keeps its own rows but the group label is rendered inside the first header cell as `TEAM (Group Name)` instead of as a separate title row above the table
+
 #### Shared filter-bar behavior
 
 `FilterBar.tsx` is the public standings control surface. It is responsible for:
@@ -1423,6 +1434,11 @@ This preserves the user-requested default behavior: grouped competitions open wi
 - view-type toggle between `All`, `Home`, and `Away`
 - group selection for grouped seasons
 - conditional `Combine groups` checkbox when the selected view is `All groups`
+
+Recent UI refinements:
+
+- round and date navigation now use neutral SVG chevrons instead of text glyph arrows
+- the date control no longer renders a duplicate custom calendar button; it relies on the native date-input picker icon only
 
 This component is not only visual. It also contains schedule-type-sensitive initialization logic:
 
@@ -1440,7 +1456,7 @@ Current behavior:
 2. Resolve the Football sport by `name === 'football'` or `reducedName === 'fb'`
 3. Query leagues for that sport
 4. Pick the default football league
-5. Render `BaseStandings` with `title="Standings — Football"`, the resolved `sportId`, the live league list, and `hasGroups`
+5. Render `BaseStandings` with `title="Standings — Football"`, the resolved `sportId`, and the live league list
 
 Because football leagues are predominantly round-based in this codebase, the football page benefits especially from the shared round logic:
 
@@ -1448,6 +1464,10 @@ Because football leagues are predominantly round-based in this codebase, the foo
 - last round auto-selection for finished seasons
 - round-number to round-id translation before calling `/v1/standings` and `/v1/matches`
 - grouped-table rendering when the season exposes groups
+
+Important correction:
+
+- the football page now passes `hasGroups={false}` at the wrapper level and lets season metadata decide whether groups exist; this restored the normal standings table for leagues such as Premier League that are round-based and non-grouped
 
 #### Basketball public page behavior
 
@@ -1462,6 +1482,36 @@ Current behavior:
 5. Render `BaseStandings` with `title="Standings — Basketball"`, the resolved `sportId`, and the live league list
 
 The basketball page then depends on the shared date-based standings logic documented above, including latest-standing fallback by selected day and grouped-table separation when the chosen season is grouped.
+
+It also now benefits from the same public-shell fixes as football:
+
+- consistent date-based schedule detection via `typeOfSchedule = 1`
+- stable date navigation controls
+- correct last-5 / last-10 computation in separated conference tables
+
+### 10.7 April 2026 correction pass
+
+Several regressions introduced while extending basketball support were corrected in both the public standings frontend and the ETL backend.
+
+#### Public standings frontend corrections
+
+- `BaseStandings.tsx` and `FilterBar.tsx` now agree that schedule code `1` means date-based competition
+- football no longer forces grouped rendering from the page wrapper, so non-grouped football leagues render the normal standings table again
+- separated-group standings no longer render an extra conference title row above each table; the label moves into the first column header as `TEAM (Eastern Conference)` / `TEAM (Western Conference)`
+- form columns (`LAST 5`, `LAST 10`) now use the full historical match set for each club, including cross-group games, instead of incorrectly trimming history to the currently-rendered group only
+- date/round navigation arrows were restyled with cleaner chevrons, and the duplicate calendar icon was removed from the date control
+
+#### ETL backend corrections
+
+- ESPN parsers now emit `fixture.status.completed`, and load-time finished detection uses that boolean (plus `FT`) instead of assuming every `state = 'post'` game is finished. This prevents postponed football matches from being loaded as false `0-0` finals
+- ESPN cross-year seasons now derive `league.season` from the season start date / calendar start date rather than the display year. This fixes date-based subsequent loads such as NBA 2025/2026, where the payload labels the season as `2026` but the DB season key is `start_year = 2025`
+- `detectEntitiesForReview()` now skips country/league entity-review prompts for date-based ESPN payloads when the league and season already exist, so NBA update loads do not re-enter first-load review flow
+
+Net effect:
+
+- football subsequent loads ignore postponed matches correctly
+- NBA update payloads resolve the existing season correctly
+- date-based subsequent loads proceed directly into match updates instead of reopening first-load entity review
 
 ---
 

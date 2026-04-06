@@ -38,6 +38,9 @@ import {
   CreateProfilePermissionDto,
   CreateUserPermissionDto,
   CreateStandingDto,
+  StandingZone,
+  CreateStandingZoneDto,
+  UpdateStandingZoneDto,
 } from './types';
 
 // import MatchDetailsEditor, { MatchDivision } from '../../app/admin/matches/MatchDetailsEditor';
@@ -145,6 +148,26 @@ export const seasonsApi = {
     const response = await apiClient.get<Season[]>(`/v1/seasons?leagueId=${leagueId}`);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
+  }
+};
+
+export const standingZonesApi = {
+  ...createCrudApi<any, any>('standing-zones'),
+  // Custom get filtered by sport/league/season with pagination support
+  getFiltered: async (opts?: { sportId?: number; leagueId?: number; seasonId?: number; page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }) => {
+    const { page = 1, limit = 10, sortBy, sortOrder } = opts || {};
+    let url = `/v1/standing-zones?page=${page}&limit=${limit}`;
+    if (sortBy) url += `&sortBy=${sortBy}`;
+    if (sortOrder) url += `&sortOrder=${sortOrder}`;
+    const params: string[] = [];
+    if (opts?.sportId) params.push(`sportId=${opts.sportId}`);
+    if (opts?.leagueId) params.push(`leagueId=${opts.leagueId}`);
+    if (opts?.seasonId) params.push(`seasonId=${opts.seasonId}`);
+    if (params.length) url += `&${params.join('&')}`;
+    const response = await apiClient.get(url);
+    const result = response.data as any;
+    if (result.data && result.total !== undefined) return result;
+    return { data: Array.isArray(result) ? result : [], total: Array.isArray(result) ? result.length : 0, page, limit };
   }
 };
 

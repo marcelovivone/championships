@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { seasonsApi } from '@/lib/api/entities';
+import { seasonsApi, standingZonesApi } from '@/lib/api/entities';
 import { apiClient } from '@/lib/api/client';
 import FilterBar from './FilterBar';
 import StandingsTable from './StandingsTable';
@@ -168,6 +168,49 @@ export default function BaseStandings({
     },
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
+
+  // Fetch standing zones for the selected sport+league (includes season-null entries)
+  const { data: standingZonesData } = useQuery({
+    queryKey: ['standing-zones', sportId, league],
+    queryFn: () => {
+      if (!league) return Promise.resolve([]);
+      // Request a large limit so we get all zones for this league (frontend needs the full set)
+      return standingZonesApi.getFiltered({ sportId: sportId ?? undefined, leagueId: Number(league), page: 1, limit: 1000 })
+        .then((res: any) => (res && res.data && Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])));
+    },
+    enabled: Boolean(league),
+    staleTime: 1000 * 60 * 5,
+  });
+
+  // Compute position -> color maps for combined and group tables based on rules
+  const { combinedPositionColorMap, groupPositionColorMap } = React.useMemo(() => {
+    const combined: Record<number, string> = {};
+    const groupMap: Record<number, string> = {};
+    const zones = Array.isArray(standingZonesData) ? standingZonesData : [];
+    const filtered = zones.filter((z: any) => {
+      // include if season is null (applies to all seasons) or matches selected season
+      return z.seasonId === null || typeof z.seasonId === 'undefined' || String(z.seasonId) === String(season);
+    });
+
+    filtered.forEach((z: any) => {
+      const start = Number(z.startPosition ?? z.start_position ?? z.startPosition);
+      const end = Number(z.endPosition ?? z.end_position ?? z.endPosition);
+      const color = z.colorHex ?? z.color_hex ?? z.colorHex ?? '#FFFFFF';
+      const type = String(z.typeOfStanding ?? z.type_of_standing ?? 'All').toLowerCase();
+      for (let p = start; p <= end; p++) {
+        if (type === 'all') {
+          combined[p] = color;
+          groupMap[p] = color;
+        } else if (type === 'combined') {
+          combined[p] = color;
+        } else if (type === 'group') {
+          groupMap[p] = color;
+        }
+      }
+    });
+
+    return { combinedPositionColorMap: combined, groupPositionColorMap: groupMap };
+  }, [standingZonesData, season]);
 
   // Update the displayed round/day for the standings header only when the
   // standings result contains rows for the current selection. This keeps the
@@ -654,14 +697,8 @@ export default function BaseStandings({
               if (scheduleIsDate) {
                 cutoffDate = String(roundOrDay);
               } else {
-                // For round-based schedules use round-number filtering instead of date
-                // filtering. A postponed game that was played AFTER a later round's
-                // calendar start still belongs to its own (earlier) round in the DB, so
-                // it must be included when the user views that later round. Date-based
-                // cuts would incorrectly exclude it.
                 const currentRoundNum = Number(debouncedRoundOrDay);
                 if (!isNaN(currentRoundNum) && Array.isArray(roundsQuery.data) && roundsQuery.data.length > 0) {
-                  // Build the set of roundIds whose roundNumber <= currentRoundNum
                   const eligibleRoundIds = new Set(
                     (roundsQuery.data as any[])
                       .filter((rr: any) => Number(rr.roundNumber ?? rr.round ?? rr.round_number) <= currentRoundNum)
@@ -673,24 +710,20 @@ export default function BaseStandings({
                       return eligibleRoundIds.has(rid);
                     });
                   }
-                  // cutoffDate stays undefined → StandingsTable won't apply date filtering
                 } else {
-                  // Fallback when rounds data is unavailable: use latest date in current round
                   const srcMatches = matchesQuery.data !== undefined ? matchesQuery.data : games;
                   if (Array.isArray(srcMatches) && srcMatches.length > 0) {
                     const dates = srcMatches
                       .map((m: any) => m.date ?? m.matchDate ?? m.datetime ?? m.dateTime)
                       .filter(Boolean)
                       .map((d: any) => new Date(d).toISOString());
-                    if (dates.length > 0) cutoffDate = dates.sort().at(-1); // latest, not earliest
+                    if (dates.length > 0) cutoffDate = dates.sort().at(-1);
                   }
                 }
               }
 
               const currentMatches = (matchesQuery.data !== undefined ? matchesQuery.data : games) as any[];
               const buildTable = (rows: any[], _activeGroupId?: string, teamHeaderLabel?: string) => {
-                // Pass ALL historical matches — StandingsTable filters by clubId internally.
-                // Filtering by group here would lose cross-group games needed for LAST 5/10.
                 return (
                   <StandingsTable
                     rows={rows}
@@ -700,13 +733,16 @@ export default function BaseStandings({
                     currentMatches={currentMatches}
                     viewType={viewType}
                     teamHeaderLabel={teamHeaderLabel}
+                    positionColorMap={_activeGroupId ? groupPositionColorMap : combinedPositionColorMap}
                   />
                 );
               };
 
               const shouldRenderSeparateGroups = seasonHasGroups && group === 'all' && !combineGroups;
+              let renderedTables: React.ReactNode;
               if (!shouldRenderSeparateGroups) {
-                return (
+                const isSingleGroupView = Boolean(group && group !== 'all');
+                renderedTables = (
                   <StandingsTable
                     rows={filtered}
                     clubsMap={clubsMap}
@@ -714,30 +750,75 @@ export default function BaseStandings({
                     cutoffDate={cutoffDate}
                     currentMatches={currentMatches}
                     viewType={viewType}
+                    positionColorMap={isSingleGroupView ? groupPositionColorMap : combinedPositionColorMap}
                   />
+                );
+              } else {
+                const fallbackGroups = Array.from(new Set(filtered.map((row: any) => getGroupId(row)).filter(Boolean))).map((groupId) => ({
+                  id: groupId,
+                  name: `Group ${groupId}`,
+                }));
+                const groupsToRender = seasonGroups.length > 0 ? seasonGroups : fallbackGroups;
+                renderedTables = (
+                  <div className="space-y-6">
+                    {groupsToRender.map((seasonGroup: any) => {
+                      const seasonGroupId = String(seasonGroup.id);
+                      const groupRows = filterItemsByGroup(filtered, seasonGroupId);
+                      if (groupRows.length === 0) return null;
+
+                      const groupName = seasonGroup.name ?? seasonGroup.originalName ?? seasonGroup.code ?? `Group ${seasonGroupId}`;
+                      return (
+                        <section key={seasonGroupId}>
+                          {buildTable(groupRows, seasonGroupId, `TEAM (${groupName})`)}
+                        </section>
+                      );
+                    })}
+                  </div>
                 );
               }
 
-              const fallbackGroups = Array.from(new Set(filtered.map((row: any) => getGroupId(row)).filter(Boolean))).map((groupId) => ({
-                id: groupId,
-                name: `Group ${groupId}`,
-              }));
-              const groupsToRender = seasonGroups.length > 0 ? seasonGroups : fallbackGroups;
+              // Compute applicable zones for legend
+              const zones = Array.isArray(standingZonesData) ? standingZonesData : [];
+              const applicableZones = zones
+                .filter((z: any) => z == null ? false : (z.seasonId === null || typeof z.seasonId === 'undefined' || String(z.seasonId) === String(season)))
+                .filter((z: any) => {
+                  const type = String(z.typeOfStanding ?? z.type_of_standing ?? 'All').toLowerCase();
+                  if (shouldRenderSeparateGroups) return type === 'all' || type === 'group';
+                  const isSingleGroupView = Boolean(group && group !== 'all');
+                  if (isSingleGroupView) return type === 'all' || type === 'group';
+                  return type === 'all' || type === 'combined';
+                });
+
+              const uniq: any[] = [];
+              // Deduplicate by normalized name (case-insensitive). If name is empty,
+              // fallback to dedupe by color so unnamed zones don't collapse incorrectly.
+              const byName = new Map<string, { name: string; color: string }>();
+              applicableZones.forEach((z: any) => {
+                const color = z.colorHex ?? z.color_hex ?? '#FFFFFF';
+                const rawName = (z.name ?? '') as string;
+                const normalized = rawName && String(rawName).trim() ? String(rawName).trim().toLowerCase() : '';
+                const key = normalized || `__color__${color}`;
+                if (!byName.has(key)) {
+                  byName.set(key, { name: rawName || '', color });
+                }
+              });
+              byName.forEach((v) => uniq.push(v));
+
+              const legend = uniq.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-4 items-center">
+                  {uniq.map((z, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span style={{ width: 14, height: 14, background: z.color, display: 'inline-block', borderRadius: 3, border: '1px solid #e5e7eb' }} />
+                      <span>{z.name}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null;
 
               return (
-                <div className="space-y-6">
-                  {groupsToRender.map((seasonGroup: any) => {
-                    const seasonGroupId = String(seasonGroup.id);
-                    const groupRows = filterItemsByGroup(filtered, seasonGroupId);
-                    if (groupRows.length === 0) return null;
-
-                    const groupName = seasonGroup.name ?? seasonGroup.originalName ?? seasonGroup.code ?? `Group ${seasonGroupId}`;
-                    return (
-                      <section key={seasonGroupId}>
-                        {buildTable(groupRows, seasonGroupId, `TEAM (${groupName})`)}
-                      </section>
-                    );
-                  })}
+                <div>
+                  {renderedTables}
+                  {legend}
                 </div>
               );
             })()

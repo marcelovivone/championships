@@ -43,6 +43,7 @@ const menuItems: MenuItem[] = [
     { label: 'Sports', icon: <Trophy size={20} />, href: '/admin/sports' },
     { label: 'Sport Clubs', icon: <Users size={20} />, href: '/admin/sport-clubs' },
     { label: 'Stadiums', icon: <Building2 size={20} />, href: '/admin/stadiums' },
+    { label: 'Standing Zones', icon: <Table size={20} />, href: '/admin/standing-zones' },
     { label: 'Users', icon: <UserCog size={20} />, href: '/admin/users' },
     {
         label: 'API',
