@@ -545,6 +545,10 @@ export interface StandingZone {
   name: string;
   typeOfStanding?: 'All' | 'Group' | 'Combined';
   colorHex?: string;
+  // Optional season envelope fields and priority flag (DB uses snake_case for these)
+  start_year?: number | null;
+  end_year?: number | null;
+  flg_priority?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -558,6 +562,9 @@ export interface CreateStandingZoneDto {
   name: string;
   typeOfStanding?: 'All' | 'Group' | 'Combined';
   colorHex?: string;
+  start_year?: number | null;
+  end_year?: number | null;
+  flg_priority?: boolean;
 }
 
 export interface UpdateStandingZoneDto extends Partial<CreateStandingZoneDto> {}

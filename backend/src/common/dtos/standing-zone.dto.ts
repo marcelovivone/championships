@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min, Matches } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min, Matches, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -45,6 +45,24 @@ export class CreateStandingZoneDto {
   @IsString()
   @Matches(/^#([0-9A-Fa-f]{6})$/, { message: 'colorHex must be a valid hex color like #RRGGBB' })
   colorHex?: string = '#FFFFFF';
+
+  @ApiProperty({ example: 2024, required: false })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  start_year?: number | null;
+
+  @ApiProperty({ example: 2025, required: false })
+  @IsOptional()
+  @IsInt()
+  @Type(() => Number)
+  end_year?: number | null;
+
+  @ApiProperty({ example: false, required: false })
+  @IsOptional()
+  @IsBoolean()
+  @Type(() => Boolean)
+  flg_priority?: boolean;
 }
 
 export class UpdateStandingZoneDto extends CreateStandingZoneDto {}

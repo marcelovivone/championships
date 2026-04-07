@@ -88,8 +88,20 @@ export default function StandingZonesPage() {
     setFilterSeasonId('');
   }, [filterSportId]);
 
-  const handleOpenAdd = () => { setEditing(null); reset({ typeOfStanding: 'All', colorHex: '#FFFFFF' }); setIsModalOpen(true); };
-  const handleEdit = (row: StandingZone) => { setEditing(row); reset({ sportId: row.sportId, leagueId: row.leagueId, seasonId: row.seasonId || undefined, startPosition: row.startPosition, endPosition: row.endPosition, name: row.name, typeOfStanding: row.typeOfStanding || 'All', colorHex: row.colorHex || '#FFFFFF' }); setIsModalOpen(true); };
+  const handleOpenAdd = () => {
+    setEditing(null);
+    // Use empty string for seasonId in the form (represents 'No season')
+    reset({ typeOfStanding: 'All', colorHex: '#FFFFFF', start_year: null, end_year: null, flg_priority: false, seasonId: '' } as any);
+    setIsModalOpen(true);
+  };
+
+  const handleEdit = (row: StandingZone) => {
+    setEditing(row);
+    // If the zone has no season, set seasonId to empty string so the select shows "No season"
+    const seasonVal = row.seasonId === null || typeof row.seasonId === 'undefined' ? '' : String(row.seasonId);
+    reset({ sportId: row.sportId, leagueId: row.leagueId, seasonId: seasonVal, startPosition: row.startPosition, endPosition: row.endPosition, name: row.name, typeOfStanding: row.typeOfStanding || 'All', colorHex: row.colorHex || '#FFFFFF', start_year: (row as any).start_year ?? null, end_year: (row as any).end_year ?? null, flg_priority: (row as any).flg_priority ?? false } as any);
+    setIsModalOpen(true);
+  };
   const handleDelete = (row: StandingZone) => { if (confirm('Delete this standing zone?')) deleteMutation.mutate(row.id); };
 
   const handleCloseModal = () => { setIsModalOpen(false); setEditing(null); reset({}); };
@@ -106,18 +118,32 @@ export default function StandingZonesPage() {
   };
 
   const onSubmit = (formData: any) => {
+    // Determine seasonId payload:
+    // - For create: send undefined when "No season" selected
+    // - For update: send null when "No season" selected to clear the DB column
+    let seasonPayload: number | null | undefined = undefined;
+    if (editing) {
+      seasonPayload = formData.seasonId === '' ? null : (formData.seasonId ? Number(formData.seasonId) : undefined);
+    } else {
+      seasonPayload = formData.seasonId ? Number(formData.seasonId) : undefined;
+    }
+
     const payload: CreateStandingZoneDto = {
       sportId: Number(formData.sportId),
       leagueId: Number(formData.leagueId),
-      seasonId: formData.seasonId ? Number(formData.seasonId) : undefined,
+      seasonId: seasonPayload as any,
       startPosition: Number(formData.startPosition),
       endPosition: Number(formData.endPosition),
       name: String(formData.name),
       typeOfStanding: formData.typeOfStanding || 'All',
       colorHex: formData.colorHex || '#FFFFFF',
+      start_year: formData.start_year ? Number(formData.start_year) : null,
+      end_year: formData.end_year ? Number(formData.end_year) : null,
+      flg_priority: !!formData.flg_priority,
     };
+
     if (editing) {
-      updateMutation.mutate({ id: editing.id, data: payload });
+      updateMutation.mutate({ id: editing.id, data: payload as UpdateStandingZoneDto });
     } else {
       createMutation.mutate(payload);
     }
@@ -130,6 +156,9 @@ export default function StandingZonesPage() {
     { header: 'League', accessor: (r: any) => ((allLeagues.find((l: any) => l.id === r.leagueId)?.originalName) || (allLeagues.find((l: any) => l.id === r.leagueId)?.originalName) || r.leagueId), sortable: true, sortKey: 'leagueName', width: '120px' },
     { header: 'Season', accessor: (r: any) => (allSeasons.find((s: any) => s.id === r.seasonId) ? `${allSeasons.find((s: any) => s.id === r.seasonId)!.startYear}/${allSeasons.find((s: any) => s.id === r.seasonId)!.endYear}` : (r.seasonId ? String(r.seasonId) : '-')), sortable: true, sortKey: 'seasonStart', width: '120px' },
     { header: 'Range', accessor: (r: any) => `${r.startPosition} - ${r.endPosition}`, sortable: true, sortKey: 'startPosition' },
+    { header: 'Start Year', accessor: (r: any) => (r.start_year ?? r.startYear ?? '-'), sortable: true, sortKey: 'start_year', width: '110px' },
+    { header: 'End Year', accessor: (r: any) => (r.end_year ?? r.endYear ?? '-'), sortable: true, sortKey: 'end_year', width: '110px' },
+    { header: 'Priority', accessor: (r: any) => (r.flg_priority ? 'Yes' : 'No'), sortable: true, sortKey: 'flg_priority', width: '100px' },
     { header: 'Color', accessor: (r: any) => (<div className="flex items-center gap-2"><span style={{ width: 18, height: 18, background: r.colorHex || '#FFFFFF', display: 'inline-block', borderRadius: 4, border: '1px solid #e5e7eb' }}></span><span>{r.colorHex || ''}</span></div>), sortable: true, sortKey: 'colorHex', width: '140px' },
   ];
 
@@ -263,6 +292,24 @@ export default function StandingZonesPage() {
               <input type="number" {...register('endPosition', { required: 'End position required', min: { value: 1, message: 'Minimum is 1' }, validate: (v) => { const s = Number(startVal); if (!v) return 'Required'; if (s && Number(v) < s) return 'End must be >= Start'; return true; } })} className="w-full px-3 py-2 border rounded" />
               {errors.endPosition && <p className="text-red-600 text-sm">{errors.endPosition.message as any}</p>}
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Start Year (optional)</label>
+              <input type="number" {...register('start_year')} className="w-full px-3 py-2 border rounded" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">End Year (optional)</label>
+              <input type="number" {...register('end_year')} className="w-full px-3 py-2 border rounded" />
+            </div>
+          </div>
+
+          <div>
+            <label className="inline-flex items-center gap-2">
+              <input type="checkbox" {...register('flg_priority')} className="form-checkbox" />
+              <span className="text-sm">Priority (when overlapping, preferred)</span>
+            </label>
           </div>
 
           <div>

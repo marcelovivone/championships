@@ -127,6 +127,13 @@
       "when": 1775480392938,
       "tag": "0017_add_colorhex_to_standing_zones_table",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1775546036024,
+      "tag": "0018_add_dates_priority_to_standing_zones_table",
+      "breakpoints": true
     }
   ]
 }

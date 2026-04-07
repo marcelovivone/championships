@@ -20,13 +20,45 @@ export class StandingZonesService {
       const conds: any[] = [];
       if (sportId) conds.push(eq(standingZones.sportId, sportId));
       if (leagueId) conds.push(eq(standingZones.leagueId, leagueId));
-      if (seasonId) conds.push(eq(standingZones.seasonId, seasonId));
 
       let whereCond: any = undefined;
       if (conds.length) {
         let out = conds[0];
         for (let i = 1; i < conds.length; i++) out = and(out, conds[i]);
         whereCond = out;
+      }
+
+      // If a seasonId is provided, apply the year-envelope filter.
+      // Rules:
+      // - a zone explicitly tied to the selected season_id always applies
+      // - a zone with season_id NULL only applies if its [start_year, end_year]
+      //   fully englobe the selected season [startYear, endYear]
+      // - NULL start/end on the zone are open bounds and therefore valid
+      if (seasonId) {
+        try {
+          const srows = await this.db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
+          const srow = srows && srows[0] ? srows[0] : null;
+          const sStart = srow ? (srow.startYear ?? null) : null;
+          const sEnd = srow ? (srow.endYear ?? null) : null;
+
+          if (sStart !== null && sEnd !== null) {
+            const seasonFilter = sql`(
+              standing_zones.season_id = ${seasonId}
+              OR (
+                standing_zones.season_id IS NULL
+                AND (standing_zones.start_year IS NULL OR standing_zones.start_year <= ${Number(sStart)})
+                AND (standing_zones.end_year IS NULL OR standing_zones.end_year >= ${Number(sEnd)})
+              )
+            )`;
+            whereCond = whereCond ? and(whereCond, seasonFilter) : seasonFilter;
+          } else {
+            const seasonFilter = sql`(standing_zones.season_id = ${seasonId} OR standing_zones.season_id IS NULL)`;
+            whereCond = whereCond ? and(whereCond, seasonFilter) : seasonFilter;
+          }
+        } catch (e) {
+          const seasonFilter = sql`(standing_zones.season_id = ${seasonId} OR standing_zones.season_id IS NULL)`;
+          whereCond = whereCond ? and(whereCond, seasonFilter) : seasonFilter;
+        }
       }
 
       if (whereCond) baseQuery = baseQuery.where(whereCond);
@@ -37,8 +69,10 @@ export class StandingZonesService {
       const needJoinForSort = ['sportName', 'leagueName', 'seasonStart', 'seasonId'].includes(sortBy);
       if (needJoinForSort) {
         // Use SQL subselects in ORDER BY to avoid joins and ensure deterministic ordering.
-        // Primary: season start year (desc/asc), secondary: sport name asc, tertiary: league original name asc
+        // Include `priority` ordering so zones with priority=true are placed after others
+        // (frontend iterates and later entries override earlier ones when building color maps).
         let oq: any = baseQuery;
+        oq = oq.orderBy(asc(standingZones.flg_priority));
         if (sortBy === 'seasonStart' || sortBy === 'seasonId') {
           oq = oq.orderBy(sortOrder === 'desc'
             ? desc(sql`(select start_year from seasons where seasons.id = standing_zones.season_id)`)
@@ -67,14 +101,15 @@ export class StandingZonesService {
         // Chain orderBy calls instead of passing an array to avoid Drizzle producing
         // a parenthesized ORDER BY expression which breaks Postgres.
         let oq: any = baseQuery;
+        oq = oq.orderBy(asc(standingZones.flg_priority));
         oq = oq.orderBy(sortOrder === 'desc' ? desc(standingZones.startPosition) : asc(standingZones.startPosition));
         oq = oq.orderBy(asc(standingZones.endPosition));
         query = oq.limit(limit).offset(offset);
       } else if (sortBy === 'colorHex') {
-        query = baseQuery.limit(limit).offset(offset).orderBy(sortOrder === 'desc' ? desc(standingZones.colorHex) : asc(standingZones.colorHex));
+        query = baseQuery.orderBy(asc(standingZones.flg_priority)).orderBy(sortOrder === 'desc' ? desc(standingZones.colorHex) : asc(standingZones.colorHex)).limit(limit).offset(offset);
       } else {
         const col = (standingZones as any)[sortBy] || standingZones.startPosition;
-        query = baseQuery.limit(limit).offset(offset).orderBy(sortOrder === 'desc' ? desc(col) : asc(col));
+        query = baseQuery.orderBy(asc(standingZones.flg_priority)).orderBy(sortOrder === 'desc' ? desc(col) : asc(col)).limit(limit).offset(offset);
       }
 
       let data: any = await query;

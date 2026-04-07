@@ -1513,6 +1513,54 @@ Net effect:
 - NBA update payloads resolve the existing season correctly
 - date-based subsequent loads proceed directly into match updates instead of reopening first-load entity review
 
+
+### 10.8 Recent work (2026-04-05 → 2026-04-07)
+
+This subsection documents the fixes and refinements performed during the two-day prompt-driven session that started on 2026-04-05. Treat this as the canonical changelog for the small, targeted changes that affect standing-zones, the admin UI, and the public standings rendering.
+
+- **Frontend — `BaseStandings` (public standings)**:
+  - Unwrap the paginated `standing-zones` response and request a full page (`page=1&limit=1000`) so the UI receives all zones for a league/season.
+  - Pass the selected `seasonId` when fetching zones so season-aware filters can be applied.
+  - Apply deterministic override ordering when building the position→color maps: non-priority zones are applied first and `flg_priority` zones are applied last so a priority zone reliably overrides overlapping ranges.
+  - Enforce the start/end year envelope client-side as an additional safety net (only zones that fully englobe the selected season's `startYear`/`endYear` apply when `seasonId` is null on the zone). This mirrors the backend rule and prevents accidental color application for partially-overlapping year ranges.
+
+- **Frontend — Admin UI (`frontend/app/admin/standing-zones/page.tsx`)**:
+  - Added columns and form inputs for `start_year`, `end_year`, and `flg_priority` so admins can set envelope years and priority when creating/updating zones.
+  - Include the new fields in create/update payloads so the backend receives the values from the modal form.
+
+- **Frontend — API client (`frontend/lib/api/entities.ts`)**:
+  - Ensure `standingZonesApi.getFiltered` returns a consistent shape (paginated envelope or wrapped array) and supports `sportId`, `leagueId`, and `seasonId` query params.
+
+- **Backend — `StandingZonesService` (`backend/src/standing-zones/standing-zones.service.ts`)**:
+  - Implemented the season-year envelope filter when `seasonId` is provided. A standing zone applies when at least one of the following is true:
+    - `standing_zones.season_id = <seasonId>` (explicit binding)
+    - `standing_zones.season_id IS NULL` AND `(standing_zones.start_year IS NULL OR standing_zones.start_year <= season.start_year)` AND `(standing_zones.end_year IS NULL OR standing_zones.end_year >= season.end_year)` — i.e., the zone's [start_year, end_year] fully englobe the season.
+  - Adjusted SQL construction so a `season_id = NULL` zone is not treated as universally valid; it must satisfy the envelope condition (this resolves cases such as `zone: 2025/null` incorrectly matching `season: 2024/2025`).
+  - Added ordering by `flg_priority` (non-priority first, priority last) to keep returned rows deterministic for frontend application logic.
+
+- **Backend — DTOs & Controller**:
+  - Reviewed `CreateStandingZoneDto` / `UpdateStandingZoneDto` to ensure `start_year`, `end_year`, and `flg_priority` are accepted by the controller and validated by class-validator. Confirmed `standing-zone.dto.ts` includes these fields.
+
+- **Bug investigation & fix summary**:
+  - Symptom: Admin changes to `start_year`/`end_year`/`flg_priority` were not reliably reflected in public standings; priority colors applied incorrectly in some seasons.
+  - Root causes found and addressed:
+    1. Frontend was fetching a paginated subset and sometimes received an ordering that caused non-priority zones to override priority ones. Fixed by fetching full set and applying deterministic ordering client-side.
+    2. Backend filter logic allowed `season_id IS NULL` zones to be treated as universally applicable even when their year envelope did not englobe the selected season. Fixed by tightening the year-envelope SQL condition.
+    3. DTO/controller acceptance needed review — `standing-zone` DTOs were checked and confirmed to accept the new fields; update path uses `set(dto as any)` so provided fields are persisted.
+
+- **Verification**:
+  - Performed HTTP GET checks against `/v1/standing-zones?sportId=...&leagueId=...&seasonId=...` to inspect payload shape and confirm `start_year`, `end_year`, and `flg_priority` are returned in the envelope.
+  - Manually tested the public standings UI for the English Premier League `2024/2025` season and verified that a zone with `start_year = 2025` and `end_year = null` no longer applies (correctly excluded), while `null/null`, `2021/null`, `null/2026`, and exact `2024/2025` zones still apply.
+
+- **Notes & caveats**:
+  - The backend TypeScript check and dev server restart are recommended after these changes to ensure the running API reflects the updated filter logic (some local tsc runs were attempted during the work; run `cd backend && npx tsc --noEmit -p tsconfig.json` and restart the NestJS process to be safe).
+  - The frontend uses React Query caching; after backend changes, perform a hard refresh or invalidate the `['standing-zones', sportId, league, season]` cache to avoid stale responses.
+
+- **Next steps (suggested)**:
+  - Run backend typecheck and restart the backend dev server to load the updated SQL logic.
+  - Re-test the admin update -> GET -> UI flow for several combinations of `start_year`/`end_year` (open-ended bounds null) to ensure all edge cases behave as expected.
+  - Add a small automated test (integration or e2e) that asserts the year-envelope behavior for `standing_zones` to prevent regressions.
+
 ---
 
 ## 11. Pending / Future Work

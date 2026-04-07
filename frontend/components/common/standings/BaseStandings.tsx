@@ -171,11 +171,11 @@ export default function BaseStandings({
 
   // Fetch standing zones for the selected sport+league (includes season-null entries)
   const { data: standingZonesData } = useQuery({
-    queryKey: ['standing-zones', sportId, league],
+    queryKey: ['standing-zones', sportId, league, season],
     queryFn: () => {
       if (!league) return Promise.resolve([]);
       // Request a large limit so we get all zones for this league (frontend needs the full set)
-      return standingZonesApi.getFiltered({ sportId: sportId ?? undefined, leagueId: Number(league), page: 1, limit: 1000 })
+      return standingZonesApi.getFiltered({ sportId: sportId ?? undefined, leagueId: Number(league), seasonId: season ? Number(season) : undefined, page: 1, limit: 1000 })
         .then((res: any) => (res && res.data && Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])));
     },
     enabled: Boolean(league),
@@ -187,12 +187,45 @@ export default function BaseStandings({
     const combined: Record<number, string> = {};
     const groupMap: Record<number, string> = {};
     const zones = Array.isArray(standingZonesData) ? standingZonesData : [];
+    const selectedSeasonStart = Number(selectedSeasonData?.startYear ?? selectedSeasonData?.start_year ?? NaN);
+    const selectedSeasonEnd = Number(selectedSeasonData?.endYear ?? selectedSeasonData?.end_year ?? NaN);
+
     const filtered = zones.filter((z: any) => {
-      // include if season is null (applies to all seasons) or matches selected season
-      return z.seasonId === null || typeof z.seasonId === 'undefined' || String(z.seasonId) === String(season);
+      const zoneSeasonId = z.seasonId ?? z.season_id;
+
+      if (!season) {
+        return true;
+      }
+
+      // Explicit season binding always applies.
+      if (zoneSeasonId !== null && typeof zoneSeasonId !== 'undefined') {
+        return String(zoneSeasonId) === String(season);
+      }
+
+      // Season-null zones must still fully englobe the selected season years.
+      const zoneStartRaw = z.start_year ?? z.startYear;
+      const zoneEndRaw = z.end_year ?? z.endYear;
+      const zoneStart = zoneStartRaw === null || typeof zoneStartRaw === 'undefined' ? null : Number(zoneStartRaw);
+      const zoneEnd = zoneEndRaw === null || typeof zoneEndRaw === 'undefined' ? null : Number(zoneEndRaw);
+
+      if (Number.isNaN(selectedSeasonStart) || Number.isNaN(selectedSeasonEnd)) {
+        return zoneStart === null && zoneEnd === null;
+      }
+
+      const startOk = zoneStart === null || zoneStart <= selectedSeasonStart;
+      const endOk = zoneEnd === null || zoneEnd >= selectedSeasonEnd;
+      return startOk && endOk;
     });
 
-    filtered.forEach((z: any) => {
+    // Ensure deterministic override ordering: non-priority zones first, priority zones last.
+    // This makes later entries (priority=true) override earlier ones when building the color map.
+    const ordered = filtered.slice().sort((a: any, b: any) => {
+      const aPri = Number(Boolean(a.flg_priority ?? a.flgPriority ?? false));
+      const bPri = Number(Boolean(b.flg_priority ?? b.flgPriority ?? false));
+      return aPri - bPri; // 0 before 1 => non-priority first, priority last
+    });
+
+    ordered.forEach((z: any) => {
       const start = Number(z.startPosition ?? z.start_position ?? z.startPosition);
       const end = Number(z.endPosition ?? z.end_position ?? z.endPosition);
       const color = z.colorHex ?? z.color_hex ?? z.colorHex ?? '#FFFFFF';
