@@ -677,8 +677,8 @@ export default function BaseStandings({
         <div className="lg:basis-2/3 lg:flex-1">
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center gap-4 w-full">
-              <h2 className="text-lg font-semibold mt-1">STANDING</h2>
-              <div className="flex-1 ml-3 mt-1">
+              <h2 className="text-lg font-semibold">STANDING</h2>
+              <div className="flex-1 ml-3">
                 <FilterBar
                   season={season}
                   setSeason={setSeason}

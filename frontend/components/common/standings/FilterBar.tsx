@@ -49,8 +49,6 @@ export default function FilterBar({
     const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
     const [seasonGroups, setSeasonGroups] = React.useState<any[]>([]);
     const [seasonHasGroups, setSeasonHasGroups] = React.useState<boolean>(false);
-    const roundsCacheRef = React.useRef<Record<string, any[]>>({});
-    const roundsFetchedAtRef = React.useRef<Record<string, number>>({});
     const selectedLeague = Array.isArray(leagues) ? leagues.find((l: any) => String(l.id) === String(league)) : null;
     const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule || selectedLeague.scheduleType || selectedLeague.type || selectedLeague.type_of_schedule_code);
     const scheduleStr = rawSchedule !== undefined && rawSchedule !== null ? String(rawSchedule).toLowerCase() : '';
@@ -247,7 +245,7 @@ export default function FilterBar({
         );
 
         return (
-            <div className={inline ? 'flex items-center gap-3 w-full pr-6' : 'flex flex-col sm:flex-row sm:items-center sm:justify-start sm:gap-4'}>
+            <div className={inline ? 'flex items-center gap-3 w-full pr-6 mt-1' : 'flex flex-col sm:flex-row sm:items-center sm:justify-start sm:gap-4'}>
                 {inline ? (
                     <>
                         {seasonHasGroups && (
@@ -313,75 +311,9 @@ export default function FilterBar({
     };
 
     // When league (or season) changes, initialize roundOrDay depending on schedule type.
-    // Guard: only run when both league AND season are set; if season is empty the
-    // parent (BaseStandings) is still loading seasons and will set the round itself.
-    React.useEffect(() => {
-        let mounted = true;
-        const isIsoDate = (v: any) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
-
-        const init = async () => {
-            if (!league || !season) return;  // wait until both are ready
-
-            if (scheduleIsDate) {
-                // If current value is not an ISO date, or it's a numeric round, set to today
-                const today = new Date();
-                const iso = today.toISOString().slice(0, 10);
-                if (!isIsoDate(roundOrDay)) {
-                    if (mounted) setRoundOrDay(iso);
-                }
-                return;
-            }
-
-            // For round-based leagues, fetch rounds for the league and pick the one marked as current
-            try {
-                const cacheKey = `${String(league)}_${String(season)}`;
-                const cached = roundsCacheRef.current[cacheKey];
-                if (cached && Array.isArray(cached) && cached.length > 0) {
-                    const current = cached.find((r: any) => r.flgCurrent || r.flg_current || r.isCurrent || r.flg_current === true || r.flgCurrent === true);
-                    if (current && mounted) {
-                        const roundVal = String(current.roundNumber ?? current.round ?? current.id ?? 1);
-                        setRoundOrDay(roundVal);
-                    } else if (cached && cached.length > 0 && mounted) {
-                        const first = cached[0];
-                        const roundVal = String(first.roundNumber ?? first.round ?? first.id ?? 1);
-                        setRoundOrDay(roundVal);
-                    }
-                    return;
-                }
-
-                // prevent refetching too often during rapid re-renders: short TTL of 5s
-                const last = roundsFetchedAtRef.current[cacheKey];
-                if (last && (Date.now() - last) < 5000) {
-                    return;
-                }
-
-                const resp = await apiClient.get(`/v1/rounds?leagueId=${Number(league)}&seasonId=${Number(season)}`);
-                const rounds = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
-                roundsCacheRef.current[cacheKey] = rounds;
-                roundsFetchedAtRef.current[cacheKey] = Date.now();
-                const current = rounds.find((r: any) => r.flgCurrent || r.flg_current || r.isCurrent || r.flg_current === true || r.flgCurrent === true);
-                if (current && mounted) {
-                    // display the user-facing round number (roundNumber)
-                    const roundVal = String(current.roundNumber ?? current.round ?? current.id ?? 1);
-                    setRoundOrDay(roundVal);
-                } else if (rounds && rounds.length > 0 && mounted) {
-                    const first = rounds[0];
-                    const roundVal = String(first.roundNumber ?? first.round ?? first.id ?? 1);
-                    setRoundOrDay(roundVal);
-                } else if (mounted) {
-                    setRoundOrDay(1);
-                }
-            } catch (e) {
-                if (mounted && !isIsoDate(roundOrDay)) setRoundOrDay(1);
-            }
-        };
-
-        init();
-
-        return () => {
-            mounted = false;
-        };
-    }, [league, season, scheduleIsDate]);
+    // Round/day auto-selection is handled exclusively by BaseStandings (the parent)
+    // which has season-status awareness (active → flgCurrent round, finished → last round).
+    // FilterBar is a display/input component and should not compete with that logic.
 
     // When season changes, determine if it has groups and fetch them
     React.useEffect(() => {
