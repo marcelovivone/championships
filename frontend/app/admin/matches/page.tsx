@@ -78,8 +78,9 @@ const MatchesPage = () => {
     });
 
     const { data: roundsData } = useQuery({
-        queryKey: ['rounds'],
-        queryFn: () => roundsApi.getAll({ page: 1, limit: 1000 }),
+        queryKey: ['rounds', selectedLeagueId, selectedSeasonId],
+        queryFn: () => roundsApi.getAll({ page: 1, limit: 1000, leagueId: selectedLeagueId ?? undefined, seasonId: selectedSeasonId ?? undefined }),
+        enabled: !!selectedLeagueId && !!selectedSeasonId,
     });
 
     // Filter data based on selections
@@ -115,9 +116,9 @@ const MatchesPage = () => {
         ? groups.filter(group => group.seasonId === Number(selectedSeasonId))
         : [];
 
-    // Filter rounds based on selected season
+    // Rounds are already filtered by league+season from the API query
     const filteredRounds = selectedSeasonId && leagueTypeOfSchedule === 'Round'
-        ? rounds.filter(round => round.seasonId === selectedSeasonId)
+        ? rounds
         : [];
 
     // Filter clubs based on selected season - get clubs that are assigned to the selected season
@@ -722,9 +723,10 @@ const MatchesPage = () => {
             // 3 - Create or update standings based on the match results
             // console.log("Matches to be saved:", matchesList);
             for (const match of matchesList) {
-                if (match.homeClubId && match.awayClubId && match.homeScore !== undefined && match.homeScore !== null && 
+                if ((match.status === 'Finished' && match.homeClubId && match.awayClubId && match.homeScore !== undefined && match.homeScore !== null && 
                     match.awayScore !== undefined && match.awayScore !== null && match.stadiumId && match.date && 
-                    match.date != ':00.000Z') { // Only save if all fields are informed
+                    match.date != ':00.000Z') || (match.status != 'Finished' && match.homeClubId && match.awayClubId && match.stadiumId && match.date && 
+                    match.date != ':00.000Z')) { // Only save if all fields are informed
                     // Ensure date is always a full ISO string with time
                     let dateToSend = match.date;
                     if (/^\d{4}-\d{2}-\d{2}$/.test(match.date)) {
@@ -788,14 +790,26 @@ const MatchesPage = () => {
                         // await replaceMatchDivisions(savedMatchId, match.matchDivisions);
                         // console.log("Match divisions saved for match ID:", savedMatchId);
                         
+                        // Detect status downgrade: a previously-Finished match changed to another status.
+                        // Delete its standings (backend cascades recalculation to future rounds).
+                        const originalMatch = originalMatches.find((om: any) => om.id === match.id);
+                        const wasFinished = originalMatch && originalMatch.status === 'Finished';
+                        const isNowFinished = match.status === 'Finished';
+
+                        if (wasFinished && !isNowFinished && savedMatchId) {
+                            try {
+                                await deleteStandings(savedMatchId);
+                            } catch (e) {
+                                console.error('Failed deleting standings for un-finished match', savedMatchId, e);
+                            }
+                        }
+
                         // 3 - Update standings based on the match results only if the match is finished. This way, we can allow users to save matches in scheduled or in-progress status without affecting the standings until the match is actually finished. This also allows users to enter match results in any order without worrying about the impact on standings until they mark the match as finished.
-                        if (match.status === 'Finished') {
+                        if (isNowFinished) {
                             // Detect score correction: an already-Finished match whose scores were changed
                             // (e.g. a court/legal decision changing a 1-1 draw to a 2-0 win).
-                            const originalMatch = originalMatches.find((om: any) => om.id === match.id);
                             const isScoreCorrection = savedMatchId
-                                && originalMatch
-                                && originalMatch.status === 'Finished'
+                                && wasFinished
                                 && (Number(originalMatch.homeScore) !== Number(match.homeScore)
                                     || Number(originalMatch.awayScore) !== Number(match.awayScore));
 

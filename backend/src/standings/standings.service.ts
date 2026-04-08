@@ -939,16 +939,53 @@ export class StandingsService {
     }
 
     /**
-     * Delete all standings for a given matchId
+     * Delete all standings for a given matchId, then cascade-recalculate
+     * all future-round standings for both clubs involved.
      */
     async removeByMatchId(matchId: number) {
+        // Fetch the match to get club IDs, round, league, season, sport
+        const [matchRow] = await this.db
+            .select()
+            .from(matches)
+            .where(eq(matches.id, matchId))
+            .limit(1);
+
         const result = await this.db
             .delete(standings)
             .where(eq(standings.matchId, matchId))
             .returning();
         if (!result.length) {
-            throw new NotFoundException('No standings found for matchId');
+            // No standings to delete — nothing to cascade
+            return result;
         }
+
+        // Cascade recalculation for future rounds of both clubs
+        if (matchRow && matchRow.roundId) {
+            const sport = await this.db
+                .select()
+                .from(schema.sports)
+                .where(eq(schema.sports.id, matchRow.sportId))
+                .limit(1);
+            const sportName = sport.length > 0 ? sport[0].name : 'Football';
+
+            await this.cascadeClubStandings(
+                matchRow.homeClubId,
+                matchRow.leagueId,
+                matchRow.seasonId,
+                matchRow.sportId,
+                matchRow.roundId,
+                sportName,
+            );
+            await this.cascadeClubStandings(
+                matchRow.awayClubId,
+                matchRow.leagueId,
+                matchRow.seasonId,
+                matchRow.sportId,
+                matchRow.roundId,
+                sportName,
+            );
+        }
+
         return result;
     }
 }

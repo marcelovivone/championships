@@ -165,7 +165,7 @@ export default function EtlPage() {
     const [loadingRows, setLoadingRows] = useState(false);
     const [loadingRow, setLoadingRow] = useState(false);
     const [targetTable, setTargetTable] = useState('');
-    const [dryRun, setDryRun] = useState(true);
+    const [dryRun, setDryRun] = useState(false);
     const [mappingInputs, setMappingInputs] = useState<Record<string, string>>({});
     const [loadResult, setLoadResult] = useState<any | null>(null);
     const [runningLoad, setRunningLoad] = useState(false);
