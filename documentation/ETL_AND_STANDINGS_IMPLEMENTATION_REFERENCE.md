@@ -1596,6 +1596,59 @@ This subsection documents the fixes and refinements performed during the two-day
   - Apply deterministic override ordering when building the position→color maps: non-priority zones are applied first and `flg_priority` zones are applied last so a priority zone reliably overrides overlapping ranges.
   - Enforce the start/end year envelope client-side as an additional safety net (only zones that fully englobe the selected season's `startYear`/`endYear` apply when `seasonId` is null on the zone). This mirrors the backend rule and prevents accidental color application for partially-overlapping year ranges.
 
+  ### 10.9 April 2026 basketball standings table spec implementation
+
+  The basketball public standings page now uses the existing shared standings table implementation, but with a basketball-specific rendering branch so football behavior remains unchanged.
+
+  Files changed:
+
+  - `frontend/app/common/standings/basketball/page.tsx`
+  - `frontend/components/common/standings/BaseStandings.tsx`
+  - `frontend/components/common/standings/StandingsTable.tsx`
+
+  Key behavior implemented from `documentation/Standings-Description-by-Sport.xlsx`:
+
+  - The basketball page passes `sportKey="basketball"` into `BaseStandings`, which forwards it to `StandingsTable`
+  - `StandingsTable` keeps the existing football layout for all other sports and uses a dedicated basketball column layout only when `sportKey === "basketball"`
+  - The basketball table now renders columns in this strict order:
+    - `Team`
+    - `Pl`
+    - `W`
+    - `L`
+    - `%`
+    - `GB`
+    - `HOME`
+    - `AWAY`
+    - `OT`
+    - `LAST 5`
+    - `LAST 10`
+    - `STRK`
+  - This applies to both combined standings tables and separated group/conference tables because both render paths already funnel through the shared `StandingsTable`
+
+  Basketball-specific field behavior:
+
+  - `%` is shown with 3 decimal places in NBA-style format (for example `.681`), using the existing percentage value when present; if the raw value is stored as `68.1` / `68`, it is normalized by dividing by `100`
+  - `GB` is calculated on the frontend as `first_place_wins - current_team_wins`
+  - `HOME` is rendered as `home_wins-home_losses`
+  - `AWAY` is rendered as `away_wins-away_losses`
+  - `OT` is rendered as `overtime_wins-overtime_losses`
+  - `LAST 10` is rendered in basketball form as `W-L` when there are no draws; if a dataset ever contains draws, it falls back to `W-D-L`
+  - `STRK` is computed from the most recent consecutive results when no explicit streak value exists, scanning backward from the current day / selected day cutoff without breaking the already-correct selected-day behavior
+
+  General-information rules preserved carefully:
+
+  - The selected day behavior was not changed; standings still use values up to the chosen day only
+  - Basketball ordering is now frontend-specific and follows `%` then `GB`, as requested by the workbook, without changing football sorting
+  - Football pages and football standings columns were left untouched
+  - The implementation is adaptable: only the basketball render branch was specialized, so future league-specific basketball table variations can be introduced without rewriting the football/shared flow entirely
+
+  Important interpretation note:
+
+  - The workbook is internally ambiguous between `LAST 10` and `STRK` descriptions
+  - Implementation follows the NBA semantics described in the same workbook and ESPN sample payloads:
+    - `LAST 10` remains the last-ten record
+    - `STRK` displays the current consecutive-result streak such as `3W` or `2L`
+
 - **Frontend — Admin UI (`frontend/app/admin/standing-zones/page.tsx`)**:
   - Added columns and form inputs for `start_year`, `end_year`, and `flg_priority` so admins can set envelope years and priority when creating/updating zones.
   - Include the new fields in create/update payloads so the backend receives the values from the modal form.

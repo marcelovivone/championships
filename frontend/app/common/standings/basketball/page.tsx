@@ -36,6 +36,7 @@ export default function BasketballStandingsPage() {
       leagues={leagues}
       initialLeagueId={defaultLeague?.id}
       sportId={sportId}
+      sportKey="basketball"
     />
   );
 }

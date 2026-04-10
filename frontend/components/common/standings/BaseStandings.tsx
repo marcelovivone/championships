@@ -18,6 +18,7 @@ type Props = {
   leagues?: any[];
   initialLeagueId?: number | string;
   sportId?: number | null;
+  sportKey?: string;
 };
 
 export default function BaseStandings({
@@ -28,6 +29,7 @@ export default function BaseStandings({
   leagues = [],
   initialLeagueId,
   sportId = null,
+  sportKey,
 }: Props) {
   const [season, setSeason] = React.useState<string>('');
   const [league, setLeague] = React.useState<string>(
@@ -463,7 +465,10 @@ export default function BaseStandings({
   // spurious re-run — and potentially a round-reset to 1 — on every background
   // React Query refetch of seasons).
   const seasonsRef = React.useRef(seasons);
-  seasonsRef.current = seasons;
+
+  React.useEffect(() => {
+    seasonsRef.current = seasons;
+  }, [seasons]);
 
   // Single effect: whenever league or season changes, determine the correct round.
   // Rules:
@@ -767,6 +772,7 @@ export default function BaseStandings({
                     viewType={viewType}
                     teamHeaderLabel={teamHeaderLabel}
                     positionColorMap={_activeGroupId ? groupPositionColorMap : combinedPositionColorMap}
+                    sportKey={sportKey}
                   />
                 );
               };
@@ -784,6 +790,7 @@ export default function BaseStandings({
                     currentMatches={currentMatches}
                     viewType={viewType}
                     positionColorMap={isSingleGroupView ? groupPositionColorMap : combinedPositionColorMap}
+                    sportKey={sportKey}
                   />
                 );
               } else {
