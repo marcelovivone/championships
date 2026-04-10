@@ -34,4 +34,5 @@ __exportStar(require("./user.dto"), exports);
 __exportStar(require("./auth.dto"), exports);
 __exportStar(require("./pagination.dto"), exports);
 __exportStar(require("./filtering.dto"), exports);
+__exportStar(require("./standing-zone.dto"), exports);
 //# sourceMappingURL=index.js.map

@@ -64,18 +64,18 @@ export declare class SportsService {
         id: number;
         name: string;
         divisionType: string;
-        type: string;
-        flgDefault: boolean;
-        divisionTime: number;
-        imageUrl: string;
-        createdAt: Date;
         reducedName: string;
+        type: string;
         minMatchDivisionNumber: number;
         maxMatchDivisionNumber: number;
+        divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
+        imageUrl: string;
+        createdAt: Date;
     }>;
     update(id: number, updateSportDto: UpdateSportDto): Promise<{
         id: number;
@@ -98,17 +98,17 @@ export declare class SportsService {
         id: number;
         name: string;
         divisionType: string;
-        type: string;
-        flgDefault: boolean;
-        divisionTime: number;
-        imageUrl: string;
-        createdAt: Date;
         reducedName: string;
+        type: string;
         minMatchDivisionNumber: number;
         maxMatchDivisionNumber: number;
+        divisionTime: number;
         scoreType: string;
         hasOvertime: boolean;
         hasPenalties: boolean;
+        flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
+        imageUrl: string;
+        createdAt: Date;
     }>;
 }

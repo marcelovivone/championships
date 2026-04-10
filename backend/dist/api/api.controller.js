@@ -43,7 +43,7 @@ let ApiController = class ApiController {
         const { payload, ...rest } = row;
         return { found: true, item: rest };
     }
-    async parseTransitional(id, roundOverridesJson) {
+    async parseTransitional(id, roundOverridesJson, seasonPhase) {
         let roundOverrides;
         if (roundOverridesJson) {
             try {
@@ -51,7 +51,7 @@ let ApiController = class ApiController {
             }
             catch { }
         }
-        const parsed = await this.apiService.parseTransitional(id, roundOverrides);
+        const parsed = await this.apiService.parseTransitional(id, roundOverrides, seasonPhase);
         if (!parsed || !parsed.found) {
             const reason = parsed?.reason ?? 'parse_failed';
             const error = parsed?.error ?? parsed?.details?.message ?? null;
@@ -90,16 +90,16 @@ let ApiController = class ApiController {
         const result = await this.apiService.deleteEntityReview(id);
         return { success: !!result?.deleted };
     }
-    async getEntitySuggestions(id, sportId) {
-        const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined);
+    async getEntitySuggestions(id, sportId, seasonPhase) {
+        const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined, seasonPhase);
         return result;
     }
     async applyFirstRow(id, body) {
-        const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
+        const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId, seasonPhase: body?.seasonPhase });
         return result;
     }
     async applyAllRows(id, body) {
-        const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides };
+        const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides, seasonPhase: body?.seasonPhase };
         if (opts.dryRun) {
             return await this.apiService.applyAllRowsToApp(id, opts);
         }
@@ -184,8 +184,9 @@ __decorate([
     (0, common_1.Get)('transitional/:id/parse'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Query)('roundOverrides')),
+    __param(2, (0, common_1.Query)('seasonPhase')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, String]),
+    __metadata("design:paramtypes", [Number, String, String]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "parseTransitional", null);
 __decorate([
@@ -243,8 +244,9 @@ __decorate([
     (0, common_1.Get)('transitional/:id/entity-suggestions'),
     __param(0, (0, common_1.Param)('id', common_1.ParseIntPipe)),
     __param(1, (0, common_1.Query)('sportId')),
+    __param(2, (0, common_1.Query)('seasonPhase')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Number, String]),
+    __metadata("design:paramtypes", [Number, String, String]),
     __metadata("design:returntype", Promise)
 ], ApiController.prototype, "getEntitySuggestions", null);
 __decorate([

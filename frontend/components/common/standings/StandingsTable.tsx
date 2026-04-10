@@ -159,7 +159,6 @@ function Last5Chip({ c, tooltip }: { c: string; tooltip?: React.ReactNode | null
     if (tooltip) return <Tooltip label={tooltip}>{empty}</Tooltip>;
     return empty;
   }
-
   const bg = c === 'W' ? 'bg-green-600' : c === 'D' ? 'bg-gray-400' : 'bg-red-600';
   const chip = (
     <div className={clsx('w-6 h-6 rounded flex items-center justify-center text-xs text-white', bg)}>
@@ -170,6 +169,17 @@ function Last5Chip({ c, tooltip }: { c: string; tooltip?: React.ReactNode | null
     return <Tooltip label={tooltip}>{chip}</Tooltip>;
   }
   return chip;
+}
+
+function Last5Header() {
+  return (
+    <Tooltip label="Oldest to newest, left to right">
+      <span className="inline-flex items-center justify-center gap-1 whitespace-nowrap">
+        <span>LAST 5</span>
+        <span aria-hidden="true">→</span>
+      </span>
+    </Tooltip>
+  );
 }
 
 export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel, positionColorMap, sportKey }: StandingsTableProps) {
@@ -194,6 +204,18 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
     }
     if (normalized === null) return '.000';
     return normalized.toFixed(3).replace(/^0(?=\.)/, '');
+  };
+
+  const formatStandardPct = (rawPct: unknown, wins: number, played: number) => {
+    let percentage: number | null = null;
+    const numericRaw = Number(rawPct);
+    if (Number.isFinite(numericRaw)) {
+      percentage = numericRaw <= 1 ? numericRaw * 100 : numericRaw;
+    } else if (played > 0) {
+      percentage = (wins / played) * 100;
+    }
+    if (percentage === null) return '0';
+    return String(Math.round(percentage));
   };
 
   const formatBasketballRecord = (wins: number, losses: number) => `${wins}-${losses}`;
@@ -279,7 +301,10 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
         : Number(getAny(r, ['ga', 'goalsAgainst']) ?? 0);
 
     const gd = toNumber(r.gd ?? r.goalDifference ?? (gf - ga), gf - ga);
-    const pct = formatBasketballPct(getAny(r, ['pct', 'percentage', 'winPercent', 'winningPercentage', 'win_percentage', 'winPct']), w, pl);
+    const rawPct = getAny(r, ['pct', 'percentage', 'winPercent', 'winningPercentage', 'win_percentage', 'winPct']);
+    const pct = isBasketball
+      ? formatBasketballPct(rawPct, w, pl)
+      : formatStandardPct(rawPct, w, pl);
     const last5History = Array.isArray((r.last5 as LooseObject | undefined)?.history)
       ? ((r.last5 as LooseObject).history as unknown[])
       : [];
@@ -495,7 +520,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
               <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Home record">HOME</Tooltip></th>
               <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Away record">AWAY</Tooltip></th>
               <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Overtime record">OT</Tooltip></th>
-              <th className="w-40 px-3 py-3 text-center font-normal"><Tooltip label="Last 5 results">LAST 5</Tooltip></th>
+              <th className="w-40 px-3 py-3 text-center font-normal"><Last5Header /></th>
               <th className="w-24 px-3 py-3 text-center font-normal"><Tooltip label="Record in the last 10 games">LAST 10</Tooltip></th>
               <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Streak">STRK</Tooltip></th>
             </tr>
@@ -512,7 +537,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
               <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(8) && 'bg-gray-50')}><Tooltip label="Goals Against">GA</Tooltip></th>
               <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(9) && 'bg-gray-50')}><Tooltip label="Goal Difference">GD</Tooltip></th>
               <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(10) && 'bg-gray-50')}><Tooltip label="Percentage">%</Tooltip></th>
-              <th className={clsx('w-40 px-3 py-3 text-center font-normal', shouldShadeCol(11) && 'bg-gray-50')}><Tooltip label="Last 5 results">LAST 5</Tooltip></th>
+              <th className={clsx('w-40 px-3 py-3 text-center font-normal', shouldShadeCol(11) && 'bg-gray-50')}><Last5Header /></th>
               <th className={clsx('w-28 px-3 py-3 text-center font-normal', shouldShadeCol(12) && 'bg-gray-50')}><Tooltip label="Last 10 results">LAST 10</Tooltip></th>
             </tr>
           )}

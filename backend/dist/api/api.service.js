@@ -692,7 +692,17 @@ let ApiService = ApiService_1 = class ApiService {
         let skipped = 0;
         let errors = 0;
         try {
-            const parsed = await this.parseTransitional(id);
+            const transitionalRow = await this.getTransitional(id);
+            if (!transitionalRow)
+                return { repaired: 0, skipped: 0, errors: 1 };
+            const rowOrigin = transitionalRow.origin ?? 'Api-Football';
+            let parsed;
+            if (rowOrigin === 'Api-Espn') {
+                parsed = this.parseTransitionalEspnLightweight(transitionalRow);
+            }
+            else {
+                parsed = await this.parseTransitional(id);
+            }
             if (!parsed || !parsed.found) {
                 return { repaired: 0, skipped: 0, errors: 1 };
             }
@@ -764,7 +774,7 @@ let ApiService = ApiService_1 = class ApiService {
             country: review?.country_mapping || null,
         };
     }
-    async detectEntitiesForReview(id, sportId) {
+    async detectEntitiesForReview(id, sportId, seasonPhase) {
         if (!process.env.DATABASE_URL)
             throw new Error('Missing DATABASE_URL environment variable');
         const pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
@@ -826,7 +836,7 @@ let ApiService = ApiService_1 = class ApiService {
             catch (e) {
             }
             const seasonYear = transitional.season;
-            const parseResult = await this.parseTransitional(id);
+            const parseResult = await this.parseTransitional(id, undefined, seasonPhase);
             if (!parseResult?.found) {
                 return { found: false, reason: 'parse_failed' };
             }
@@ -836,6 +846,23 @@ let ApiService = ApiService_1 = class ApiService {
             const rows = parseResult.rows;
             const parsedCountry = rows[0]?.['league.country'] ?? null;
             const hasCountryMapping = existingMappings.country !== null;
+            const resolveEffectivePayloadCountry = async () => {
+                if (parsedCountry) {
+                    const cRes = await pool.query(`SELECT id FROM countries WHERE unaccent(lower(name)) = unaccent(lower($1)) OR unaccent(lower(code)) = unaccent(lower($1)) LIMIT 1`, [String(parsedCountry).trim()]);
+                    if (cRes.rows.length) {
+                        return { name: String(parsedCountry), id: cRes.rows[0].id };
+                    }
+                    return { name: String(parsedCountry), id: null };
+                }
+                if (leagueCountryId !== null) {
+                    const cRes = await pool.query(`SELECT name FROM countries WHERE id = $1 LIMIT 1`, [leagueCountryId]);
+                    return {
+                        name: cRes.rows[0]?.name ?? null,
+                        id: leagueCountryId,
+                    };
+                }
+                return { name: null, id: null };
+            };
             const ignoredClubNames = new Set(Object.entries(existingMappings.clubs)
                 .filter(([, v]) => Number(v) === -1)
                 .map(([name]) => name));
@@ -867,6 +894,7 @@ let ApiService = ApiService_1 = class ApiService {
                     clubs: [],
                     stadiums: [],
                     needsReview: true,
+                    payloadCountry: await resolveEffectivePayloadCountry(),
                 };
             }
             if (leagueCountryId === null && parsedCountry) {
@@ -962,6 +990,7 @@ let ApiService = ApiService_1 = class ApiService {
                     clubs: earlyClubbsToReview,
                     stadiums: [],
                     needsReview: true,
+                    payloadCountry: await resolveEffectivePayloadCountry(),
                 };
             }
             const clubsToReview = [];
@@ -989,45 +1018,56 @@ let ApiService = ApiService_1 = class ApiService {
                             continue;
                         let clubFound = false;
                         if (leagueCountryId) {
-                            const clubRes = await pool.query(`SELECT id FROM clubs 
-                                 WHERE (unaccent(lower(short_name)) = unaccent(lower($1)) OR unaccent(lower(name)) = unaccent(lower($1))) AND country_id = $2 
-                                 LIMIT 1`, [clubName, leagueCountryId]);
+                            const clubRes = await pool.query(`SELECT c.id FROM clubs c
+                                 JOIN sport_clubs sc ON sc.club_id = c.id
+                                 WHERE (unaccent(lower(c.short_name)) = unaccent(lower($1)) OR unaccent(lower(c.name)) = unaccent(lower($1)))
+                                   AND c.country_id = $2
+                                   AND sc.sport_id = $3
+                                 LIMIT 1`, [clubName, leagueCountryId, sportId]);
                             clubFound = clubRes.rows.length > 0;
                         }
                         else {
-                            const clubRes = await pool.query(`SELECT id FROM clubs 
-                                 WHERE unaccent(lower(short_name)) = unaccent(lower($1)) OR unaccent(lower(name)) = unaccent(lower($1))
-                                 LIMIT 1`, [clubName]);
+                            const clubRes = await pool.query(`SELECT c.id FROM clubs c
+                                 JOIN sport_clubs sc ON sc.club_id = c.id
+                                 WHERE (unaccent(lower(c.short_name)) = unaccent(lower($1)) OR unaccent(lower(c.name)) = unaccent(lower($1)))
+                                   AND sc.sport_id = $2
+                                 LIMIT 1`, [clubName, sportId]);
                             clubFound = clubRes.rows.length > 0;
                         }
                         if (!clubFound) {
                             let suggestions;
                             if (leagueCountryId) {
-                                suggestions = await pool.query(`SELECT id, name, short_name, country_id 
-                                     FROM clubs 
-                                     WHERE country_id = $1 
-                                       AND (unaccent(lower(name)) ILIKE unaccent(lower($2)) OR unaccent(lower(short_name)) ILIKE unaccent(lower($2)))
+                                suggestions = await pool.query(`SELECT c.id, c.name, c.short_name, c.country_id
+                                     FROM clubs c
+                                     JOIN sport_clubs sc ON sc.club_id = c.id
+                                     WHERE c.country_id = $1
+                                       AND sc.sport_id = $2
+                                       AND (unaccent(lower(c.name)) ILIKE unaccent(lower($3)) OR unaccent(lower(c.short_name)) ILIKE unaccent(lower($3)))
                                      ORDER BY 
                                        CASE 
-                                         WHEN lower(short_name) = lower($3) THEN 1
-                                         WHEN lower(name) = lower($3) THEN 2
+                                         WHEN lower(c.short_name) = lower($4) THEN 1
+                                         WHEN lower(c.name) = lower($4) THEN 2
                                          ELSE 3
                                        END
-                                     LIMIT 10`, [leagueCountryId, `%${clubName}%`, clubName]);
+                                     LIMIT 10`, [leagueCountryId, sportId, `%${clubName}%`, clubName]);
                                 if (!suggestions.rows.length) {
-                                    suggestions = await pool.query(`SELECT id, name, short_name, country_id 
-                                         FROM clubs 
-                                         WHERE country_id = $1
-                                         ORDER BY name
-                                         LIMIT 100`, [leagueCountryId]);
+                                    suggestions = await pool.query(`SELECT c.id, c.name, c.short_name, c.country_id
+                                         FROM clubs c
+                                         JOIN sport_clubs sc ON sc.club_id = c.id
+                                         WHERE c.country_id = $1
+                                           AND sc.sport_id = $2
+                                         ORDER BY c.name
+                                         LIMIT 100`, [leagueCountryId, sportId]);
                                 }
                             }
                             else {
-                                suggestions = await pool.query(`SELECT id, name, short_name, country_id 
-                                     FROM clubs 
-                                     WHERE unaccent(lower(name)) ILIKE unaccent(lower($1)) OR unaccent(lower(short_name)) ILIKE unaccent(lower($1))
-                                     ORDER BY name
-                                     LIMIT 50`, [`%${clubName}%`]);
+                                suggestions = await pool.query(`SELECT c.id, c.name, c.short_name, c.country_id
+                                     FROM clubs c
+                                     JOIN sport_clubs sc ON sc.club_id = c.id
+                                     WHERE sc.sport_id = $1
+                                       AND (unaccent(lower(c.name)) ILIKE unaccent(lower($2)) OR unaccent(lower(c.short_name)) ILIKE unaccent(lower($2)))
+                                     ORDER BY c.name
+                                     LIMIT 50`, [sportId, `%${clubName}%`]);
                             }
                             clubsToReview.push({
                                 name: clubName,
@@ -1096,6 +1136,7 @@ let ApiService = ApiService_1 = class ApiService {
                 clubs: clubsToReview,
                 stadiums: stadiumsToReview,
                 needsReview: clubsToReview.length > 0 || stadiumsToReview.length > 0,
+                payloadCountry: await resolveEffectivePayloadCountry(),
             };
         }
         finally {
@@ -1160,14 +1201,19 @@ let ApiService = ApiService_1 = class ApiService {
             await pool.end();
         }
     }
-    async parseTransitional(id, roundOverrides) {
+    async parseTransitional(id, roundOverrides, seasonPhase) {
         const row = await this.getTransitional(id);
         if (!row)
             return { found: false };
+        if (row.fetch_status && row.fetch_status !== 'done') {
+            return { found: false, reason: 'fetch_not_complete', error: `Data fetch is still '${row.fetch_status}'. Wait for the background fetch to finish.` };
+        }
         const origin = row.origin ?? 'Api-Football';
         if (origin === 'Api-Espn') {
             const espnLeagueCode = row.league ?? null;
             const meta = this.extractLeagueMetadata(row);
+            const rowPayload = row.payload ?? {};
+            const espnNumericId = rowPayload?.leagues?.[0]?.id != null ? String(rowPayload.leagues[0].id) : null;
             if (meta.leagueName || espnLeagueCode) {
                 const sportId = row.sport ?? 36;
                 const seasonYears = [];
@@ -1186,7 +1232,7 @@ let ApiService = ApiService_1 = class ApiService {
                         const entityMappings = await this.getDraftEntityMappings(id);
                         let leagueId = entityMappings.league;
                         if (!leagueId) {
-                            const lRes = await pool.query(`SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`, [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode]);
+                            const lRes = await pool.query(`SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`, [String(meta.leagueName ?? '').trim(), sportId, espnNumericId ?? espnLeagueCode]);
                             if (lRes.rows.length) {
                                 leagueId = lRes.rows[0].id;
                             }
@@ -1202,16 +1248,32 @@ let ApiService = ApiService_1 = class ApiService {
                             }
                             if (seasonRow) {
                                 const scheduleType = (row.league_schedule_type ?? 'Round').trim();
+                                if (scheduleType === 'Date') {
+                                    const matchesRes = await pool.query(`SELECT COUNT(*)::int as cnt FROM matches WHERE league_id = $1 AND season_id = $2`, [leagueId, seasonRow.id]);
+                                    if (Number(matchesRes.rows[0]?.cnt ?? 0) > 0) {
+                                        return {
+                                            found: false,
+                                            reason: 'subsequent_load_no_entity_review',
+                                            details: {
+                                                leagueId,
+                                                seasonId: seasonRow.id,
+                                            },
+                                        };
+                                    }
+                                }
                                 if (scheduleType !== 'Date') {
-                                    return {
-                                        found: false,
-                                        reason: 'season_already_exists',
-                                        details: {
-                                            message: 'A season already exists for this league — import aborted to avoid duplicates.',
-                                            leagueId,
-                                            seasonId: seasonRow.id,
-                                        },
-                                    };
+                                    const roundsRes = await pool.query(`SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`, [leagueId, seasonRow.id]);
+                                    if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
+                                        return {
+                                            found: false,
+                                            reason: 'season_already_exists',
+                                            details: {
+                                                message: 'A season already exists for this league and already has imported rounds — import aborted to avoid duplicates.',
+                                                leagueId,
+                                                seasonId: seasonRow.id,
+                                            },
+                                        };
+                                    }
                                 }
                             }
                         }
@@ -1225,7 +1287,7 @@ let ApiService = ApiService_1 = class ApiService {
         const savedOverrides = await this.getDraftRoundOverrides(id);
         const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
         if (origin === 'Api-Espn') {
-            return this.parseTransitionalEspn(row, effectiveRoundOverrides);
+            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase);
         }
         const payload = row.payload ?? row;
         let arr = null;
@@ -1327,15 +1389,53 @@ let ApiService = ApiService_1 = class ApiService {
             }
             return out;
         };
-        const flatRows = rows.map((r) => flatten(r));
+        let flatRows = rows.map((r) => flatten(r));
+        flatRows = this.filterApiFootballFixturesBySeasonPhase(flatRows, seasonPhase);
         const columns = Array.from(new Set(flatRows.flatMap(Object.keys)));
         return { found: true, columns, rows: flatRows };
     }
-    parseTransitionalEspn(row, roundOverrides) {
+    normalizeSeasonPhaseFilter(seasonPhase) {
+        const normalized = String(seasonPhase ?? 'all').trim().toLowerCase();
+        if (normalized === 'regular-season')
+            return 'regular-season';
+        if (normalized === 'postseason')
+            return 'postseason';
+        return 'all';
+    }
+    filterEspnEventsBySeasonPhase(events, seasonPhase) {
+        const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
+        if (normalized === 'all')
+            return events;
+        return events.filter((event) => {
+            const slug = String(event?.season?.slug ?? '').trim().toLowerCase();
+            if (!slug)
+                return true;
+            if (normalized === 'regular-season')
+                return slug === 'regular-season';
+            return slug !== 'regular-season';
+        });
+    }
+    filterApiFootballFixturesBySeasonPhase(fixtures, seasonPhase) {
+        const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
+        if (normalized === 'all')
+            return fixtures;
+        return fixtures.filter((fix) => {
+            const round = String(fix?.league?.round ?? fix?.['league.round'] ?? '').trim().toLowerCase();
+            const isRegularSeason = round.startsWith('regular season');
+            if (normalized === 'regular-season')
+                return isRegularSeason;
+            return !isRegularSeason;
+        });
+    }
+    parseTransitionalEspn(row, roundOverrides, seasonPhase) {
         const payload = row.payload ?? row;
-        const events = payload?.events ?? [];
-        if (!Array.isArray(events) || events.length === 0) {
+        const rawEvents = payload?.events ?? [];
+        if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
             return { found: false, reason: 'no_events_array' };
+        }
+        const events = this.filterEspnEventsBySeasonPhase(rawEvents, seasonPhase);
+        if (events.length === 0) {
+            return { found: false, reason: 'no_events_for_season_phase' };
         }
         const scheduleType = (row.league_schedule_type ?? 'Round').trim();
         const isDateBased = scheduleType === 'Date';
@@ -1902,6 +2002,7 @@ let ApiService = ApiService_1 = class ApiService {
             }
             derivedRounds = roundResult.roundByEventId;
         }
+        const parsedSeasonYear = this.getEspnSeasonStartYear(payload, seasonInfo) ?? new Date().getFullYear();
         const rows = [];
         for (const event of events) {
             const competition = event?.competitions?.[0];
@@ -1916,7 +2017,7 @@ let ApiService = ApiService_1 = class ApiService {
             const status = competition?.status?.type ?? {};
             const mapped = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Premier League',
-                'league.season': seasonInfo?.year ?? new Date().getFullYear(),
+                'league.season': parsedSeasonYear,
                 'league.country': venue?.address?.country ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
@@ -1942,6 +2043,7 @@ let ApiService = ApiService_1 = class ApiService {
                 'fixture.status.long': status?.description ?? null,
                 'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
                 'fixture.status.state': status?.state ?? null,
+                'fixture.status.completed': status?.completed ?? null,
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
             };
@@ -2188,7 +2290,10 @@ let ApiService = ApiService_1 = class ApiService {
             for (let div = 1; div <= totalDivs; div++) {
                 const homeScore = div <= payloadPeriods ? (matchRow[`divisions.home.${div}`] ?? 0) : 0;
                 const awayScore = div <= payloadPeriods ? (matchRow[`divisions.away.${div}`] ?? 0) : 0;
-                await client.query(`INSERT INTO match_divisions (match_id, division_number, division_type, home_score, away_score) VALUES ($1,$2,$3,$4,$5)`, [matchId, div, 'REGULAR', homeScore, awayScore]);
+                const divisionType = div > maxDivisions
+                    ? (hasOvertime ? 'OVERTIME' : hasPenalties ? 'PENALTIES' : 'REGULAR')
+                    : 'REGULAR';
+                await client.query(`INSERT INTO match_divisions (match_id, division_number, division_type, home_score, away_score) VALUES ($1,$2,$3,$4,$5)`, [matchId, div, divisionType, homeScore, awayScore]);
             }
             return { created: totalDivs, hasLinescores: true };
         }
@@ -2247,6 +2352,23 @@ let ApiService = ApiService_1 = class ApiService {
         const mm = String(date.getMonth() + 1).padStart(2, '0');
         const dd = String(date.getDate()).padStart(2, '0');
         return `${yyyy}${mm}${dd}`;
+    }
+    getEspnSeasonStartYear(payload, seasonInfo) {
+        const candidateDates = [
+            payload?.leagues?.[0]?.season?.startDate,
+            payload?.leagues?.[0]?.calendarStartDate,
+            seasonInfo?.startDate,
+        ];
+        for (const rawDate of candidateDates) {
+            if (!rawDate)
+                continue;
+            const parsed = new Date(String(rawDate));
+            if (!Number.isNaN(parsed.getTime())) {
+                return parsed.getUTCFullYear();
+            }
+        }
+        const fallbackYear = Number(seasonInfo?.year);
+        return Number.isFinite(fallbackYear) ? fallbackYear : null;
     }
     async fetchEspnScoreboardByDate(sport, league, date) {
         const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/scoreboard?dates=${date}`;
@@ -2387,7 +2509,7 @@ let ApiService = ApiService_1 = class ApiService {
                 created_at TIMESTAMPTZ DEFAULT now()
                 );
             `);
-            const parsed = await this.parseTransitional(id, options.roundOverrides);
+            const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase);
             if (!parsed || !parsed.found) {
                 return {
                     applied: false,
@@ -2462,6 +2584,30 @@ let ApiService = ApiService_1 = class ApiService {
             const leagueFlag = getVal('league.flag') ?? null;
             const leagueImage = getVal('league.image') ?? null;
             await client.query('BEGIN');
+            const sportId = options.sportId ?? 36;
+            const clubNameSet = new Set();
+            for (const row of rows) {
+                if (row['teams.home.name'])
+                    clubNameSet.add(String(row['teams.home.name']).trim());
+                if (row['teams.away.name'])
+                    clubNameSet.add(String(row['teams.away.name']).trim());
+            }
+            for (const clubNameRaw of clubNameSet) {
+                const clubName = String(clubNameRaw).trim();
+                if (!clubName)
+                    continue;
+                let clubRes = await client.query(`SELECT id FROM clubs WHERE unaccent(lower(name)) = unaccent(lower($1)) OR unaccent(lower(short_name)) = unaccent(lower($1)) LIMIT 1`, [clubName]);
+                if (!clubRes.rows.length) {
+                    clubRes = await client.query(`SELECT id FROM clubs WHERE unaccent(lower(name)) ILIKE unaccent($1) OR unaccent(lower(short_name)) ILIKE unaccent($1) LIMIT 1`, [`%${clubName}%`]);
+                }
+                if (!clubRes.rows.length)
+                    continue;
+                const clubId = clubRes.rows[0].id;
+                const scRes = await client.query(`SELECT id FROM sport_clubs WHERE sport_id = $1 AND club_id = $2 LIMIT 1`, [sportId, clubId]);
+                if (!scRes.rows.length) {
+                    await client.query(`INSERT INTO sport_clubs (sport_id, club_id) VALUES ($1, $2)`, [sportId, clubId]);
+                }
+            }
             let countryId = null;
             if (options.countryId) {
                 countryId = options.countryId;
@@ -2492,7 +2638,7 @@ let ApiService = ApiService_1 = class ApiService {
                 }
                 else {
                     const code = nameClean.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
-                    const ins = await client.query(`INSERT INTO countries (name, code, flag, continent) VALUES ($1,$2,$3,$4) RETURNING id`, [nameClean, code, leagueFlag || null, 'Europe']);
+                    const ins = await client.query(`INSERT INTO countries (name, code, flag_url, continent) VALUES ($1,$2,$3,$4) RETURNING id`, [nameClean, code, leagueFlag || null, 'Europe']);
                     countryId = ins.rows[0].id;
                 }
             }
@@ -2773,7 +2919,7 @@ let ApiService = ApiService_1 = class ApiService {
             const venue = firstEvent?.competitions?.[0]?.venue ?? {};
             return {
                 leagueName: leagueInfo?.name ?? leagueInfo?.abbreviation ?? null,
-                leagueSeason: seasonInfo?.year ?? null,
+                leagueSeason: this.getEspnSeasonStartYear(payload, seasonInfo),
                 leagueCountry: venue?.address?.country ?? null,
             };
         }
@@ -2792,15 +2938,28 @@ let ApiService = ApiService_1 = class ApiService {
             leagueCountry: get(sample, 'league.country') ?? null,
         };
     }
-    parseTransitionalEspnLightweight(row) {
+    isParsedFixtureFinished(row) {
+        const statusShort = row['fixture.status.short'] ?? null;
+        const statusCompleted = row['fixture.status.completed'];
+        if (statusCompleted === true || statusCompleted === 'true') {
+            return true;
+        }
+        return statusShort === 'FT';
+    }
+    parseTransitionalEspnLightweight(row, seasonPhase) {
         const payload = row.payload ?? row;
-        const events = payload?.events ?? [];
-        if (!Array.isArray(events) || events.length === 0) {
+        const rawEvents = payload?.events ?? [];
+        if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
             return { found: false, reason: 'no_events_array' };
+        }
+        const events = this.filterEspnEventsBySeasonPhase(rawEvents, seasonPhase);
+        if (events.length === 0) {
+            return { found: false, reason: 'no_events_for_season_phase' };
         }
         const firstEvent = events[0];
         const seasonInfo = firstEvent?.season ?? {};
         const leagueInfo = payload?.leagues?.[0] ?? {};
+        const parsedSeasonYear = this.getEspnSeasonStartYear(payload, seasonInfo) ?? new Date().getFullYear();
         const rows = [];
         for (const event of events) {
             const competition = event?.competitions?.[0];
@@ -2813,9 +2972,9 @@ let ApiService = ApiService_1 = class ApiService {
                 continue;
             const venue = competition?.venue ?? {};
             const status = competition?.status?.type ?? {};
-            rows.push({
+            const mapped = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Unknown',
-                'league.season': seasonInfo?.year ?? new Date().getFullYear(),
+                'league.season': parsedSeasonYear,
                 'league.country': venue?.address?.country ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
@@ -2841,9 +3000,24 @@ let ApiService = ApiService_1 = class ApiService {
                 'fixture.status.long': status?.description ?? null,
                 'fixture.status.short': status?.shortDetail ?? status?.detail ?? null,
                 'fixture.status.state': status?.state ?? null,
+                'fixture.status.completed': status?.completed ?? null,
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
+            };
+            const homeLinescores = (homeTeam?.linescores ?? []).map((ls) => {
+                const v = ls?.value ?? ls?.displayValue;
+                return v != null ? Math.max(0, Math.trunc(Number(v))) : 0;
             });
+            const awayLinescores = (awayTeam?.linescores ?? []).map((ls) => {
+                const v = ls?.value ?? ls?.displayValue;
+                return v != null ? Math.max(0, Math.trunc(Number(v))) : 0;
+            });
+            const linescoredPeriods = Math.max(homeLinescores.length, awayLinescores.length);
+            for (let p = 1; p <= linescoredPeriods; p++) {
+                mapped[`divisions.home.${p}`] = homeLinescores[p - 1] ?? 0;
+                mapped[`divisions.away.${p}`] = awayLinescores[p - 1] ?? 0;
+            }
+            rows.push(mapped);
         }
         if (rows.length === 0)
             return { found: false, reason: 'no_valid_events' };
@@ -2885,6 +3059,9 @@ let ApiService = ApiService_1 = class ApiService {
             const transitionalRow = await this.getTransitional(id);
             if (!transitionalRow)
                 return { applied: 0, reason: 'not_found' };
+            if (transitionalRow.fetch_status && transitionalRow.fetch_status !== 'done') {
+                return { applied: 0, reason: 'fetch_not_complete', error: `Data fetch is still '${transitionalRow.fetch_status}'. Wait for the background fetch to finish.`, details: null };
+            }
             const flgHasDivisions = transitionalRow.flg_has_divisions !== false;
             const flgHasGroups = transitionalRow.flg_has_groups === true;
             const flgRunInBackground = transitionalRow.flg_run_in_background !== false;
@@ -2899,6 +3076,9 @@ let ApiService = ApiService_1 = class ApiService {
             let isSubsequentLoad = false;
             const meta = this.extractLeagueMetadata(transitionalRow);
             const espnLeagueCode = transitionalRow.league ?? null;
+            const transitionalPayload = transitionalRow.payload ?? {};
+            const espnNumericLeagueId = (transitionalOrigin === 'Api-Espn' && transitionalPayload?.leagues?.[0]?.id != null)
+                ? String(transitionalPayload.leagues[0].id) : null;
             if (meta.leagueName || espnLeagueCode) {
                 const seasonYears = [];
                 if (meta.leagueSeason != null && Number.isFinite(Number(meta.leagueSeason))) {
@@ -2910,7 +3090,7 @@ let ApiService = ApiService_1 = class ApiService {
                     if (Number.isFinite(y) && !seasonYears.includes(y))
                         seasonYears.push(y);
                 }
-                const lRes = await client.query(`SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`, [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode]);
+                const lRes = await client.query(`SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`, [String(meta.leagueName ?? '').trim(), sportId, espnNumericLeagueId ?? espnLeagueCode]);
                 if (lRes.rows.length) {
                     const possibleLeagueId = lRes.rows[0].id;
                     let seasonRow = null;
@@ -2946,10 +3126,10 @@ let ApiService = ApiService_1 = class ApiService {
                 const origin = transitionalRow.origin ?? 'Api-Football';
                 let parsed;
                 if (origin === 'Api-Espn') {
-                    parsed = this.parseTransitionalEspnLightweight(transitionalRow);
+                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase);
                 }
                 else {
-                    parsed = await this.parseTransitional(id);
+                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase);
                 }
                 if (!parsed || !parsed.found) {
                     return { applied: 0, reason: parsed?.reason ?? 'lightweight_parse_failed' };
@@ -2957,7 +3137,7 @@ let ApiService = ApiService_1 = class ApiService {
                 rows = parsed.rows || [];
             }
             else {
-                const parsed = await this.parseTransitional(id, options.roundOverrides);
+                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase);
                 if (!parsed || !parsed.found) {
                     return {
                         applied: 0,
@@ -2974,6 +3154,7 @@ let ApiService = ApiService_1 = class ApiService {
                         roundOverrides: options.roundOverrides,
                         leagueId: preEntityMappings.league ?? undefined,
                         countryId: preEntityMappings.country ?? undefined,
+                        seasonPhase: options.seasonPhase,
                     });
                     if (!firstRowResult.applied)
                         return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
@@ -3269,9 +3450,7 @@ let ApiService = ApiService_1 = class ApiService {
                         }
                         const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                         const _dateVal = _dateRaw ? new Date(String(_dateRaw)) : null;
-                        const _statusShort = r['fixture.status.short'] ?? null;
-                        const _statusState = r['fixture.status.state'] ?? null;
-                        const _status = (_statusShort === 'FT' || _statusState === 'post') ? 'Finished' : 'Scheduled';
+                        const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                         const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                         const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
                         if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
@@ -3610,9 +3789,7 @@ let ApiService = ApiService_1 = class ApiService {
                     }
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                     const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
-                    const statusShort = r['fixture.status.short'] ?? null;
-                    const statusState = r['fixture.status.state'] ?? null;
-                    const status = (statusShort === 'FT' || statusState === 'post') ? 'Finished' : 'Scheduled';
+                    const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
                     const originApiIdRaw = r['origin_api_id'] ?? r['espn_event_id'] ?? r['fixture.id'] ?? null;

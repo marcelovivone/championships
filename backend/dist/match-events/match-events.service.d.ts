@@ -37,12 +37,12 @@ export declare class MatchEventsService {
     create(createEventDto: CreateMatchEventDto): Promise<{
         id: number;
         minute: number;
-        description: string;
         createdAt: Date;
         clubId: number;
         matchId: number;
         eventType: string;
         playerId: number;
+        description: string;
     }>;
     update(id: number, updateEventDto: UpdateMatchEventDto): Promise<{
         id: number;
@@ -57,11 +57,11 @@ export declare class MatchEventsService {
     remove(id: number): Promise<{
         id: number;
         minute: number;
-        description: string;
         createdAt: Date;
         clubId: number;
         matchId: number;
         eventType: string;
         playerId: number;
+        description: string;
     }>;
 }

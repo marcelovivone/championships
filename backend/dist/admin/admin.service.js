@@ -137,6 +137,12 @@ let AdminService = AdminService_1 = class AdminService {
         else if (filters.roundId) {
             whereCondition = (0, drizzle_orm_1.and)(whereCondition, (0, drizzle_orm_1.eq)(schema_1.matches.roundId, filters.roundId));
         }
+        if (filters.startDate) {
+            const startBoundary = new Date(`${filters.startDate}T00:00:00.000Z`);
+            const endSource = filters.endDate ?? filters.startDate;
+            const endBoundary = new Date(`${endSource}T23:59:59.999Z`);
+            whereCondition = (0, drizzle_orm_1.and)(whereCondition, (0, drizzle_orm_1.gte)(schema_1.matches.date, startBoundary), (0, drizzle_orm_1.lte)(schema_1.matches.date, endBoundary));
+        }
         if (filters.matchId) {
             whereCondition = (0, drizzle_orm_1.and)(whereCondition, (0, drizzle_orm_1.eq)(schema_1.matches.id, filters.matchId));
         }
@@ -150,6 +156,8 @@ let AdminService = AdminService_1 = class AdminService {
                 seasonId: dto.seasonId,
                 roundId: dto.roundId,
                 roundIds: dto.roundIds,
+                startDate: dto.startDate,
+                endDate: dto.endDate,
                 matchId: dto.matchId
             });
             const matchesToUpdate = await this.db

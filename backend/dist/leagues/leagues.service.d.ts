@@ -71,13 +71,15 @@ export declare class LeaguesService {
         originalName: string;
         secondaryName: string;
         countryId: number;
-        sportId: number;
-        cityId: number;
+        divisionTime: number;
         flgDefault: boolean;
+        imageUrl: string;
+        createdAt: Date;
+        cityId: number;
+        sportId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -87,8 +89,6 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
-        imageUrl: string;
-        createdAt: Date;
     }>;
     update(id: number, updateLeagueDto: UpdateLeagueDto): Promise<{
         typeOfSchedule: "Round" | "Date";
@@ -120,14 +120,15 @@ export declare class LeaguesService {
         originalName: string;
         secondaryName: string;
         countryId: number;
-        sportId: number;
-        cityId: number;
+        divisionTime: number;
         flgDefault: boolean;
-        typeOfSchedule: string;
+        imageUrl: string;
+        createdAt: Date;
+        cityId: number;
+        sportId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
-        divisionTime: number;
         hasOvertimeOverride: boolean;
         hasPenaltiesOverride: boolean;
         hasAscends: boolean;
@@ -137,8 +138,7 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
-        imageUrl: string;
-        createdAt: Date;
+        typeOfSchedule: string;
     }>;
     addLink(leagueId: number, label: string, url: string): Promise<{
         id: number;

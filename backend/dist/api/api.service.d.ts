@@ -55,7 +55,7 @@ export declare class ApiService {
         errors: number;
     }>;
     private getDraftEntityMappings;
-    detectEntitiesForReview(id: number, sportId?: number): Promise<{
+    detectEntitiesForReview(id: number, sportId?: number, seasonPhase?: string): Promise<{
         found: boolean;
         reason: string;
         country?: undefined;
@@ -63,6 +63,7 @@ export declare class ApiService {
         clubs?: undefined;
         stadiums?: undefined;
         needsReview?: undefined;
+        payloadCountry?: undefined;
     } | {
         found: boolean;
         country: {
@@ -77,6 +78,10 @@ export declare class ApiService {
         clubs: any[];
         stadiums: any[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
     } | {
         found: boolean;
@@ -95,6 +100,10 @@ export declare class ApiService {
         }[];
         stadiums: any[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
         country?: undefined;
     } | {
@@ -109,6 +118,10 @@ export declare class ApiService {
             suggestions: any[];
         }[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
         country?: undefined;
         league?: undefined;
@@ -130,7 +143,7 @@ export declare class ApiService {
         id: any;
         status: any;
     }>;
-    parseTransitional(id: number, roundOverrides?: Record<string, number>): Promise<{
+    parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string): Promise<{
         found: boolean;
         reason: string;
         error?: undefined;
@@ -223,7 +236,22 @@ export declare class ApiService {
     } | {
         found: boolean;
         reason?: undefined;
+        error?: undefined;
         details?: undefined;
+    } | {
+        found: boolean;
+        reason: string;
+        error: string;
+        details?: undefined;
+    } | {
+        found: boolean;
+        reason: string;
+        details: {
+            leagueId: number;
+            seasonId: any;
+            message?: undefined;
+        };
+        error?: undefined;
     } | {
         found: boolean;
         reason: string;
@@ -232,7 +260,11 @@ export declare class ApiService {
             leagueId: number;
             seasonId: any;
         };
+        error?: undefined;
     }>;
+    private normalizeSeasonPhaseFilter;
+    private filterEspnEventsBySeasonPhase;
+    private filterApiFootballFixturesBySeasonPhase;
     private parseTransitionalEspn;
     applyTransitional(id: number, options?: {
         dryRun?: boolean;
@@ -305,6 +337,7 @@ export declare class ApiService {
         hasLinescores?: undefined;
     }>;
     private formatEspnDate;
+    private getEspnSeasonStartYear;
     private fetchEspnScoreboardByDate;
     private fetchEspnSeasonByDay;
     private fetchEspnEventLinescores;
@@ -321,6 +354,7 @@ export declare class ApiService {
         roundOverrides?: Record<string, number>;
         leagueId?: number;
         countryId?: number;
+        seasonPhase?: string;
     }): Promise<{
         applied: boolean;
         reason: any;
@@ -373,6 +407,7 @@ export declare class ApiService {
         seasonId?: undefined;
     }>;
     private extractLeagueMetadata;
+    private isParsedFixtureFinished;
     private parseTransitionalEspnLightweight;
     applyAllRowsToApp(id: number, options?: {
         sportId?: number;
@@ -380,5 +415,6 @@ export declare class ApiService {
         seasonId?: number;
         dryRun?: boolean;
         roundOverrides?: Record<string, number>;
+        seasonPhase?: string;
     }): Promise<any>;
 }

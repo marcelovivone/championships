@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
+exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
 const pg_core_1 = require("drizzle-orm/pg-core");
 exports.sports = (0, pg_core_1.pgTable)('sports', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
@@ -139,6 +139,7 @@ exports.matchStatusEnum = (0, pg_core_1.pgEnum)('match_status', [
     'Postponed',
     'Cancelled',
 ]);
+exports.typeOfStandingEnum = (0, pg_core_1.pgEnum)('type_of_standing', ['All', 'Combined', 'Group']);
 exports.matches = (0, pg_core_1.pgTable)('matches', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
     sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
@@ -260,5 +261,21 @@ exports.sportClubs = (0, pg_core_1.pgTable)('sport_clubs', {
     name: (0, pg_core_1.varchar)('name', { length: 100 }).default("").notNull(),
     flgActive: (0, pg_core_1.boolean)('flg_active').default(true).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+});
+exports.standingZones = (0, pg_core_1.pgTable)('standing_zones', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
+    leagueId: (0, pg_core_1.integer)('league_id').references(() => exports.leagues.id).notNull(),
+    seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id),
+    startPosition: (0, pg_core_1.integer)('start_position').notNull(),
+    endPosition: (0, pg_core_1.integer)('end_position').notNull(),
+    name: (0, pg_core_1.varchar)('name', { length: 255 }).notNull(),
+    typeOfStanding: (0, exports.typeOfStandingEnum)('type_of_standing').default('All').notNull(),
+    start_year: (0, pg_core_1.integer)('start_year').default(null),
+    end_year: (0, pg_core_1.integer)('end_year').default(null),
+    flg_priority: (0, pg_core_1.boolean)('flg_priority').default(false).notNull(),
+    colorHex: (0, pg_core_1.varchar)('color_hex', { length: 7 }).default('#FFFFFF').notNull(),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
 });
 //# sourceMappingURL=schema.js.map

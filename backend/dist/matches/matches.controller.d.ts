@@ -9,11 +9,11 @@ export declare class MatchesController {
         homeScore: number;
         awayScore: number;
         status: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
-        sportId: number;
         createdAt: Date;
+        sportId: number;
+        stadiumId: number;
         leagueId: number;
         seasonId: number;
-        stadiumId: number;
         groupId: number;
         roundId: number;
         homeClubId: number;
@@ -48,11 +48,11 @@ export declare class MatchesController {
         homeScore: number;
         awayScore: number;
         status: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
-        sportId: number;
         createdAt: Date;
+        sportId: number;
+        stadiumId: number;
         leagueId: number;
         seasonId: number;
-        stadiumId: number;
         groupId: number;
         roundId: number;
         homeClubId: number;

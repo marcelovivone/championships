@@ -2766,9 +2766,12 @@ export class ApiService {
             for (let div = 1; div <= totalDivs; div++) {
                 const homeScore = div <= payloadPeriods ? (matchRow[`divisions.home.${div}`] ?? 0) : 0;
                 const awayScore = div <= payloadPeriods ? (matchRow[`divisions.away.${div}`] ?? 0) : 0;
+                    const divisionType = div > maxDivisions
+                        ? (hasOvertime ? 'OVERTIME' : hasPenalties ? 'PENALTIES' : 'REGULAR')
+                        : 'REGULAR';
                 await client.query(
                     `INSERT INTO match_divisions (match_id, division_number, division_type, home_score, away_score) VALUES ($1,$2,$3,$4,$5)`,
-                    [matchId, div, 'REGULAR', homeScore, awayScore],
+                        [matchId, div, divisionType, homeScore, awayScore],
                 );
             }
             return { created: totalDivs, hasLinescores: true };

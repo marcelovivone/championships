@@ -5,6 +5,8 @@ declare class TimezoneAdjustmentDto {
     seasonId?: number;
     roundId?: number;
     roundIds?: number[];
+    startDate?: string;
+    endDate?: string;
     matchId?: number;
     adjustmentType: 'country' | 'manual' | 'set';
     manualHours?: number;

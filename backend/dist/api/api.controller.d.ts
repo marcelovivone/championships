@@ -55,7 +55,7 @@ export declare class ApiController {
         found: boolean;
         item: any;
     }>;
-    parseTransitional(id: number, roundOverridesJson?: string): Promise<{
+    parseTransitional(id: number, roundOverridesJson?: string, seasonPhase?: string): Promise<{
         found: boolean;
         reason: any;
         error: any;
@@ -110,7 +110,7 @@ export declare class ApiController {
     deleteEntityReview(id: number): Promise<{
         success: boolean;
     }>;
-    getEntitySuggestions(id: number, sportId?: string): Promise<{
+    getEntitySuggestions(id: number, sportId?: string, seasonPhase?: string): Promise<{
         found: boolean;
         reason: string;
         country?: undefined;
@@ -118,6 +118,7 @@ export declare class ApiController {
         clubs?: undefined;
         stadiums?: undefined;
         needsReview?: undefined;
+        payloadCountry?: undefined;
     } | {
         found: boolean;
         country: {
@@ -132,6 +133,10 @@ export declare class ApiController {
         clubs: any[];
         stadiums: any[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
     } | {
         found: boolean;
@@ -150,6 +155,10 @@ export declare class ApiController {
         }[];
         stadiums: any[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
         country?: undefined;
     } | {
@@ -164,12 +173,17 @@ export declare class ApiController {
             suggestions: any[];
         }[];
         needsReview: boolean;
+        payloadCountry: {
+            name: string | null;
+            id: number | null;
+        };
         reason?: undefined;
         country?: undefined;
         league?: undefined;
     }>;
     applyFirstRow(id: number, body: {
         sportId?: number;
+        seasonPhase?: string;
     }): Promise<{
         applied: boolean;
         reason: any;
@@ -225,6 +239,7 @@ export declare class ApiController {
         sportId?: number;
         dryRun?: boolean;
         roundOverrides?: Record<string, number>;
+        seasonPhase?: string;
     }): Promise<any>;
     getApplyStatus(id: number): Promise<{
         status: any;

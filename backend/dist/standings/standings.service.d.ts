@@ -335,11 +335,11 @@ export declare class StandingsService {
     private cascadeClubStandings;
     remove(id: number): Promise<{
         id: number;
-        sportId: number;
         createdAt: Date;
+        sportId: number;
+        clubId: number;
         leagueId: number;
         seasonId: number;
-        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
@@ -376,11 +376,11 @@ export declare class StandingsService {
     recordRoundStats(roundId: number, groupId: number, clubId: number, newStats: any): Promise<void>;
     removeByClubLeagueSeason(clubId: number, leagueId: number, seasonId: number, standingId: number): Promise<{
         id: number;
-        sportId: number;
         createdAt: Date;
+        sportId: number;
+        clubId: number;
         leagueId: number;
         seasonId: number;
-        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;
@@ -416,11 +416,11 @@ export declare class StandingsService {
     }[]>;
     removeByMatchId(matchId: number): Promise<{
         id: number;
-        sportId: number;
         createdAt: Date;
+        sportId: number;
+        clubId: number;
         leagueId: number;
         seasonId: number;
-        clubId: number;
         groupId: number;
         roundId: number;
         updatedAt: Date;

@@ -139,10 +139,10 @@ export declare class SeasonsService {
     create(createSeasonDto: CreateSeasonDto): Promise<{
         id: number;
         status: string;
-        sportId: number;
         flgDefault: boolean;
-        createdAt: Date;
         flgEspnApiPartialScores: boolean;
+        createdAt: Date;
+        sportId: number;
         leagueId: number;
         startYear: number;
         endYear: number;
@@ -175,10 +175,10 @@ export declare class SeasonsService {
     remove(id: number): Promise<{
         id: number;
         status: string;
-        sportId: number;
         flgDefault: boolean;
-        createdAt: Date;
         flgEspnApiPartialScores: boolean;
+        createdAt: Date;
+        sportId: number;
         leagueId: number;
         startYear: number;
         endYear: number;

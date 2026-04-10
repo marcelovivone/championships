@@ -7,8 +7,8 @@ export declare class MenuItemsController {
     create(createMenuItemDto: CreateMenuItemDto): Promise<{
         id: number;
         name: string;
-        createdAt: Date;
         code: string;
+        createdAt: Date;
         description: string;
         isActive: boolean;
         category: string;
@@ -51,8 +51,8 @@ export declare class MenuItemsController {
     remove(id: string): Promise<{
         id: number;
         name: string;
-        createdAt: Date;
         code: string;
+        createdAt: Date;
         description: string;
         isActive: boolean;
         category: string;

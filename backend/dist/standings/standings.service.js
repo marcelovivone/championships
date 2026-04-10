@@ -671,12 +671,27 @@ let StandingsService = class StandingsService {
         return result;
     }
     async removeByMatchId(matchId) {
+        const [matchRow] = await this.db
+            .select()
+            .from(schema_1.matches)
+            .where((0, drizzle_orm_1.eq)(schema_1.matches.id, matchId))
+            .limit(1);
         const result = await this.db
             .delete(schema_1.standings)
             .where((0, drizzle_orm_1.eq)(schema_1.standings.matchId, matchId))
             .returning();
         if (!result.length) {
-            throw new common_1.NotFoundException('No standings found for matchId');
+            return result;
+        }
+        if (matchRow && matchRow.roundId) {
+            const sport = await this.db
+                .select()
+                .from(schema.sports)
+                .where((0, drizzle_orm_1.eq)(schema.sports.id, matchRow.sportId))
+                .limit(1);
+            const sportName = sport.length > 0 ? sport[0].name : 'Football';
+            await this.cascadeClubStandings(matchRow.homeClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.roundId, sportName);
+            await this.cascadeClubStandings(matchRow.awayClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.roundId, sportName);
         }
         return result;
     }

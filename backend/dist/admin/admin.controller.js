@@ -48,10 +48,20 @@ let AdminController = AdminController_1 = class AdminController {
         if (payload.roundIds && !Array.isArray(payload.roundIds)) {
             throw new common_1.BadRequestException('roundIds must be an array of numbers');
         }
+        if (payload.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(payload.startDate)) {
+            throw new common_1.BadRequestException('startDate must be in YYYY-MM-DD format');
+        }
+        if (payload.endDate && !/^\d{4}-\d{2}-\d{2}$/.test(payload.endDate)) {
+            throw new common_1.BadRequestException('endDate must be in YYYY-MM-DD format');
+        }
+        if (payload.startDate && payload.endDate && payload.endDate < payload.startDate) {
+            throw new common_1.BadRequestException('endDate cannot be earlier than startDate');
+        }
         if (payload.matchId) {
             const roundsSelected = payload.roundIds ? payload.roundIds.length : (payload.roundId ? 1 : 0);
-            if (roundsSelected !== 1) {
-                throw new common_1.BadRequestException('Selecting a specific match requires exactly one round to be selected');
+            const hasSingleDay = !!payload.startDate && (!payload.endDate || payload.endDate === payload.startDate);
+            if (roundsSelected !== 1 && !hasSingleDay) {
+                throw new common_1.BadRequestException('Selecting a specific match requires exactly one round or exactly one day to be selected');
             }
         }
         try {

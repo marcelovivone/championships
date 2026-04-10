@@ -101,7 +101,16 @@ let StandingsCalculatorService = class StandingsCalculatorService {
         const matchDivisions = match.matchDivisions || [];
         if (matchDivisions.length > 0) {
             matchDivisions.forEach((division) => {
-                if ((division.id === -10 || division.divisionType === 'OVERTIME') && division.homeScore != null) {
+                const normalizedDivisionType = String(division.divisionType ?? '').trim().toUpperCase();
+                const divisionNumber = Number(division.divisionNumber ?? 0);
+                const isBasketballOvertime = sport.includes('basketball') && divisionNumber > 4;
+                const isIceHockeyOvertime = sport.includes('ice hockey') && divisionNumber > 3 && normalizedDivisionType !== 'PENALTIES';
+                const isOvertimeDivision = division.id === -10
+                    || normalizedDivisionType === 'OVERTIME'
+                    || isBasketballOvertime
+                    || isIceHockeyOvertime;
+                const isPenaltyDivision = division.id === -11 || normalizedDivisionType === 'PENALTIES';
+                if (isOvertimeDivision && division.homeScore != null) {
                     if (division.homeScore > division.awayScore) {
                         homeStats.overtimeWins += 1;
                         awayStats.overtimeLosses += 1;
@@ -111,7 +120,7 @@ let StandingsCalculatorService = class StandingsCalculatorService {
                         awayStats.overtimeWins += 1;
                     }
                 }
-                if ((division.id === -11 || division.divisionType === 'PENALTIES') && division.homeScore != null) {
+                if (isPenaltyDivision && division.homeScore != null) {
                     if (division.homeScore > division.awayScore) {
                         homeStats.penaltyWins += 1;
                         awayStats.penaltyLosses += 1;
