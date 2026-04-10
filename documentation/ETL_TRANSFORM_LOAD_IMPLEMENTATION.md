@@ -1331,6 +1331,8 @@ The admin ETL frontend has expanded from a football-only workflow into a more ge
 
 - Shares the preview/apply behavior used by football
 - Supports background apply polling
+- Polls the transitional rows list while any ESPN background fetch is still `fetching`
+- Shows fetch progress in the Status column and blocks premature Transform & Load clicks until the payload is ready
 - Exposes `repair-divisions` from the action column
 - Keeps transitional metadata visible after processing instead of clearing the selected row aggressively
 
@@ -1395,6 +1397,36 @@ This preserves the user-requested default behavior: grouped competitions open wi
 - historical match loading used by `StandingsTable` for last-5 / last-10 summaries
 
 The basketball public page specifically resolves the Basketball sport and its leagues dynamically, then hands control to the same shared standings shell used by the other sports.
+
+### 10.7 ESPN NBA subsequent-load fixes and fetch-state guard
+
+The latest ETL fix addressed two separate issues in the ESPN non-football subsequent-load path.
+
+#### Guard against applying while the background fetch is still running
+
+For long ESPN day-by-day collections, `fetchAndStore()` creates the `api_transitional` row immediately with `payload = '{}'` and `fetch_status = 'fetching'`, then fills the payload later from a background job.
+
+Before this fix, both `parseTransitional()` and `applyAllRowsToApp()` could still run against that placeholder row. The result was the misleading `no_events_array` failure, because the payload was genuinely still empty at that moment.
+
+Current behavior:
+
+- `parseTransitional()` returns `fetch_not_complete` when `fetch_status !== 'done'`
+- `applyAllRowsToApp()` returns the same guard instead of attempting the parse
+- The basketball admin UI now reflects that state and disables the apply actions until the fetch is complete
+
+#### Correct ESPN league identifier during subsequent-load detection
+
+The fast-path ESPN league lookup previously used `row.league` for the `espn_id` comparison. That value is the ESPN URL code (`nba`, `eng.1`, etc.), but the stored `leagues.espn_id` value comes from `payload.leagues[0].id` and is numeric (`46` for NBA).
+
+Current behavior:
+
+- Subsequent-load detection in both `parseTransitional()` and `applyAllRowsToApp()` now prefers `payload.leagues[0].id`
+- League-name matching remains as a fallback
+- Date-based leagues such as NBA can now resolve their existing league/season rows consistently and take the lightweight subsequent-load path
+
+#### Season-phase note
+
+`filterEspnEventsBySeasonPhase()` now keeps slug-less ESPN events instead of excluding them. That change is defensive for incomplete day-by-day payloads and does not alter regular-season/postseason filtering when ESPN provides a proper `event.season.slug`.
 
 ---
 

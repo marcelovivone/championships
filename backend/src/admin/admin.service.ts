@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { matches } from '../db/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, gte, lte } from 'drizzle-orm';
 import * as schema from '../db/schema';
 
 // Country timezone mappings (same as used in ETL)
@@ -133,6 +133,8 @@ console.log(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}
     seasonId?: number;
     roundId?: number;
     roundIds?: number[];
+    startDate?: string;
+    endDate?: string;
     matchId?: number;
   }) {
     let whereCondition = eq(matches.leagueId, filters.leagueId);
@@ -152,6 +154,13 @@ console.log(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}
       whereCondition = and(whereCondition, eq(matches.roundId, filters.roundId));
     }
 
+    if (filters.startDate) {
+      const startBoundary = new Date(`${filters.startDate}T00:00:00.000Z`);
+      const endSource = filters.endDate ?? filters.startDate;
+      const endBoundary = new Date(`${endSource}T23:59:59.999Z`);
+      whereCondition = and(whereCondition, gte(matches.date, startBoundary), lte(matches.date, endBoundary));
+    }
+
     if (filters.matchId) {
       whereCondition = and(whereCondition, eq(matches.id, filters.matchId));
     }
@@ -164,6 +173,8 @@ console.log(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}
     seasonId?: number;
     roundId?: number;
     roundIds?: number[];
+    startDate?: string;
+    endDate?: string;
     matchId?: number;
     adjustmentType: 'country' | 'manual' | 'set';
     manualHours?: number;
@@ -183,6 +194,8 @@ console.log(`Parsed date parts - Year: ${year}, Month: ${month + 1}, Day: ${day}
         seasonId: dto.seasonId,
         roundId: dto.roundId,
         roundIds: dto.roundIds,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
         matchId: dto.matchId
       });
 

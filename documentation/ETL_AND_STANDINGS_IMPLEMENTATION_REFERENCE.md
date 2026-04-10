@@ -4,8 +4,77 @@
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
 > **Last updated**: 2026-04-05
+> **Last updated**: 2026-04-09
 
 ---
+
+## Developer Session Prompt (Script/Prompt.txt) — 2026-04-08
+
+The following is the developer prompt file discovered at `Script/Prompt.txt`. It was captured and added here to keep the repository's context and onboarding prompts in the canonical ETL reference.
+
+```
+Hello! I'm ready to continue working on the Championships. Please review the following key project files to get a complete picture of the current status, architecture, and environment:
+
+Environment configuration:
+- docker-compose.yml (in the root directory)
+
+Backend
+- backend/package.json (for the installed modules)
+- backend/.env (for global configuration)
+- backend/src/db/schema.ts (for the database structure)
+- backend/src/app.module.ts (for the overall module architecture)
+- backend/src/main.ts (for global configuration)
+
+Frontend
+- frontend/package.json (for the installed modules)
+- frontend/README_FRONTEND.md
+
+After you've analyzed these, let me know you're ready, and we can proceed with the next task from the next steps. We can consult the implementation historic, the work to be done and the next steps accessing the PROJECT_REVIEW.ts.
+
+Along the development/implementation is must keep the PROJECT_REVIEW.ts uptodate.
+
+Very important, see section Next Steps in the PROJECT_REVIEW.ts.
+
+Remember, you are a senior software engineer.
+
+
+I'm continuing work on the Championships project. Please read the following files to get full context:
+
+1. PROJECT OVERVIEW AND STATUS:
+  - Read: PROJECT_REVIEW.ts (complete file)
+  This contains all project history, architecture, completed work, and next steps.
+
+2. DATABASE & BACKEND CONTEXT:
+  - Read: backend/src/db/schema.ts (lines 1-400, all table definitions)
+  - Read: backend/drizzle.config.ts (database configuration)
+  - Read: backend/.env (database connection details)
+  - List files in: backend/drizzle/meta/ (to see latest migrations)
+
+3. FRONTEND CONTEXT:
+  - Read: frontend/lib/api/types.ts (lines 1-250, all TypeScript interfaces)
+  - List files in: frontend/app/admin/ (to see implemented admin pages)
+  - Read: frontend/lib/api/entities.ts (API client configuration)
+
+4. CURRENT WORK STATUS:
+  We are on Item 2 of Phase 1B (Frontend Admin Panels). Recently completed:
+  - Sports, Leagues, Seasons (with sport_id), Season_clubs, Sport_clubs tables
+   
+  Next to implement:
+  - Review work done so far and move on to item 3 of next steps section of project_review.ts
+
+5. ENVIRONMENT:
+  - Backend: NestJS + TypeScript + Drizzle ORM, running on port 3000
+  - Frontend: Next.js 14+ + TypeScript + Tailwind CSS, running on port 3001
+  - Database: PostgreSQL in Docker (port 5433)
+  - Pattern: Database → Backend (schema/DTOs/service) → Frontend (types/API/admin page)
+
+After reading these files, confirm you understand the project context and ask me what table or feature I want to work on next.
+
+Very important, you should think and work as a senior software engineer.
+
+You don't need to ask for my authorization to read or write any file or to run any command shell during your changes. You are authorized from now to perform any reading or changing to the project files and to run shell commands.
+```
+
 
 ## Table of Contents
 
@@ -957,6 +1026,9 @@ The basketball ETL page now mirrors the football workflow but is tailored to ESP
 
 - Uses the same transitional table and parse/apply endpoints
 - Polls `GET /v1/api/transitional/:id/apply-status` when a real apply runs in background mode
+- Polls the transitional list while any row is still `fetch_status = 'fetching'` so long ESPN day-by-day downloads refresh automatically in the table
+- Shows fetch-state awareness directly in the Status column (`Fetching...`, `done`, `error`-style states)
+- Disables the basketball Transform & Load buttons while the upstream fetch is still running, preventing premature apply attempts against the placeholder `{}` payload
 - Preserves the selected transitional-row metadata in the UI while the load runs
 - Adds a dedicated `Repair division scores from payload` action that calls `POST /v1/api/transitional/:id/repair-divisions`
 - Keeps dry-runs synchronous, while real applies are usually backgrounded to avoid request timeouts
@@ -1560,6 +1632,98 @@ This subsection documents the fixes and refinements performed during the two-day
   - Run backend typecheck and restart the backend dev server to load the updated SQL logic.
   - Re-test the admin update -> GET -> UI flow for several combinations of `start_year`/`end_year` (open-ended bounds null) to ensure all edge cases behave as expected.
   - Add a small automated test (integration or e2e) that asserts the year-envelope behavior for `standing_zones` to prevent regressions.
+
+### 10.9 Season-phase filtering for Api-Football payloads (2026-04-09)
+
+The `seasonPhase` filter (`All`, `Regular Season`, `Postseason`) was originally implemented only for ESPN payloads, which use `event.season.slug` to distinguish regular-season from postseason events. Api-Football payloads use a different mechanism — the `league.round` string:
+
+| `league.round` value | Classification |
+|---|---|
+| `"Regular Season - 1"` … `"Regular Season - 34"` | Regular season |
+| `"Relegation Round"` | Postseason |
+| `"Conference League Play-offs - Semi-finals"` | Postseason |
+| `"Conference League Play-offs - Final"` | Postseason |
+| Any string **not** starting with `"Regular Season"` | Postseason |
+
+**New private method**: `filterApiFootballFixturesBySeasonPhase(fixtures, seasonPhase)` in `api.service.ts`. It reuses `normalizeSeasonPhaseFilter()` and checks whether the flattened `league.round` key starts with `"regular season"` (case-insensitive). When `seasonPhase = 'regular-season'`, only those rows are kept. When `seasonPhase = 'postseason'`, only non-regular-season rows are kept. `'all'` returns everything unchanged.
+
+**Integration points**:
+
+1. **`parseTransitional()` — Api-Football branch**: After flattening the raw payload into `flatRows`, the new filter is applied before returning.
+2. **`applyAllRowsToApp()` — subsequent-load fast path**: The Api-Football branch now passes `options.seasonPhase` through to `parseTransitional()` (previously it was omitted, so subsequent loads always processed all fixtures regardless of the UI selection).
+
+**Frontend**: The football T&L page (`/admin/api/etl/transform-load/football/`) already sends `seasonPhase` in both the parse query string and the apply request body, so no frontend changes were needed.
+
+### 10.10 ESPN first-load guard with pre-existing season rows (2026-04-09)
+
+An additional bug was fixed in the ESPN round-based import flow for leagues such as `ned.1`.
+
+**Symptom**:
+
+- A first payload for a new season could reach the round-review workflow successfully
+- After the user entered manual round assignments and clicked to continue, the backend could stop with a duplicate-season style message instead of proceeding with the actual load
+
+**Root cause**:
+
+`parseTransitional()` previously treated the existence of a `seasons` row by itself as enough evidence that the import should be aborted (`season_already_exists`) for round-based ESPN competitions.
+
+That assumption is too strong. A `seasons` row may already exist because:
+
+- the season was pre-created administratively, or
+- earlier setup work created league/season metadata before any rounds or matches were actually imported
+
+In that state, the import is still a **first load** and must continue through round review, entity review, `applyFirstRowToApp()`, and the real per-row load.
+
+**Corrected behavior**:
+
+- `parseTransitional()` now aborts round-based ESPN imports only when the target season already has imported rounds
+- If a season row exists but rounds are still absent, the flow continues as a first load and still reaches round review / entity review / real load
+- **Date-based ESPN seasons**: treat as a subsequent load only when the target league/season already has imported `matches`
+- **Round-based ESPN seasons**: abort as duplicate only when the target league/season already has imported `rounds`
+- If the season exists but has **no rounds** (round-based) or **no matches** (date-based), the parser now continues as a normal first-load flow
+
+### 10.11 ESPN NBA subsequent-load fixes and fetch-state guard (2026-04-09)
+
+Two related bugs were fixed in the ESPN basketball/date-based import flow, especially visible on NBA season updates.
+
+**Symptom**:
+
+- A day-by-day NBA extraction could report that hundreds of events were fetched successfully
+- Clicking Transform & Load too early could return `{ reason: 'no_events_array', applied: 0 }`
+- Even after the payload existed, subsequent-load auto-detection could still fail to recognize the already-imported NBA league/season
+
+**Root cause 1 — apply/parse could run before the background fetch finished**:
+
+For ESPN non-football seasons, `fetchAndStore()` inserts an `api_transitional` placeholder row immediately with:
+
+- `payload = '{}'`
+- `fetch_status = 'fetching'`
+
+The real day-by-day fetch then runs in the background and later patches the row with the merged payload. Before this fix, `parseTransitional()` and `applyAllRowsToApp()` did not reject work during the `fetching` window, so the parser could read the placeholder payload and correctly conclude that `payload.events` was empty, producing `no_events_array`.
+
+**Corrected behavior**:
+
+- `parseTransitional()` now returns `fetch_not_complete` when `fetch_status !== 'done'`
+- `applyAllRowsToApp()` now returns the same guard result instead of trying to parse the placeholder payload
+- The basketball admin page now surfaces fetch progress in the rows table, auto-refreshes while rows are still fetching, and disables T&L actions until the fetch completes
+
+**Root cause 2 — ESPN league lookup used the wrong identifier during subsequent-load detection**:
+
+The fast-path lookup for ESPN subsequent loads previously queried `leagues.espn_id` using `row.league`, which is the ESPN URL code such as `nba`, `eng.1`, or `esp.1`.
+
+That does not match how the league is actually stored during first load. `applyFirstRowToApp()` persists `leagues.espn_id` from `payload.leagues[0].id`, which for NBA is the numeric ESPN league id (`46`), not the URL slug (`nba`).
+
+**Corrected behavior**:
+
+- Both `parseTransitional()` and `applyAllRowsToApp()` now prefer `payload.leagues[0].id` for the `espn_id` lookup
+- The previous league-name match remains as a fallback, so the lookup is now consistent with how ESPN leagues are inserted on first load
+- This restores reliable subsequent-load detection for date-based leagues such as NBA, where the system should skip heavyweight round inference and go straight to the lightweight event extraction path
+
+**Season-phase safety note**:
+
+`filterEspnEventsBySeasonPhase()` now keeps events whose `event.season.slug` is missing instead of dropping them. This does not change normal regular-season/postseason filtering for payloads that already provide a slug (such as NBA regular-season data); it only prevents slug-less day-by-day events from being discarded unnecessarily.
+
+This keeps the reparse-after-manual-round-review path working correctly for first payloads of a season.
 
 ---
 

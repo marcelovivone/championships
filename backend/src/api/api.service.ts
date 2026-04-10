@@ -811,8 +811,20 @@ export class ApiService {
         let skipped = 0;
         let errors = 0;
         try {
-            // Parse the transitional row to get rows with linescore fields
-            const parsed = await this.parseTransitional(id) as any;
+            // Parse the transitional row to get rows with linescore fields.
+            // For ESPN subsequent loads, parseTransitional returns found:false
+            // (because the season already has data).  Bypass that check and use
+            // the lightweight parser directly — repair is an explicit operation
+            // that should never be blocked by "data already exists" guards.
+            const transitionalRow = await this.getTransitional(id);
+            if (!transitionalRow) return { repaired: 0, skipped: 0, errors: 1 };
+            const rowOrigin = transitionalRow.origin ?? 'Api-Football';
+            let parsed: any;
+            if (rowOrigin === 'Api-Espn') {
+                parsed = this.parseTransitionalEspnLightweight(transitionalRow);
+            } else {
+                parsed = await this.parseTransitional(id);
+            }
             if (!parsed || !parsed.found) {
                 return { repaired: 0, skipped: 0, errors: 1 };
             }
@@ -895,7 +907,7 @@ export class ApiService {
         };
     }
 
-    async detectEntitiesForReview(id: number, sportId?: number) {
+    async detectEntitiesForReview(id: number, sportId?: number, seasonPhase?: string) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         try {
@@ -974,7 +986,7 @@ export class ApiService {
             const seasonYear = transitional.season;
 
             // Parse the data EARLY — needed to extract parsedCountry before the league check.
-            const parseResult = await this.parseTransitional(id);
+            const parseResult = await this.parseTransitional(id, undefined, seasonPhase);
             if (!parseResult?.found) {
                 return { found: false, reason: 'parse_failed' };
             }
@@ -1464,9 +1476,14 @@ export class ApiService {
     }
 
     // Parse a transitional payload into tabular rows/columns
-    async parseTransitional(id: number, roundOverrides?: Record<string, number>) {
+    async parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string) {
         const row = await this.getTransitional(id);
         if (!row) return { found: false };
+
+        // Guard: reject parse if background fetch hasn't completed yet
+        if (row.fetch_status && row.fetch_status !== 'done') {
+            return { found: false, reason: 'fetch_not_complete', error: `Data fetch is still '${row.fetch_status}'. Wait for the background fetch to finish.` };
+        }
 
         // ── Subsequent-load detection ────────────────────────────────────────
         // When rounds already exist for the league/season this payload belongs
@@ -1478,6 +1495,10 @@ export class ApiService {
             // row.league is the ESPN URL code (e.g. 'eng.1', 'esp.1') stored at fetch time.
             const espnLeagueCode: string | null = row.league ?? null;
             const meta = this.extractLeagueMetadata(row);
+            // espn_id in leagues table stores the ESPN numeric league ID (from
+            // payload.leagues[0].id, e.g. '46' for NBA), NOT the URL code ('nba').
+            const rowPayload = row.payload ?? {};
+            const espnNumericId: string | null = rowPayload?.leagues?.[0]?.id != null ? String(rowPayload.leagues[0].id) : null;
 
             if (meta.leagueName || espnLeagueCode) {
                 const sportId = row.sport ?? 36;
@@ -1507,7 +1528,7 @@ export class ApiService {
                             // "Spanish LALIGA" while DB has "Spanish LaLiga".
                             const lRes = await pool.query(
                                 `SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
-                                [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
+                                [String(meta.leagueName ?? '').trim(), sportId, espnNumericId ?? espnLeagueCode],
                             );
                             if (lRes.rows.length) {
                                 leagueId = lRes.rows[0].id;
@@ -1524,32 +1545,40 @@ export class ApiService {
                                 if (sRes.rows.length) { seasonRow = sRes.rows[0]; break; }
                             }
                             if (seasonRow) {
-                                // For date-based schedules (e.g. NBA) repeated imports are
-                                // expected (different date ranges throughout the season).
-                                // When the league+season already exists, there is no entity
-                                // review to do here — go straight to the update/apply flow.
                                 const scheduleType: string = (row.league_schedule_type ?? 'Round').trim();
                                 if (scheduleType === 'Date') {
-                                    return {
-                                        found: false,
-                                        reason: 'subsequent_load_no_entity_review',
-                                        details: {
-                                            leagueId,
-                                            seasonId: seasonRow.id,
-                                        },
-                                    };
+                                    const matchesRes = await pool.query(
+                                        `SELECT COUNT(*)::int as cnt FROM matches WHERE league_id = $1 AND season_id = $2`,
+                                        [leagueId, seasonRow.id],
+                                    );
+                                    if (Number(matchesRes.rows[0]?.cnt ?? 0) > 0) {
+                                        return {
+                                            found: false,
+                                            reason: 'subsequent_load_no_entity_review',
+                                            details: {
+                                                leagueId,
+                                                seasonId: seasonRow.id,
+                                            },
+                                        };
+                                    }
                                 }
 
                                 if (scheduleType !== 'Date') {
-                                    return {
-                                        found: false,
-                                        reason: 'season_already_exists',
-                                        details: {
-                                            message: 'A season already exists for this league — import aborted to avoid duplicates.',
-                                            leagueId,
-                                            seasonId: seasonRow.id,
-                                        },
-                                    };
+                                    const roundsRes = await pool.query(
+                                        `SELECT COUNT(*)::int as cnt FROM rounds WHERE league_id = $1 AND season_id = $2`,
+                                        [leagueId, seasonRow.id],
+                                    );
+                                    if (Number(roundsRes.rows[0]?.cnt ?? 0) > 0) {
+                                        return {
+                                            found: false,
+                                            reason: 'season_already_exists',
+                                            details: {
+                                                message: 'A season already exists for this league and already has imported rounds — import aborted to avoid duplicates.',
+                                                leagueId,
+                                                seasonId: seasonRow.id,
+                                            },
+                                        };
+                                    }
                                 }
                             }
                         }
@@ -1564,7 +1593,7 @@ export class ApiService {
         const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
         // Check the origin and route to appropriate parser
         if (origin === 'Api-Espn') {
-            return this.parseTransitionalEspn(row, effectiveRoundOverrides);
+            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase);
         }
         // Default: Api-Football parsing
         const payload = row.payload ?? row;
@@ -1660,7 +1689,11 @@ export class ApiService {
             return out;
         };
 
-        const flatRows = rows.map((r) => flatten(r));
+        let flatRows = rows.map((r) => flatten(r));
+
+        // Apply season-phase filter for Api-Football payloads
+        flatRows = this.filterApiFootballFixturesBySeasonPhase(flatRows, seasonPhase);
+
         // collect columns
         const columns = Array.from(new Set(flatRows.flatMap(Object.keys)));
 
@@ -1669,12 +1702,58 @@ export class ApiService {
 
     // Parse ESPN API response into tabular format
     // ESPN structure: events[] -> competitions[0] -> competitors[], venue, status
-    private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>) {
+    private normalizeSeasonPhaseFilter(seasonPhase?: string): 'all' | 'postseason' | 'regular-season' {
+        const normalized = String(seasonPhase ?? 'all').trim().toLowerCase();
+        if (normalized === 'regular-season') return 'regular-season';
+        if (normalized === 'postseason') return 'postseason';
+        return 'all';
+    }
+
+    private filterEspnEventsBySeasonPhase(events: any[], seasonPhase?: string) {
+        const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
+        if (normalized === 'all') return events;
+
+        return events.filter((event: any) => {
+            const slug = String(event?.season?.slug ?? '').trim().toLowerCase();
+            // Day-by-day scoreboard responses sometimes omit season.slug. When
+            // that happens prefer to include the event rather than drop it —
+            // callers performing day-by-day NBA fetches expect those events.
+            if (!slug) return true;
+            if (normalized === 'regular-season') return slug === 'regular-season';
+            return slug !== 'regular-season';
+        });
+    }
+
+    /**
+     * Filter Api-Football fixtures by seasonPhase.
+     * Api-Football uses `league.round` strings like "Regular Season - 34",
+     * "Relegation Round", "Conference League Play-offs - Semi-finals", etc.
+     * Regular season rows start with "Regular Season".
+     * Everything else is postseason.
+     */
+    private filterApiFootballFixturesBySeasonPhase(fixtures: any[], seasonPhase?: string): any[] {
+        const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
+        if (normalized === 'all') return fixtures;
+
+        return fixtures.filter((fix: any) => {
+            // Works on both raw fixtures (league.round) and flattened rows ('league.round')
+            const round = String(fix?.league?.round ?? fix?.['league.round'] ?? '').trim().toLowerCase();
+            const isRegularSeason = round.startsWith('regular season');
+            if (normalized === 'regular-season') return isRegularSeason;
+            return !isRegularSeason;
+        });
+    }
+
+    private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>, seasonPhase?: string) {
         const payload = row.payload ?? row;
         // ESPN data structure: { events: [...] }
-        const events = payload?.events ?? [];
-        if (!Array.isArray(events) || events.length === 0) {
+        const rawEvents = payload?.events ?? [];
+        if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
             return { found: false, reason: 'no_events_array' };
+        }
+        const events = this.filterEspnEventsBySeasonPhase(rawEvents, seasonPhase);
+        if (events.length === 0) {
+            return { found: false, reason: 'no_events_for_season_phase' };
         }
         // Determine whether this league uses date-based scheduling (e.g. NBA)
         // or round-based scheduling (e.g. football leagues). This drives whether
@@ -2969,7 +3048,7 @@ export class ApiService {
     }
 
     // Apply first-row processing: upsert country, league, season based on parsed first row
-    async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number>; leagueId?: number; countryId?: number } = {}) {
+    async applyFirstRowToApp(id: number, options: { sportId?: number; roundOverrides?: Record<string, number>; leagueId?: number; countryId?: number; seasonPhase?: string } = {}) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         const client = await pool.connect();
@@ -2985,7 +3064,7 @@ export class ApiService {
                 );
             `);
 
-            const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
+            const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase) as any;
             if (!parsed || !parsed.found) {
                 return {
                     applied: false,
@@ -3154,7 +3233,7 @@ export class ApiService {
                 } else {
                     const code = nameClean.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || null;
                     const ins = await client.query(
-                        `INSERT INTO countries (name, code, flag, continent) VALUES ($1,$2,$3,$4) RETURNING id`,
+                        `INSERT INTO countries (name, code, flag_url, continent) VALUES ($1,$2,$3,$4) RETURNING id`,
                         [nameClean, code, leagueFlag || null, 'Europe'],
                     );
                     countryId = ins.rows[0].id;
@@ -3538,11 +3617,15 @@ export class ApiService {
     // parseTransitionalEspn but WITHOUT running round inference.  league.round is
     // set to null for every row — the per-row processing loop will preserve the
     // existing round_id via COALESCE when updating matches.
-    private parseTransitionalEspnLightweight(row: any) {
+    private parseTransitionalEspnLightweight(row: any, seasonPhase?: string) {
         const payload = row.payload ?? row;
-        const events = payload?.events ?? [];
-        if (!Array.isArray(events) || events.length === 0) {
+        const rawEvents = payload?.events ?? [];
+        if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
             return { found: false, reason: 'no_events_array' };
+        }
+        const events = this.filterEspnEventsBySeasonPhase(rawEvents, seasonPhase);
+        if (events.length === 0) {
+            return { found: false, reason: 'no_events_for_season_phase' };
         }
         const firstEvent = events[0];
         const seasonInfo = firstEvent?.season ?? {};
@@ -3560,7 +3643,7 @@ export class ApiService {
             const venue = competition?.venue ?? {};
             const status = competition?.status?.type ?? {};
 
-            rows.push({
+            const mapped: Record<string, any> = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Unknown',
                 'league.season': parsedSeasonYear,
                 'league.country': venue?.address?.country ?? null,
@@ -3591,7 +3674,26 @@ export class ApiService {
                 'fixture.status.completed': status?.completed ?? null,
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
+            };
+
+            // Extract per-period linescores (e.g. basketball quarters, OT) so that
+            // createMatchDivisions uses the fast path with real partial scores
+            // instead of falling back to football-style halftime/fulltime logic.
+            const homeLinescores: number[] = (homeTeam?.linescores ?? []).map((ls: any) => {
+                const v = ls?.value ?? ls?.displayValue;
+                return v != null ? Math.max(0, Math.trunc(Number(v))) : 0;
             });
+            const awayLinescores: number[] = (awayTeam?.linescores ?? []).map((ls: any) => {
+                const v = ls?.value ?? ls?.displayValue;
+                return v != null ? Math.max(0, Math.trunc(Number(v))) : 0;
+            });
+            const linescoredPeriods = Math.max(homeLinescores.length, awayLinescores.length);
+            for (let p = 1; p <= linescoredPeriods; p++) {
+                mapped[`divisions.home.${p}`] = homeLinescores[p - 1] ?? 0;
+                mapped[`divisions.away.${p}`] = awayLinescores[p - 1] ?? 0;
+            }
+
+            rows.push(mapped);
         }
         if (rows.length === 0) return { found: false, reason: 'no_valid_events' };
         const columns = Array.from(new Set(rows.flatMap(Object.keys)));
@@ -3599,7 +3701,7 @@ export class ApiService {
     }
 
     // Apply all rows: create rounds, clubs, and matches (atomic)
-    async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> } = {}) {
+    async applyAllRowsToApp(id: number, options: { sportId?: number; leagueId?: number; seasonId?: number; dryRun?: boolean; roundOverrides?: Record<string, number>; seasonPhase?: string } = {}) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
         const client = await pool.connect();
@@ -3640,6 +3742,10 @@ export class ApiService {
             // upsert logic already handles skip / update / insert correctly.
             const transitionalRow = await this.getTransitional(id);
             if (!transitionalRow) return { applied: 0, reason: 'not_found' };
+            // Guard: reject apply if background fetch hasn't completed yet
+            if (transitionalRow.fetch_status && transitionalRow.fetch_status !== 'done') {
+                return { applied: 0, reason: 'fetch_not_complete', error: `Data fetch is still '${transitionalRow.fetch_status}'. Wait for the background fetch to finish.`, details: null };
+            }
             // Read ESPN enrichment flags from the transitional row
             const flgHasDivisions = transitionalRow.flg_has_divisions !== false;
             const flgHasGroups = transitionalRow.flg_has_groups === true;
@@ -3657,6 +3763,11 @@ export class ApiService {
             let isSubsequentLoad = false;
             const meta = this.extractLeagueMetadata(transitionalRow);
             const espnLeagueCode: string | null = transitionalRow.league ?? null;
+            // espn_id in leagues table stores the ESPN numeric league ID (from
+            // payload.leagues[0].id, e.g. '46' for NBA), NOT the URL code ('nba').
+            const transitionalPayload = transitionalRow.payload ?? {};
+            const espnNumericLeagueId: string | null = (transitionalOrigin === 'Api-Espn' && transitionalPayload?.leagues?.[0]?.id != null)
+                ? String(transitionalPayload.leagues[0].id) : null;
             if (meta.leagueName || espnLeagueCode) {
                 // Build candidate season years from the payload AND the stored season string
                 // (e.g. "2025/2026" → [2025, 2026]) so NULL season never blocks detection.
@@ -3673,7 +3784,7 @@ export class ApiService {
                 // while DB stores "Spanish LaLiga".
                 const lRes = await client.query(
                     `SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`,
-                    [String(meta.leagueName ?? '').trim(), sportId, espnLeagueCode],
+                    [String(meta.leagueName ?? '').trim(), sportId, espnNumericLeagueId ?? espnLeagueCode],
                 );
                 if (lRes.rows.length) {
                     const possibleLeagueId = lRes.rows[0].id;
@@ -3719,10 +3830,10 @@ export class ApiService {
                 const origin = transitionalRow.origin ?? 'Api-Football';
                 let parsed: any;
                 if (origin === 'Api-Espn') {
-                    parsed = this.parseTransitionalEspnLightweight(transitionalRow);
+                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase);
                 } else {
                     // Api-Football standard parse is already lightweight (just JSON flattening)
-                    parsed = await this.parseTransitional(id);
+                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase);
                 }
                 if (!parsed || !parsed.found) {
                     return { applied: 0, reason: parsed?.reason ?? 'lightweight_parse_failed' };
@@ -3730,7 +3841,7 @@ export class ApiService {
                 rows = parsed.rows || [];
             } else {
                 // Full path: run parseTransitional with round inference
-                const parsed = await this.parseTransitional(id, options.roundOverrides) as any;
+                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase) as any;
                 if (!parsed || !parsed.found) {
                     return {
                         applied: 0,
@@ -3750,6 +3861,7 @@ export class ApiService {
                         roundOverrides: options.roundOverrides,
                         leagueId: preEntityMappings.league ?? undefined,
                         countryId: preEntityMappings.country ?? undefined,
+                        seasonPhase: options.seasonPhase,
                     });
                     if (!firstRowResult.applied) return { applied: 0, reason: 'first_row_failed', details: firstRowResult };
                     leagueId = firstRowResult.leagueId;

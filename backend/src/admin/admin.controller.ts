@@ -17,6 +17,8 @@ class TimezoneAdjustmentDto {
   seasonId?: number;
   roundId?: number;
   roundIds?: number[];
+  startDate?: string;
+  endDate?: string;
   matchId?: number;
   adjustmentType: 'country' | 'manual' | 'set';
   manualHours?: number;
@@ -111,11 +113,24 @@ export class AdminController {
       throw new BadRequestException('roundIds must be an array of numbers');
     }
 
-    // If a specific matchId is provided, ensure exactly one round is selected
+    if (payload.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(payload.startDate)) {
+      throw new BadRequestException('startDate must be in YYYY-MM-DD format');
+    }
+
+    if (payload.endDate && !/^\d{4}-\d{2}-\d{2}$/.test(payload.endDate)) {
+      throw new BadRequestException('endDate must be in YYYY-MM-DD format');
+    }
+
+    if (payload.startDate && payload.endDate && payload.endDate < payload.startDate) {
+      throw new BadRequestException('endDate cannot be earlier than startDate');
+    }
+
+    // If a specific matchId is provided, ensure exactly one round OR exactly one day is selected
     if (payload.matchId) {
       const roundsSelected = payload.roundIds ? payload.roundIds.length : (payload.roundId ? 1 : 0);
-      if (roundsSelected !== 1) {
-        throw new BadRequestException('Selecting a specific match requires exactly one round to be selected');
+      const hasSingleDay = !!payload.startDate && (!payload.endDate || payload.endDate === payload.startDate);
+      if (roundsSelected !== 1 && !hasSingleDay) {
+        throw new BadRequestException('Selecting a specific match requires exactly one round or exactly one day to be selected');
       }
     }
 

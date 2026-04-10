@@ -81,12 +81,13 @@ export class ApiController {
   async parseTransitional(
     @Param('id', ParseIntPipe) id: number,
     @Query('roundOverrides') roundOverridesJson?: string,
+    @Query('seasonPhase') seasonPhase?: string,
   ) {
     let roundOverrides: Record<string, number> | undefined;
     if (roundOverridesJson) {
       try { roundOverrides = JSON.parse(roundOverridesJson); } catch { /* ignore malformed input */ }
     }
-    const parsed = await this.apiService.parseTransitional(id, roundOverrides) as any;
+    const parsed = await this.apiService.parseTransitional(id, roundOverrides, seasonPhase) as any;
     if (!parsed || !parsed.found) {
       const reason = parsed?.reason ?? 'parse_failed';
       const error = parsed?.error ?? parsed?.details?.message ?? null;
@@ -156,25 +157,26 @@ export class ApiController {
   async getEntitySuggestions(
     @Param('id', ParseIntPipe) id: number,
     @Query('sportId') sportId?: string,
+    @Query('seasonPhase') seasonPhase?: string,
   ) {
     // console.log(`Getting entity suggestions for transitional row ${id} with sportId=${sportId}`);
-    const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined);
+    const result = await this.apiService.detectEntitiesForReview(id, sportId ? parseInt(sportId) : undefined, seasonPhase);
     // console.log('Got entity suggestions:', result);
     return result;
   }
 
   @Post('transitional/:id/apply-first-row')
-  async applyFirstRow(@Param('id', ParseIntPipe) id: number, @Body() body: { sportId?: number }) {
-    const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId });
+  async applyFirstRow(@Param('id', ParseIntPipe) id: number, @Body() body: { sportId?: number; seasonPhase?: string }) {
+    const result = await this.apiService.applyFirstRowToApp(id, { sportId: body?.sportId, seasonPhase: body?.seasonPhase });
     return result;
   }
 
   @Post('transitional/:id/apply-all-rows')
   async applyAllRows(
     @Param('id', ParseIntPipe) id: number,
-    @Body() body: { sportId?: number; dryRun?: boolean; roundOverrides?: Record<string, number> },
+    @Body() body: { sportId?: number; dryRun?: boolean; roundOverrides?: Record<string, number>; seasonPhase?: string },
   ) {
-    const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides };
+    const opts = { sportId: body?.sportId, dryRun: !!body?.dryRun, roundOverrides: body?.roundOverrides, seasonPhase: body?.seasonPhase };
     // Dry runs are always synchronous (need immediate feedback for previewing)
     if (opts.dryRun) {
       return await this.apiService.applyAllRowsToApp(id, opts);

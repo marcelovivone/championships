@@ -166,6 +166,7 @@ export default function EtlPage() {
     const [loadingRow, setLoadingRow] = useState(false);
     const [targetTable, setTargetTable] = useState('');
     const [dryRun, setDryRun] = useState(false);
+    const [seasonPhase, setSeasonPhase] = useState<'all' | 'postseason' | 'regular-season'>('all');
     const [mappingInputs, setMappingInputs] = useState<Record<string, string>>({});
     const [loadResult, setLoadResult] = useState<any | null>(null);
     const [runningLoad, setRunningLoad] = useState(false);
@@ -266,6 +267,21 @@ export default function EtlPage() {
             .finally(() => setLoadingRows(false));
     }, [basketballSportId]);
 
+    // Auto-refresh rows while any background fetch is still in progress
+    useEffect(() => {
+        const hasFetching = rows.some((r: any) => r.fetch_status === 'fetching');
+        if (!hasFetching || basketballSportId == null) return;
+        const interval = setInterval(async () => {
+            try {
+                const r = await fetch(`${API_BASE}/v1/api/transitional`);
+                const j = await r.json();
+                const all = j.items || j.data?.items || [];
+                setRows(all.filter((r: any) => r.sport === basketballSportId));
+            } catch {}
+        }, 5000);
+        return () => clearInterval(interval);
+    }, [rows, basketballSportId]);
+
     // keep page input in sync with page
     useEffect(() => {
         setPageInput(page.toString());
@@ -299,10 +315,13 @@ export default function EtlPage() {
         setExpandedRoundDetails({});
         try {
             // Fetch parsed tabular data from server-side parser
-            const overridesParam = Object.keys(overrides).length > 0
-                ? `?roundOverrides=${encodeURIComponent(JSON.stringify(overrides))}`
-                : '';
-            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${overridesParam}`);
+            const params = new URLSearchParams();
+            if (Object.keys(overrides).length > 0) {
+                params.set('roundOverrides', JSON.stringify(overrides));
+            }
+            params.set('seasonPhase', seasonPhase);
+            const query = params.toString();
+            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${query ? `?${query}` : ''}`);
             const pJson = await pResp.json();
             // Backend wraps responses with { statusCode, success, data } via interceptor
             const payload = pJson?.data ?? pJson;
@@ -421,10 +440,13 @@ export default function EtlPage() {
         // Skip this entirely for subsequent loads — rounds already exist, no review needed.
         if (!isSubsequentLoad && !skipEntityReview) {
           try {
-            const overridesParam = Object.keys(effectiveOverrides).length > 0
-                ? `?roundOverrides=${encodeURIComponent(JSON.stringify(effectiveOverrides))}`
-                : '';
-            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${overridesParam}`);
+            const params = new URLSearchParams();
+            if (Object.keys(effectiveOverrides).length > 0) {
+                params.set('roundOverrides', JSON.stringify(effectiveOverrides));
+            }
+            params.set('seasonPhase', seasonPhase);
+            const query = params.toString();
+            const pResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/parse${query ? `?${query}` : ''}`);
             const pJson = await pResp.json();
             const pPayload = pJson?.data ?? pJson;
             if (pPayload?.reason === 'needs_round_review' && pPayload?.details?.reviewMatches?.length) {
@@ -463,7 +485,8 @@ export default function EtlPage() {
             
             // Always check for entity conflicts - backend will use existing mappings if available
             const rowSportId = rows.find((r: any) => r.id === id)?.sport ?? basketballSportId ?? 34;
-            const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/entity-suggestions?sportId=${rowSportId}`);
+            const entityParams = new URLSearchParams({ sportId: String(rowSportId), seasonPhase });
+            const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${id}/entity-suggestions?${entityParams.toString()}`);
             const entityCheckJson = await entityCheckResp.json();
             const entityData = entityCheckJson?.data ?? entityCheckJson;
             // return;
@@ -553,7 +576,7 @@ export default function EtlPage() {
             const resp = await fetch(`${API_BASE}/v1/api/transitional/${id}/apply-all-rows`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sportId: rows.find((r: any) => r.id === id)?.sport ?? basketballSportId ?? 34, dryRun: isDryRun, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
+                body: JSON.stringify({ sportId: rows.find((r: any) => r.id === id)?.sport ?? basketballSportId ?? 34, dryRun: isDryRun, seasonPhase, ...(Object.keys(effectiveOverrides).length > 0 ? { roundOverrides: effectiveOverrides } : {}) }),
             });
             const j = await resp.json();
             let payload = j?.data ?? j;
@@ -874,6 +897,18 @@ export default function EtlPage() {
                             <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} className="mr-2" />
                             Dry run
                         </label>
+                        <label className="inline-flex items-center text-sm gap-2">
+                            <span>Season Phase</span>
+                            <select
+                                value={seasonPhase}
+                                onChange={(e) => setSeasonPhase(e.target.value as 'all' | 'postseason' | 'regular-season')}
+                                className="rounded border border-gray-300 px-2 py-1 text-sm"
+                            >
+                                <option value="all">All</option>
+                                <option value="postseason">Postseason</option>
+                                <option value="regular-season">Regular Season</option>
+                            </select>
+                        </label>
                         <button onClick={() => reloadRows()} className="px-3 py-2 bg-blue-600 text-white rounded text-sm whitespace-nowrap" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Reload</button>
                         <button ref={resetBtnRef} onClick={handleClearResults} className="px-3 py-2 bg-gray-300 text-gray-800 rounded text-sm whitespace-nowrap" style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>Clear</button>
                     </div>
@@ -913,7 +948,10 @@ export default function EtlPage() {
                                     { header: 'Season', accessor: (r: any) => (r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-'), width: '140px', sortKey: 'season', sortable: true },
                                     { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div>, sortKey: 'source_url', sortable: true },
                                     { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at), sortKey: 'fetched_at', sortable: true },
-                                    { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded'), sortKey: 'status', sortable: true },
+                                    { header: 'Status', accessor: (r: any) => {
+                                        if (r.fetch_status && r.fetch_status !== 'done') return <span className="text-orange-600 font-medium">{r.fetch_status === 'fetching' ? 'Fetching...' : `Fetch ${r.fetch_status}`}</span>;
+                                        return r.status ? 'Loaded' : 'Not Loaded';
+                                    }, sortKey: 'status', sortable: true },
                                     {
                                         header: 'Actions',
                                         accessor: (r: any) => (
@@ -921,7 +959,7 @@ export default function EtlPage() {
                                                 <button onClick={() => handleToFrontendTable(r.id)} className="text-blue-600 hover:text-blue-900" title="Table/Json View">
                                                     <TableIcon size={18} />
                                                 </button>
-                                                <button onClick={() => handleToDbTables(r.id, undefined, r)} disabled={runningLoad} className={`text-green-600 hover:text-green-900 ${runningLoad ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
+                                                <button onClick={() => handleToDbTables(r.id, undefined, r)} disabled={runningLoad || (r.fetch_status && r.fetch_status !== 'done')} className={`text-green-600 hover:text-green-900 ${runningLoad || (r.fetch_status && r.fetch_status !== 'done') ? 'opacity-50 cursor-not-allowed' : ''}`} title="Transform & Load">
                                                     <Database size={18} />
                                                 </button>
                                                 <button
@@ -1145,8 +1183,8 @@ export default function EtlPage() {
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 w-full">
                                 {/* Left: To DB + Dry run + Clear */}
                                 <div className="flex items-center gap-2 order-1 md:order-1">
-                                    <button disabled={runningLoad} onClick={() => selected && handleToDbTables(selected.id)} className={`px-3 py-2 rounded text-sm ${runningLoad ? 'bg-gray-400 text-gray-800' : 'bg-green-600 text-white'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>
-                                        {runningLoad ? 'Running...' : (dryRun ? 'Transform & Load (Dry run)' : 'Transform & Load')}
+                                    <button disabled={runningLoad || (selected?.fetch_status && selected.fetch_status !== 'done')} onClick={() => selected && handleToDbTables(selected.id)} className={`px-3 py-2 rounded text-sm ${runningLoad || (selected?.fetch_status && selected.fetch_status !== 'done') ? 'bg-gray-400 text-gray-800' : 'bg-green-600 text-white'}`} style={minBtnWidth ? { minWidth: `${minBtnWidth}px` } : undefined}>
+                                        {selected?.fetch_status === 'fetching' ? 'Fetch in progress...' : runningLoad ? 'Running...' : (dryRun ? 'Transform & Load (Dry run)' : 'Transform & Load')}
                                     </button>
                                 </div>
 
@@ -1627,7 +1665,11 @@ export default function EtlPage() {
                                                 setLeagueMapping(undefined);
                                                 
                                                 try {
-                                                    const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?sportId=${rows.find((r: any) => r.id === applyId)?.sport ?? basketballSportId ?? 36}`);
+                                                    const entityParams = new URLSearchParams({
+                                                        sportId: String(rows.find((r: any) => r.id === applyId)?.sport ?? basketballSportId ?? 36),
+                                                        seasonPhase,
+                                                    });
+                                                    const entityCheckResp = await fetch(`${API_BASE}/v1/api/transitional/${applyId}/entity-suggestions?${entityParams.toString()}`);
                                                     const entityCheckJson = await entityCheckResp.json();
                                                     const entityData = entityCheckJson?.data ?? entityCheckJson;
                                                     

@@ -3,12 +3,15 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
+import { sportsApi, leaguesApi } from '@/lib/api/entities';
 
 // Types
 type League = {
     id: number;
     name: string;
     originalName: string;
+    typeOfSchedule?: 'Round' | 'Date';
+    type_of_schedule?: 'Round' | 'Date';
     country: { name: string; code: string };
 };
 
@@ -99,9 +102,12 @@ const COUNTRY_TIMEZONES: Record<string, string> = {
 
 export default function TimezoneAdjustmentPage() {
     // Form state
+    const [selectedSportId, setSelectedSportId] = useState<string>('');
     const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
     const [selectedSeasonId, setSelectedSeasonId] = useState<string>('');
     const [selectedRoundIds, setSelectedRoundIds] = useState<string[]>([]);
+    const [selectedDateFrom, setSelectedDateFrom] = useState<string>('');
+    const [selectedDateTo, setSelectedDateTo] = useState<string>('');
     const [selectedMatchId, setSelectedMatchId] = useState<string>('');
 
     // Timezone adjustment options
@@ -118,16 +124,29 @@ export default function TimezoneAdjustmentPage() {
     const [lastPayload, setLastPayload] = useState<any>(null);
     const [lastErrorBody, setLastErrorBody] = useState<any>(null);
 
-    // Fetch leagues
-    const { data: leaguesData, isLoading: loadingLeagues } = useQuery({
-        queryKey: ['leagues'],
+    // Fetch sports list
+    const { data: sportsData, isLoading: loadingSports } = useQuery({
+        queryKey: ['sports'],
         queryFn: async () => {
-            const response = await apiClient.get('/v1/leagues');
-            return response.data;
+            const res = await sportsApi.getAll({ page: 1, limit: 200 });
+            return res;
         }
     });
 
-    const leaguesRaw = leaguesData?.data || [];
+    const sports = sportsData?.data || [];
+
+    // Fetch leagues filtered by selected sport
+    const { data: leaguesData, isLoading: loadingLeagues } = useQuery({
+        queryKey: ['leagues', selectedSportId],
+        queryFn: async () => {
+            if (!selectedSportId) return [] as any[];
+            const res = await leaguesApi.getBySport(Number(selectedSportId));
+            return res;
+        },
+        enabled: !!selectedSportId,
+    });
+
+    const leaguesRaw = leaguesData || [];
 
     // Ensure leagues are displayed ordered by name (prefer originalName then name)
     const leagues = [...leaguesRaw].sort((a: League, b: League) => {
@@ -149,6 +168,14 @@ export default function TimezoneAdjustmentPage() {
 
     const seasons = (Array.isArray(seasonsData) ? seasonsData : (seasonsData?.data || [])).slice().sort((a: Season, b: Season) => b.startYear - a.startYear);
 
+    // Detect schedule type from selected league
+    const parsedLeagueId = selectedLeagueId ? parseInt(selectedLeagueId, 10) : NaN;
+    const selectedLeague = !Number.isNaN(parsedLeagueId)
+        ? leagues.find((l: League) => l.id === parsedLeagueId)
+        : undefined;
+    const rawSchedule = selectedLeague && (selectedLeague.typeOfSchedule || selectedLeague.type_of_schedule);
+    const leagueTypeOfSchedule: 'Round' | 'Date' = rawSchedule === 'Date' ? 'Date' : 'Round';
+
     // Fetch rounds (dependent on league + season)
     const { data: roundsData, isLoading: loadingRounds } = useQuery({
         queryKey: ['rounds', selectedLeagueId, selectedSeasonId],
@@ -157,22 +184,32 @@ export default function TimezoneAdjustmentPage() {
             const response = await apiClient.get(`/v1/rounds?seasonId=${selectedSeasonId}`);
             return response.data;
         },
-        enabled: !!selectedSeasonId
+        enabled: !!selectedSeasonId && leagueTypeOfSchedule === 'Round'
     });
 
     const rounds = Array.isArray(roundsData) ? roundsData : (roundsData?.data || []);
 
     // Fetch matches (dependent on league + season + single selected round)
+    const canPickSingleDateMatch = !!selectedDateFrom && (!selectedDateTo || selectedDateTo === selectedDateFrom);
+
     const { data: matchesData, isLoading: loadingMatches } = useQuery({
-        queryKey: ['matches', selectedLeagueId, selectedSeasonId, selectedRoundIds.join(',')],
+        queryKey: ['matches', selectedLeagueId, selectedSeasonId, selectedRoundIds.join(','), selectedDateFrom, selectedDateTo, leagueTypeOfSchedule],
         queryFn: async () => {
-            // only fetch matches when exactly one round selected
-            if (selectedRoundIds.length !== 1) return [];
-            const roundId = selectedRoundIds[0];
-            const response = await apiClient.get(`/v1/matches?seasonId=${selectedSeasonId}&roundId=${roundId}`);
+            if (leagueTypeOfSchedule === 'Round') {
+                if (selectedRoundIds.length !== 1) return [];
+                const roundId = selectedRoundIds[0];
+                const response = await apiClient.get(`/v1/matches?seasonId=${selectedSeasonId}&roundId=${roundId}`);
+                return response.data;
+            }
+
+            if (!canPickSingleDateMatch) return [];
+            const response = await apiClient.get(`/v1/matches?seasonId=${selectedSeasonId}&date=${selectedDateFrom}`);
             return response.data;
         },
-        enabled: selectedRoundIds.length === 1
+        enabled: !!selectedSeasonId && (
+            (leagueTypeOfSchedule === 'Round' && selectedRoundIds.length === 1) ||
+            (leagueTypeOfSchedule === 'Date' && canPickSingleDateMatch)
+        )
     });
 
     const matches = Array.isArray(matchesData) ? matchesData : (matchesData?.data || []);
@@ -205,11 +242,24 @@ export default function TimezoneAdjustmentPage() {
     useEffect(() => {
         setSelectedSeasonId('');
         setSelectedRoundIds([]);
+        setSelectedDateFrom('');
+        setSelectedDateTo('');
         setSelectedMatchId('');
     }, [selectedLeagueId]);
 
+    // When sport changes, clear league + downstream selections
+    useEffect(() => {
+        setSelectedLeagueId('');
+        setSelectedSeasonId('');
+        setSelectedRoundIds([]);
+        setSelectedDateFrom('');
+        setSelectedDateTo('');
+        setSelectedMatchId('');
+    }, [selectedSportId]);
     useEffect(() => {
         setSelectedRoundIds([]);
+        setSelectedDateFrom('');
+        setSelectedDateTo('');
         setSelectedMatchId('');
     }, [selectedSeasonId]);
 
@@ -217,14 +267,25 @@ export default function TimezoneAdjustmentPage() {
         setSelectedMatchId('');
     }, [selectedRoundIds]);
 
-    // Ensure we parse the selected league id safely (handle non-numeric IDs)
-    const parsedLeagueId = selectedLeagueId ? parseInt(selectedLeagueId, 10) : NaN;
-    const selectedLeague = !Number.isNaN(parsedLeagueId)
-        ? leagues.find((l: League) => l.id === parsedLeagueId)
-        : undefined;
+    useEffect(() => {
+        setSelectedMatchId('');
+    }, [selectedDateFrom, selectedDateTo]);
+
+    useEffect(() => {
+        setSelectedRoundIds([]);
+        setSelectedDateFrom('');
+        setSelectedDateTo('');
+        setSelectedMatchId('');
+    }, [leagueTypeOfSchedule]);
+
     const countryTimezone = selectedLeague ? COUNTRY_TIMEZONES[selectedLeague.country?.name] : null;
 
     const handleProcess = async () => {
+        if (!selectedSportId) {
+            setProcessError('Please select a sport');
+            return;
+        }
+
         if (!selectedLeagueId) {
             setProcessError('Please select at least a league');
             return;
@@ -241,6 +302,11 @@ export default function TimezoneAdjustmentPage() {
         if (!resolvedLeague) {
             setProcessError('Please select a valid league');
             return;
+        }
+
+        if (leagueTypeOfSchedule === 'Date' && selectedDateFrom && selectedDateTo && selectedDateTo < selectedDateFrom) {
+                setProcessError('End date cannot be earlier than start date');
+                return;
         }
 
         // Validate setTime when using 'set' mode
@@ -267,9 +333,12 @@ export default function TimezoneAdjustmentPage() {
 
             try {
             const payload = {
+                sportId: selectedSportId ? Number(selectedSportId) : null,
                 leagueId: resolvedLeague.id,
                 seasonId: selectedSeasonId ? Number(selectedSeasonId) : null,
-                roundIds: selectedRoundIds && selectedRoundIds.length > 0 ? selectedRoundIds.map(Number) : null,
+                roundIds: leagueTypeOfSchedule === 'Round' && selectedRoundIds.length > 0 ? selectedRoundIds.map(Number) : null,
+                startDate: leagueTypeOfSchedule === 'Date' ? selectedDateFrom : null,
+                endDate: leagueTypeOfSchedule === 'Date' ? (selectedDateTo || selectedDateFrom) : null,
                 matchId: selectedMatchId ? Number(selectedMatchId) : null,
                 adjustmentType,
                 manualHours: adjustmentType === 'manual' ? manualHours : 0,
@@ -298,6 +367,8 @@ export default function TimezoneAdjustmentPage() {
         setSelectedLeagueId('');
         setSelectedSeasonId('');
         setSelectedRoundIds([]);
+        setSelectedDateFrom('');
+        setSelectedDateTo('');
         setSelectedMatchId('');
         setAdjustmentType('country');
         setManualHours(0);
@@ -311,12 +382,23 @@ export default function TimezoneAdjustmentPage() {
     };
 
     return (
-        <div className="p-6 max-w-4xl mx-auto">
+        <div className="p-6 max-w-5xl mx-auto">
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900">Timezone Adjustment</h1>
                 <p className="text-gray-600 mt-2">
-                    Update match dates to correct timezone information. Select a league (required) and optionally narrow down by season, round, or specific match.
+                    Update match dates to correct timezone information. Select a sport and league (both required) and optionally narrow down by season, round, or specific match.
                 </p>
+
+                <div className="mt-2 text-sm text-gray-600">
+                    <strong>Supported sports:</strong>{' '}
+                    {loadingSports ? (
+                        <span>Loading sports…</span>
+                    ) : sports.length ? (
+                        <span>{sports.map((s: any) => s.name || s.reducedName || s.id).join(', ')}</span>
+                    ) : (
+                        <span>No sports available</span>
+                    )}
+                </div>
             </div>
 
             <div className="bg-white rounded-lg shadow p-6 space-y-6">
@@ -324,6 +406,25 @@ export default function TimezoneAdjustmentPage() {
                     {/* Filters Section */}
                     <div className="space-y-4">
                         <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
+
+                        {/* Sport Selector */}
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Sport <span className="text-red-500">*</span>
+                            </label>
+                            <select
+                                value={selectedSportId}
+                                onChange={(e) => setSelectedSportId(e.target.value)}
+                                disabled={loadingSports}
+                                className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            >
+                                <option value="">Select Sport</option>
+                                {sports.map((s: any) => (
+                                    <option key={s.id} value={s.id}>{s.name || s.reducedName || s.id}</option>
+                                ))}
+                            </select>
+                            {loadingSports && <p className="text-sm text-gray-500 mt-1">Loading sports...</p>}
+                        </div>
 
                         {/* League Selector */}
                         <div>
@@ -333,7 +434,7 @@ export default function TimezoneAdjustmentPage() {
                             <select
                                 value={selectedLeagueId}
                                 onChange={(e) => setSelectedLeagueId(e.target.value)}
-                                disabled={loadingLeagues}
+                                disabled={!selectedSportId || loadingLeagues}
                                 className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             >
                                 <option value="">Select League</option>
@@ -343,6 +444,9 @@ export default function TimezoneAdjustmentPage() {
                                     </option>
                                 ))}
                             </select>
+                            {!selectedSportId && (
+                                <p className="text-sm text-gray-500 mt-1">Please select a sport first to load leagues.</p>
+                            )}
                             {loadingLeagues && <p className="text-sm text-gray-500 mt-1">Loading leagues...</p>}
                             {!loadingLeagues && leagues.length > 0 && (
                                 <p className="text-xs text-blue-600 mt-1">
@@ -385,73 +489,79 @@ export default function TimezoneAdjustmentPage() {
                             {loadingSeasons && <p className="text-sm text-gray-500 mt-1">Loading seasons...</p>}
                         </div>
 
-                        {/* Round Selector (Optional) */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Round (Optional)
-                            </label>
-                            <label className="block text-sm text-gray-500 mb-1">(Ctrl/Cmd+click to multi-select rounds)</label>
-                            <select
-                                multiple
-                                value={selectedRoundIds}
-                                onChange={(e) => {
-                                    const vals = Array.from(e.target.selectedOptions).map(o => o.value);
-                                    setSelectedRoundIds(vals);
-                                }}
-                                disabled={!selectedSeasonId || loadingRounds}
-                                className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 h-36"
-                            >
-                                {rounds
-                                    .sort((a: Round, b: Round) => a.roundNumber - b.roundNumber)
-                                    .map((round: Round) => (
-                                        <option key={round.id} value={String(round.id)}>
-                                            Round {round.roundNumber}
-                                        </option>
-                                    ))}
-                            </select>
-                            {loadingRounds && <p className="text-sm text-gray-500 mt-1">Loading rounds...</p>}
-                        </div>
+                        {leagueTypeOfSchedule === 'Round' ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Round (Optional)
+                                </label>
+                                <label className="block text-sm text-gray-500 mb-1">(Ctrl/Cmd+click to multi-select rounds)</label>
+                                <select
+                                    multiple
+                                    value={selectedRoundIds}
+                                    onChange={(e) => {
+                                        const vals = Array.from(e.target.selectedOptions).map(o => o.value);
+                                        setSelectedRoundIds(vals);
+                                    }}
+                                    disabled={!selectedSeasonId || loadingRounds}
+                                    className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 h-36"
+                                >
+                                    {rounds
+                                        .sort((a: Round, b: Round) => a.roundNumber - b.roundNumber)
+                                        .map((round: Round) => (
+                                            <option key={round.id} value={String(round.id)}>
+                                                Round {round.roundNumber}
+                                            </option>
+                                        ))}
+                                </select>
+                                {loadingRounds && <p className="text-sm text-gray-500 mt-1">Loading rounds...</p>}
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Day From (Optional)
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={selectedDateFrom}
+                                        onChange={(e) => setSelectedDateFrom(e.target.value)}
+                                        disabled={!selectedSeasonId}
+                                        className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Day To (Optional)
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={selectedDateTo}
+                                        onChange={(e) => setSelectedDateTo(e.target.value)}
+                                        disabled={!selectedSeasonId || !selectedDateFrom}
+                                        min={selectedDateFrom || undefined}
+                                        className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                                    />
+                                    <p className="text-sm text-gray-500 mt-1">
+                                        Leave both dates empty to update the entire season, select one day to update a single day, or fill both dates to update an interval of days.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
-                        {/* Match Selector (Optional) */}
-                        {/* <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Match (Optional)
-                            </label>
-                            <select 
-                                value={selectedMatchId} 
-                                onChange={(e) => setSelectedMatchId(e.target.value)}
-                                disabled={!selectedRoundId || loadingMatches}
-                                className="w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 font-mono text-sm"
-                            >
-                                <option value="">All Matches in Round</option>
-                                {matches.map((match: Match) => {
-                                // Recalculate based on actual dropdown width from image
-                                // Total visible width ≈ 50 chars, Fixed content: " vs " (4) + " │ " (3) + "DD/MM HH:MM" (11) = 18 chars
-                                // Remaining for clubs: 50 - 18 = 32 chars, Each club gets 16 chars (32/2)
-                                const CLUB_WIDTH = 16;
-                                
-                                const homeShort = (match.homeClub?.shortName || match.homeClub?.name || 'HOME').slice(0, CLUB_WIDTH).toUpperCase().padEnd(CLUB_WIDTH);
-                                const awayShort = (match.awayClub?.shortName || match.awayClub?.name || 'AWAY').slice(0, CLUB_WIDTH).toUpperCase().padEnd(CLUB_WIDTH);
-                                const date = new Date(match.date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
-                                const time = new Date(match.date).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
-                                return (
-                                    <option key={match.id} value={match.id}>
-                                    {homeShort} vs {awayShort} │ {date} {time}
-                                    </option>
-                                );
-                                })}
-                            </select>
-                            {loadingMatches && <p className="text-sm text-gray-500 mt-1">Loading matches...</p>}
-                        </div>
-                    </div> */}
                         <div className="relative w-full">
                             <button
                                 type="button"
                                 onClick={() => setOpen(!open)}
                                 className="w-full p-2 border rounded-md bg-white text-sm font-mono text-center"
-                                disabled={selectedRoundIds.length !== 1 || loadingMatches}
+                                disabled={
+                                    loadingMatches ||
+                                    (leagueTypeOfSchedule === 'Round' && selectedRoundIds.length !== 1) ||
+                                    (leagueTypeOfSchedule === 'Date' && !canPickSingleDateMatch)
+                                }
                             >
-                                {selectedRoundIds.length === 1 ? (selectedMatchObj ? selectedMatchLabel : "All Matches in Round") : "Matches (select exactly one round to pick a match)"}
+                                {leagueTypeOfSchedule === 'Round'
+                                    ? (selectedRoundIds.length === 1 ? (selectedMatchObj ? selectedMatchLabel : 'All Matches in Round') : 'Matches (select exactly one round to pick a match)')
+                                    : (canPickSingleDateMatch ? (selectedMatchObj ? selectedMatchLabel : 'All Matches on Selected Day') : 'Matches (select exactly one day to pick a match)')}
                             </button>
 
                             {open && (
@@ -626,13 +736,24 @@ export default function TimezoneAdjustmentPage() {
                             <div className="bg-yellow-50 p-3 rounded-md">
                                 <h4 className="font-medium text-sm mb-1">Scope of update:</h4>
                                 <ul className="text-sm text-gray-600">
-                                    <li>• <strong>League only:</strong> All matches in the entire league</li>
-                                    <li>• <strong>League + Season:</strong> All matches in that specific season</li>
-                                    <li>• <strong>League + Season + Round:</strong> All matches in that round</li>
-                                    <li>• <strong>League + Season + Round + Match:</strong> Only that specific match</li>
+                                    <li>• <strong>Sport + League only:</strong> All matches in the entire league</li>
+                                    <li>• <strong>Sport + League + Season:</strong> All matches in that specific season</li>
+                                    <li>• <strong>Round leagues:</strong> Optionally narrow by one round or multiple selected rounds</li>
+                                    <li>• <strong>Date leagues:</strong> Optionally narrow by one day or an interval of days</li>
+                                    <li>• <strong>Specific match:</strong> Requires exactly one round or exactly one day</li>
                                 </ul>
                                 <p className="text-xs text-gray-500 mt-2">
                                     Tables updated: matches (date field)
+                                </p>
+                                <p className="text-xs text-gray-600 mt-2">
+                                    <strong>Supported sports:</strong>{' '}
+                                    {loadingSports ? (
+                                        <span>Loading sports…</span>
+                                    ) : sports.length ? (
+                                        <span>{sports.map((s: any) => s.name || s.reducedName || s.id).join(', ')}</span>
+                                    ) : (
+                                        <span>No sports available</span>
+                                    )}
                                 </p>
                             </div>
                         </div>
@@ -642,7 +763,7 @@ export default function TimezoneAdjustmentPage() {
                     <div className="pt-4 border-t flex flex-col md:flex-row md:items-start gap-3">
                         <button
                             onClick={handleProcess}
-                            disabled={isProcessing || !selectedLeagueId}
+                            disabled={isProcessing || !selectedSportId || !selectedLeagueId}
                             className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed min-w-[200px] text-center"
                         >
                             {isProcessing ? 'Processing...' : 'Update Timezone Data'}
