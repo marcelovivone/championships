@@ -3,8 +3,7 @@
 > **Purpose**: This document describes the full, current implementation of the ETL (Extract → Transform → Load) pipeline and the public standings frontend in the Championships application.  
 > It is intended as a **context-restoring prompt** — ask Copilot to read this file at the start of any new session to recover full knowledge of the system.
 >
-> **Last updated**: 2026-04-05
-> **Last updated**: 2026-04-09
+> **Last updated**: 2026-04-14
 
 > **Scope note**: The configurable standing-order and tiebreaker system is documented separately in `documentation/STANDING_ORDER_IMPLEMENTATION_REFERENCE.md`.  
 > This file remains the canonical reference for ETL, data flow, standings creation, and the public standings pages, but not for the new standing-order rules engine.
@@ -119,6 +118,7 @@ You don't need to ask for my authorization to read or write any file or to run a
   - 10.4 [Background apply jobs and polling](#104-background-apply-jobs-and-polling)
   - 10.5 [Admin frontend additions](#105-admin-frontend-additions)
   - 10.6 [Public standings pages and fallback logic](#106-public-standings-pages-and-fallback-logic)
+  - 10.12 [ESPN timezone normalization, timestamp repair, and ignored-club alias enforcement (2026-04-14)](#1012-espn-timezone-normalization-timestamp-repair-and-ignored-club-alias-enforcement-2026-04-14)
 11. [Pending / Future Work](#11-pending--future-work)
 
 ---
@@ -1780,6 +1780,93 @@ That does not match how the league is actually stored during first load. `applyF
 `filterEspnEventsBySeasonPhase()` now keeps events whose `event.season.slug` is missing instead of dropping them. This does not change normal regular-season/postseason filtering for payloads that already provide a slug (such as NBA regular-season data); it only prevents slug-less day-by-day events from being discarded unnecessarily.
 
 This keeps the reparse-after-manual-round-review path working correctly for first payloads of a season.
+
+### 10.12 ESPN timezone normalization, timestamp repair, and ignored-club alias enforcement (2026-04-14)
+
+This section captures the April 14 stabilization pass on the ESPN basketball/date-based ETL flow, plus the small sidebar refinement completed in the same work window.
+
+#### Backend ETL timestamp normalization
+
+The ESPN parsers previously converted local competition time back through JavaScript `Date` objects and then wrote `.toISOString()` values into parsed rows. For leagues such as the NBA, that reintroduced UTC semantics after the timezone conversion step and could shift imported wall-clock tipoff times.
+
+Corrected behavior in `backend/src/api/api.service.ts`:
+
+- added `formatTimestampForDb(...)` so ETL writes `YYYY-MM-DD HH:MM:SS` timestamp strings instead of round-tripping through UTC ISO serialization
+- added `resolveCountryName(...)` so ESPN country values are accepted both as plain strings and `{ name }` objects
+- changed `convertToLocalTimezone(...)` to return `localDateString`, `localDateTimeString`, and `timezone`
+- updated `parseTransitionalEspn(...)`, `parseTransitionalEspnLightweight(...)`, and the generic parse/apply entry points so ESPN rows now store the normalized local wall-clock timestamp directly in `fixture.date`
+- added fallback-country propagation from the league/country already stored in the DB when the ESPN venue country is missing
+
+Net effect:
+
+- ESPN imports now preserve the intended local match time instead of drifting back toward UTC
+- date-based grouping still works because the ETL keeps the normalized local calendar day and local timestamp aligned
+- the fix applies both to first-load parsing and lightweight subsequent-load parsing
+
+#### DB alignment and repair tooling
+
+To support the timestamp normalization change cleanly, the DB/tooling layer was also updated:
+
+- new migration: `backend/drizzle/0021_alter_standings_match_date_to_timestamp.sql`
+- new repair utility: `backend/scripts/repair_season_match_timezone.js`
+
+Repair script behavior:
+
+- inputs: `sportId`, `leagueId`, `seasonId`, `targetTimezone`, optional `sourceTimezone`
+- reads all matches for the selected league/season
+- reconstructs the intended UTC instant from the previously stored wall-clock interpretation
+- rewrites both `matches.date` and `standings.match_date` inside a single transaction
+
+This script is intended for already-imported historical data; new imports should be correct without any post-processing.
+
+#### Persistent ignored club aliases are now enforced everywhere
+
+Another regression appeared during a fresh NBA 2020/2021 import: clubs that the user had already chosen to ignore were recreated from a later payload even though the ignore decisions had been saved.
+
+Root cause:
+
+- permanent ignore decisions were already stored in `entity_name_aliases` as `entity_type = 'club'` and `entity_id = -1`
+- some ETL paths detected that an alias row existed, but did not consistently interpret `-1` as a hard skip decision
+
+Corrected behavior in `backend/src/api/api.service.ts`:
+
+- added shared helper `resolvePersistentClubAlias(...)`
+- the helper scopes alias resolution by `alias_name`, `sport_id`, and `country_id` and explicitly prioritizes `entity_id = -1`
+- `detectEntitiesForReview(...)` now treats ignored club aliases as already resolved, so repeated imports do not reopen review unnecessarily
+- `findOrCreateClub(...)` now respects both explicit row mappings with `-1` and persistent alias matches with `entity_id = -1`
+- the per-row load loop now skips matches when either home or away club is ignored by explicit mapping or persistent alias
+
+Net effect:
+
+- previously ignored exhibition/all-star teams such as `Team Durant` and `Team LeBron` are no longer recreated on later ESPN/NBA imports
+- ignore decisions now behave as durable ETL policy, not just as stored metadata
+
+#### Data cleanup and verification performed
+
+After the ignored-alias fix, the already-created bad NBA rows from `api_transitional.id = 104` were removed manually and verified.
+
+Verified end state:
+
+- bogus clubs for `Team Durant` and `Team LeBron` were deleted
+- the related imported all-star match was deleted
+- the permanent ignore aliases remained in `entity_name_aliases` with `entity_id = -1`
+
+This means the ETL behavior and the live DB state were both brought back into sync.
+
+#### Small frontend navigation refinement
+
+The admin/common sidebar layout was also refined:
+
+- `frontend/components/admin/admin-sidebar.tsx`
+- `frontend/components/common/common-sidebar.tsx`
+
+Behavior change:
+
+- sidebar is now sticky and locked to viewport height (`top-0`, `h-screen`)
+- navigation area scrolls independently
+- logout action is pinned to the bottom via flex layout instead of drifting with menu height
+
+This is a UX/layout refinement only; it does not change ETL behavior.
 
 ---
 

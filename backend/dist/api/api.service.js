@@ -91,12 +91,40 @@ const COUNTRY_TIMEZONES = {
     'Algeria': 'Africa/Algiers',
     'Tunisia': 'Africa/Tunis',
 };
+const formatTimestampForDb = (value) => {
+    if (!value)
+        return null;
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime()))
+            return null;
+        const year = value.getUTCFullYear();
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(value.getUTCDate()).padStart(2, '0');
+        const hours = String(value.getUTCHours()).padStart(2, '0');
+        const minutes = String(value.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(value.getUTCSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+    const trimmed = String(value).trim();
+    if (!trimmed)
+        return null;
+    return trimmed.replace('T', ' ').replace(/Z$/, '').slice(0, 19);
+};
+const resolveCountryName = (value) => {
+    if (typeof value === 'string' && value.trim())
+        return value.trim();
+    if (value && typeof value === 'object' && 'name' in value) {
+        const name = value.name;
+        return typeof name === 'string' && name.trim() ? name.trim() : null;
+    }
+    return null;
+};
 const convertToLocalTimezone = (utcDate, country) => {
     const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
     if (!date || Number.isNaN(date.getTime())) {
         return {
-            localDate: new Date(),
             localDateString: new Date().toISOString().slice(0, 10),
+            localDateTimeString: formatTimestampForDb(new Date()) ?? new Date().toISOString().slice(0, 19).replace('T', ' '),
             timezone: 'UTC'
         };
     }
@@ -116,18 +144,17 @@ const convertToLocalTimezone = (utcDate, country) => {
         const parts = formatter.formatToParts(date);
         const partsMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
         const localDateString = `${partsMap.year}-${partsMap.month}-${partsMap.day}`;
-        const localDateTime = `${partsMap.year}-${partsMap.month}-${partsMap.day}T${partsMap.hour}:${partsMap.minute}:${partsMap.second}`;
-        const localDate = new Date(localDateTime);
+        const localDateTimeString = `${partsMap.year}-${partsMap.month}-${partsMap.day} ${partsMap.hour}:${partsMap.minute}:${partsMap.second}`;
         return {
-            localDate,
             localDateString,
+            localDateTimeString,
             timezone
         };
     }
     catch (e) {
         return {
-            localDate: date,
             localDateString: date.toISOString().slice(0, 10),
+            localDateTimeString: formatTimestampForDb(date) ?? date.toISOString().slice(0, 19).replace('T', ' '),
             timezone: 'UTC'
         };
     }
@@ -617,6 +644,23 @@ let ApiService = ApiService_1 = class ApiService {
             await pool.end();
         }
     }
+    async resolvePersistentClubAlias(db, clubName, sportId, countryId) {
+        const res = await db.query(`SELECT entity_id
+               FROM entity_name_aliases
+              WHERE entity_type = 'club'
+                AND alias_name = $1
+                AND (sport_id IS NULL OR COALESCE(sport_id, 0) = COALESCE($2, 0))
+                AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($3, 0))
+              ORDER BY
+                CASE WHEN entity_id = -1 THEN 0 ELSE 1 END,
+                CASE WHEN country_id IS NULL THEN 1 ELSE 0 END,
+                entity_id ASC
+              LIMIT 1`, [clubName, sportId, countryId]);
+        if (!res.rows.length)
+            return null;
+        const entityId = Number(res.rows[0].entity_id);
+        return Number.isFinite(entityId) ? entityId : null;
+    }
     async deleteEntityReview(id) {
         if (!process.env.DATABASE_URL)
             throw new Error('Missing DATABASE_URL environment variable');
@@ -948,11 +992,8 @@ let ApiService = ApiService_1 = class ApiService {
                             earlySeenClubs.add(clubName);
                             if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined)
                                 continue;
-                            const alias = await pool.query(`SELECT entity_id FROM entity_name_aliases
-                                 WHERE entity_type = 'club' AND alias_name = $1
-                                   AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                                 LIMIT 1`, [clubName, leagueCountryId]);
-                            if (alias.rows.length)
+                            const aliasId = await this.resolvePersistentClubAlias(pool, clubName, sportId ?? transitional.sport ?? null, leagueCountryId);
+                            if (aliasId !== null)
                                 continue;
                             const clubRes = await pool.query(`SELECT id FROM clubs
                                  WHERE (unaccent(lower(short_name)) = unaccent(lower($1)) OR unaccent(lower(name)) = unaccent(lower($1)))
@@ -1010,11 +1051,8 @@ let ApiService = ApiService_1 = class ApiService {
                         if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) {
                             continue;
                         }
-                        const clubAlias = await pool.query(`SELECT entity_id FROM entity_name_aliases
-                             WHERE entity_type = 'club' AND alias_name = $1
-                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                             LIMIT 1`, [clubName, leagueCountryId]);
-                        if (clubAlias.rows.length)
+                        const clubAliasId = await this.resolvePersistentClubAlias(pool, clubName, sportId ?? transitional.sport ?? null, leagueCountryId);
+                        if (clubAliasId !== null)
                             continue;
                         let clubFound = false;
                         if (leagueCountryId) {
@@ -1201,7 +1239,7 @@ let ApiService = ApiService_1 = class ApiService {
             await pool.end();
         }
     }
-    async parseTransitional(id, roundOverrides, seasonPhase) {
+    async parseTransitional(id, roundOverrides, seasonPhase, fallbackCountry) {
         const row = await this.getTransitional(id);
         if (!row)
             return { found: false };
@@ -1287,7 +1325,7 @@ let ApiService = ApiService_1 = class ApiService {
         const savedOverrides = await this.getDraftRoundOverrides(id);
         const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
         if (origin === 'Api-Espn') {
-            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase);
+            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase, fallbackCountry);
         }
         const payload = row.payload ?? row;
         let arr = null;
@@ -1377,7 +1415,7 @@ let ApiService = ApiService_1 = class ApiService {
                             get(obj, 'fixture.venue.country') ??
                             firstRow['league.country'] ?? null;
                         const localInfo = convertToLocalTimezone(v, country);
-                        out[key] = localInfo.localDate.toISOString();
+                        out[key] = localInfo.localDateTimeString;
                     }
                     catch (e) {
                         out[key] = v;
@@ -1427,7 +1465,7 @@ let ApiService = ApiService_1 = class ApiService {
             return !isRegularSeason;
         });
     }
-    parseTransitionalEspn(row, roundOverrides, seasonPhase) {
+    parseTransitionalEspn(row, roundOverrides, seasonPhase, fallbackCountry) {
         const payload = row.payload ?? row;
         const rawEvents = payload?.events ?? [];
         if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
@@ -1481,7 +1519,7 @@ let ApiService = ApiService_1 = class ApiService {
                 const away = competitors.find((c) => c.homeAway === 'away') ?? competitors[1] ?? competitors.find((c) => c !== home) ?? null;
                 const rawDate = competition?.startDate ?? competition?.date ?? event?.date ?? null;
                 const parsedDate = rawDate ? new Date(String(rawDate)) : null;
-                const country = competition?.venue?.address?.country ?? null;
+                const country = resolveCountryName(competition?.venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
                 let localDateString = null;
                 let localDayUtc = null;
                 let timezone = 'UTC';
@@ -1489,7 +1527,8 @@ let ApiService = ApiService_1 = class ApiService {
                     const localInfo = convertToLocalTimezone(parsedDate, country);
                     localDateString = localInfo.localDateString;
                     timezone = localInfo.timezone;
-                    localDayUtc = Date.UTC(localInfo.localDate.getFullYear(), localInfo.localDate.getMonth(), localInfo.localDate.getDate());
+                    const [localYear, localMonth, localDay] = localDateString.split('-').map(Number);
+                    localDayUtc = Date.UTC(localYear, localMonth - 1, localDay);
                     timeToLocalDay.set(parsedDate.getTime(), localDayUtc);
                     timeToLocalDateString.set(parsedDate.getTime(), localDateString);
                     timeToTimezone.set(parsedDate.getTime(), timezone);
@@ -2018,7 +2057,7 @@ let ApiService = ApiService_1 = class ApiService {
             const mapped = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Premier League',
                 'league.season': parsedSeasonYear,
-                'league.country': venue?.address?.country ?? null,
+                'league.country': resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
                 'league.round': derivedRounds.get(String(event?.id)) ?? null,
@@ -2034,9 +2073,9 @@ let ApiService = ApiService_1 = class ApiService {
                     const rawDate = competition?.date ?? event?.date ?? null;
                     if (!rawDate)
                         return null;
-                    const country = venue?.address?.country ?? null;
+                    const country = resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
                     const localInfo = convertToLocalTimezone(rawDate, country);
-                    return localInfo.localDate.toISOString();
+                    return localInfo.localDateTimeString;
                 })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
@@ -2509,7 +2548,16 @@ let ApiService = ApiService_1 = class ApiService {
                 created_at TIMESTAMPTZ DEFAULT now()
                 );
             `);
-            const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase);
+            let fallbackCountry = null;
+            if (options.countryId) {
+                const countryRes = await client.query(`SELECT name FROM countries WHERE id = $1 LIMIT 1`, [options.countryId]);
+                fallbackCountry = countryRes.rows[0]?.name ?? null;
+            }
+            else if (options.leagueId) {
+                const countryRes = await client.query(`SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`, [options.leagueId]);
+                fallbackCountry = countryRes.rows[0]?.name ?? null;
+            }
+            const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase, fallbackCountry);
             if (!parsed || !parsed.found) {
                 return {
                     applied: false,
@@ -2946,7 +2994,7 @@ let ApiService = ApiService_1 = class ApiService {
         }
         return statusShort === 'FT';
     }
-    parseTransitionalEspnLightweight(row, seasonPhase) {
+    parseTransitionalEspnLightweight(row, seasonPhase, fallbackCountry) {
         const payload = row.payload ?? row;
         const rawEvents = payload?.events ?? [];
         if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
@@ -2975,7 +3023,7 @@ let ApiService = ApiService_1 = class ApiService {
             const mapped = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Unknown',
                 'league.season': parsedSeasonYear,
-                'league.country': venue?.address?.country ?? null,
+                'league.country': resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
                 'league.round': null,
@@ -2991,9 +3039,9 @@ let ApiService = ApiService_1 = class ApiService {
                     const rawDate = competition?.date ?? event?.date ?? null;
                     if (!rawDate)
                         return null;
-                    const country = venue?.address?.country ?? null;
+                    const country = resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
                     const localInfo = convertToLocalTimezone(rawDate, country);
-                    return localInfo.localDate.toISOString();
+                    return localInfo.localDateTimeString;
                 })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
@@ -3073,6 +3121,7 @@ let ApiService = ApiService_1 = class ApiService {
             const sportId = options.sportId ?? 36;
             let leagueId = options.leagueId ?? null;
             let seasonId = options.seasonId ?? null;
+            let parserFallbackCountry = null;
             let isSubsequentLoad = false;
             const meta = this.extractLeagueMetadata(transitionalRow);
             const espnLeagueCode = transitionalRow.league ?? null;
@@ -3093,6 +3142,8 @@ let ApiService = ApiService_1 = class ApiService {
                 const lRes = await client.query(`SELECT id FROM leagues WHERE (unaccent(lower(original_name)) = unaccent(lower($1)) OR unaccent(lower(secondary_name)) = unaccent(lower($1)) OR ($3::text IS NOT NULL AND espn_id = $3)) AND sport_id = $2 LIMIT 1`, [String(meta.leagueName ?? '').trim(), sportId, espnNumericLeagueId ?? espnLeagueCode]);
                 if (lRes.rows.length) {
                     const possibleLeagueId = lRes.rows[0].id;
+                    const countryRes = await client.query(`SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`, [possibleLeagueId]);
+                    parserFallbackCountry = countryRes.rows[0]?.name ?? parserFallbackCountry;
                     let seasonRow = null;
                     for (const year of seasonYears) {
                         const sRes = await client.query(`SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 ORDER BY start_year DESC LIMIT 1`, [sportId, possibleLeagueId, year]);
@@ -3121,15 +3172,19 @@ let ApiService = ApiService_1 = class ApiService {
                     }
                 }
             }
+            if (!parserFallbackCountry && options.leagueId) {
+                const countryRes = await client.query(`SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`, [options.leagueId]);
+                parserFallbackCountry = countryRes.rows[0]?.name ?? null;
+            }
             let rows;
             if (isSubsequentLoad) {
                 const origin = transitionalRow.origin ?? 'Api-Football';
                 let parsed;
                 if (origin === 'Api-Espn') {
-                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase);
+                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase, parserFallbackCountry);
                 }
                 else {
-                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase);
+                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase, parserFallbackCountry);
                 }
                 if (!parsed || !parsed.found) {
                     return { applied: 0, reason: parsed?.reason ?? 'lightweight_parse_failed' };
@@ -3137,7 +3192,7 @@ let ApiService = ApiService_1 = class ApiService {
                 rows = parsed.rows || [];
             }
             else {
-                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase);
+                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase, parserFallbackCountry);
                 if (!parsed || !parsed.found) {
                     return {
                         applied: 0,
@@ -3449,7 +3504,7 @@ let ApiService = ApiService_1 = class ApiService {
                             continue;
                         }
                         const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                        const _dateVal = _dateRaw ? new Date(String(_dateRaw)) : null;
+                        const _dateVal = formatTimestampForDb(_dateRaw);
                         const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                         const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                         const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
@@ -3661,26 +3716,31 @@ let ApiService = ApiService_1 = class ApiService {
                             return null;
                         if (clubResultCache[clubName])
                             return clubResultCache[clubName];
-                        const clubAlias = await client.query(`SELECT entity_id FROM entity_name_aliases
-                             WHERE entity_type = 'club' AND alias_name = $1
-                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                             LIMIT 1`, [clubName, leagueCountryId]);
-                        if (clubAlias.rows.length) {
-                            const aliasId = clubAlias.rows[0].entity_id;
+                        if (Object.prototype.hasOwnProperty.call(clubMappings, clubName)) {
+                            const mappedId = Number(clubMappings[clubName]);
+                            if (mappedId === -1) {
+                                return null;
+                            }
+                            if (Number.isFinite(mappedId) && mappedId > 0) {
+                                clubCache[clubName] = mappedId;
+                                const mappedClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [mappedId]);
+                                if (mappedClub.rows.length) {
+                                    const r2 = { id: mappedClub.rows[0].id, shortName: mappedClub.rows[0].short_name || clubName };
+                                    clubResultCache[clubName] = r2;
+                                    return r2;
+                                }
+                            }
+                        }
+                        const persistentAliasId = await this.resolvePersistentClubAlias(client, clubName, sportId, leagueCountryId);
+                        if (persistentAliasId === -1) {
+                            return null;
+                        }
+                        if (persistentAliasId !== null) {
+                            const aliasId = persistentAliasId;
                             clubCache[clubName] = aliasId;
                             const aliasClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [aliasId]);
                             if (aliasClub.rows.length) {
                                 const r2 = { id: aliasClub.rows[0].id, shortName: aliasClub.rows[0].short_name || clubName };
-                                clubResultCache[clubName] = r2;
-                                return r2;
-                            }
-                        }
-                        if (clubMappings[clubName]) {
-                            const mappedId = clubMappings[clubName];
-                            clubCache[clubName] = mappedId;
-                            const mappedClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [mappedId]);
-                            if (mappedClub.rows.length) {
-                                const r2 = { id: mappedClub.rows[0].id, shortName: mappedClub.rows[0].short_name || clubName };
                                 clubResultCache[clubName] = r2;
                                 return r2;
                             }
@@ -3759,8 +3819,20 @@ let ApiService = ApiService_1 = class ApiService {
                     const awayLogo = r['teams.away.logo'] ?? null;
                     const venueCity = r['fixture.venue.city'] ?? null;
                     const venueName = r['fixture.venue.name'] ?? null;
-                    const homeIsIgnored = homeName !== null && clubMappings[String(homeName).trim()] === -1;
-                    const awayIsIgnored = awayName !== null && clubMappings[String(awayName).trim()] === -1;
+                    const homeMappingValue = homeName !== null && Object.prototype.hasOwnProperty.call(clubMappings, String(homeName).trim())
+                        ? Number(clubMappings[String(homeName).trim()])
+                        : null;
+                    const awayMappingValue = awayName !== null && Object.prototype.hasOwnProperty.call(clubMappings, String(awayName).trim())
+                        ? Number(clubMappings[String(awayName).trim()])
+                        : null;
+                    const homeAliasId = homeName !== null && homeMappingValue === null
+                        ? await this.resolvePersistentClubAlias(client, String(homeName).trim(), sportId, leagueCountryId)
+                        : null;
+                    const awayAliasId = awayName !== null && awayMappingValue === null
+                        ? await this.resolvePersistentClubAlias(client, String(awayName).trim(), sportId, leagueCountryId)
+                        : null;
+                    const homeIsIgnored = homeName !== null && (homeMappingValue === -1 || homeAliasId === -1);
+                    const awayIsIgnored = awayName !== null && (awayMappingValue === -1 || awayAliasId === -1);
                     if (homeIsIgnored || awayIsIgnored) {
                         continue;
                     }
@@ -3788,7 +3860,7 @@ let ApiService = ApiService_1 = class ApiService {
                         await ensureClubStadium(homeClubId, stadiumId);
                     }
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                    const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
+                    const dateVal = formatTimestampForDb(dateRaw);
                     const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
@@ -3847,9 +3919,7 @@ let ApiService = ApiService_1 = class ApiService {
                         matchId = matchRes.rows[0].id;
                         createdMatches++;
                         if (isDateBasedSchedule && dateVal) {
-                            const dayKey = dateVal instanceof Date
-                                ? dateVal.toISOString().slice(0, 10)
-                                : String(dateVal).slice(0, 10);
+                            const dayKey = String(dateVal).slice(0, 10);
                             seenMatchDays.add(dayKey);
                         }
                         try {

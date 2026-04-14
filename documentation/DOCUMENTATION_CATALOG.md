@@ -1,6 +1,6 @@
 # Championships Documentation Catalog
 
-Last updated: 2026-04-11
+Last updated: 2026-04-14
 
 ## Purpose
 
@@ -22,6 +22,13 @@ Use it to understand which document is the canonical source for each topic, and 
 - `documentation/ETL_TRANSFORM_LOAD_IMPLEMENTATION.md` — transform/load process details
 - `documentation/API + ETL Documentation - espn.md` — ESPN extraction and parsing notes
 - `documentation/API + ETL Documentation - api-football - copia.md` — Api-Football extraction notes
+
+Latest canonical updates now documented there:
+
+- ESPN local-time timestamp normalization for basketball/date-based imports
+- timestamp repair tooling for already-imported seasons
+- enforcement of persistent ignored club aliases (`entity_id = -1`) during later ESPN imports
+- the sidebar layout refinement completed in the same work window
 
 ### 3. Standings ordering and tiebreakers
 

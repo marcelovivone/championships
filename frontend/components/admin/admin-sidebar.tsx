@@ -109,7 +109,7 @@ export default function AdminSidebar() {
     };
 
     return (
-        <aside className="w-64 bg-gray-900 text-white min-h-screen flex flex-col">
+        <aside className="sticky top-0 h-screen w-64 bg-gray-900 text-white flex flex-col overflow-hidden">
             {/* Header */}
             <div className="p-4 border-b border-gray-800">
                 <h1 className="text-xl font-bold">Championships</h1>
@@ -119,56 +119,57 @@ export default function AdminSidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 overflow-y-auto py-4">
-                {(() => {
-                    const renderMenu = (items: MenuItem[], depth = 0) => {
-                        return items.map((it) => {
-                            const isActive = pathname === it.href;
-                            const padding = { paddingLeft: depth * 12 } as React.CSSProperties;
-                            if (it.children && it.children.length) {
-                                return (
-                                    <div key={it.href || it.label}>
-                                        <button
-                                            onClick={() => it.href && router.push(it.href)}
-                                            style={padding}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
-                                        >
-                                            {it.icon}
-                                            <span>{it.label}</span>
-                                        </button>
-                                        <div>
-                                            {renderMenu(it.children, depth + 1)}
+            <nav className="flex-1 overflow-y-auto py-4 flex flex-col">
+                <div>
+                    {(() => {
+                        const renderMenu = (items: MenuItem[], depth = 0) => {
+                            return items.map((it) => {
+                                const isActive = pathname === it.href;
+                                const padding = { paddingLeft: depth * 12 } as React.CSSProperties;
+                                if (it.children && it.children.length) {
+                                    return (
+                                        <div key={it.href || it.label}>
+                                            <button
+                                                onClick={() => it.href && router.push(it.href)}
+                                                style={padding}
+                                                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
+                                            >
+                                                {it.icon}
+                                                <span>{it.label}</span>
+                                            </button>
+                                            <div>
+                                                {renderMenu(it.children, depth + 1)}
+                                            </div>
                                         </div>
-                                    </div>
+                                    );
+                                }
+                                return (
+                                    <button
+                                        key={it.href || it.label}
+                                        onClick={() => it.href && router.push(it.href)}
+                                        style={padding}
+                                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
+                                    >
+                                        {it.icon}
+                                        <span>{it.label}</span>
+                                    </button>
                                 );
-                            }
-                            return (
-                                <button
-                                    key={it.href || it.label}
-                                    onClick={() => it.href && router.push(it.href)}
-                                    style={padding}
-                                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${isActive ? 'bg-blue-600 text-white' : 'text-gray-300 hover:bg-gray-800'}`}
-                                >
-                                    {it.icon}
-                                    <span>{it.label}</span>
-                                </button>
-                            );
-                        });
-                    };
-                    return renderMenu(menuItems);
-                })()}
-            </nav>
+                            });
+                        };
+                        return renderMenu(menuItems);
+                    })()}
+                </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-gray-800">
-                <button
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 rounded transition-colors"
-                >
-                    <LogOut size={20} />
-                    <span>Logout</span>
-                </button>
-            </div>
+                <div className="mt-auto p-0 border-t border-gray-800">
+                    <button
+                        onClick={handleLogout}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-gray-300 hover:bg-gray-800 rounded transition-colors"
+                    >
+                        <LogOut size={20} />
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </nav>
         </aside>
     );
 }

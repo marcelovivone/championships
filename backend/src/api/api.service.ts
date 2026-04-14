@@ -96,13 +96,41 @@ const COUNTRY_TIMEZONES: Record<string, string> = {
     'Tunisia': 'Africa/Tunis',
 };
 
+const formatTimestampForDb = (value: string | Date | null | undefined): string | null => {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        const year = value.getUTCFullYear();
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(value.getUTCDate()).padStart(2, '0');
+        const hours = String(value.getUTCHours()).padStart(2, '0');
+        const minutes = String(value.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(value.getUTCSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    return trimmed.replace('T', ' ').replace(/Z$/, '').slice(0, 19);
+};
+
+const resolveCountryName = (value: unknown): string | null => {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (value && typeof value === 'object' && 'name' in value) {
+        const name = (value as { name?: unknown }).name;
+        return typeof name === 'string' && name.trim() ? name.trim() : null;
+    }
+    return null;
+};
+
 // Convert UTC date to local timezone based on country
-const convertToLocalTimezone = (utcDate: string | Date, country: string | null): { localDate: Date; localDateString: string; timezone: string } => {
+const convertToLocalTimezone = (utcDate: string | Date, country: string | null): { localDateString: string; localDateTimeString: string; timezone: string } => {
     const date = typeof utcDate === 'string' ? new Date(utcDate) : utcDate;
     if (!date || Number.isNaN(date.getTime())) {
         return {
-            localDate: new Date(),
             localDateString: new Date().toISOString().slice(0, 10),
+            localDateTimeString: formatTimestampForDb(new Date()) ?? new Date().toISOString().slice(0, 19).replace('T', ' '),
             timezone: 'UTC'
         };
     }
@@ -128,19 +156,18 @@ const convertToLocalTimezone = (utcDate: string | Date, country: string | null):
         const partsMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
 
         const localDateString = `${partsMap.year}-${partsMap.month}-${partsMap.day}`;
-        const localDateTime = `${partsMap.year}-${partsMap.month}-${partsMap.day}T${partsMap.hour}:${partsMap.minute}:${partsMap.second}`;
-        const localDate = new Date(localDateTime);
+        const localDateTimeString = `${partsMap.year}-${partsMap.month}-${partsMap.day} ${partsMap.hour}:${partsMap.minute}:${partsMap.second}`;
 
         return {
-            localDate,
             localDateString,
+            localDateTimeString,
             timezone
         };
     } catch (e) {
         // Fallback to UTC if timezone conversion fails
         return {
-            localDate: date,
             localDateString: date.toISOString().slice(0, 10),
+            localDateTimeString: formatTimestampForDb(date) ?? date.toISOString().slice(0, 19).replace('T', ' '),
             timezone: 'UTC'
         };
     }
@@ -731,6 +758,32 @@ export class ApiService {
         }
     }
 
+    private async resolvePersistentClubAlias(
+        db: { query: (text: string, params?: any[]) => Promise<{ rows: any[] }> },
+        clubName: string,
+        sportId: number | null,
+        countryId: number | null,
+    ): Promise<number | null> {
+        const res = await db.query(
+            `SELECT entity_id
+               FROM entity_name_aliases
+              WHERE entity_type = 'club'
+                AND alias_name = $1
+                AND (sport_id IS NULL OR COALESCE(sport_id, 0) = COALESCE($2, 0))
+                AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($3, 0))
+              ORDER BY
+                CASE WHEN entity_id = -1 THEN 0 ELSE 1 END,
+                CASE WHEN country_id IS NULL THEN 1 ELSE 0 END,
+                entity_id ASC
+              LIMIT 1`,
+            [clubName, sportId, countryId],
+        );
+
+        if (!res.rows.length) return null;
+        const entityId = Number(res.rows[0].entity_id);
+        return Number.isFinite(entityId) ? entityId : null;
+    }
+
     async deleteEntityReview(id: number) {
         if (!process.env.DATABASE_URL) throw new Error('Missing DATABASE_URL environment variable');
         const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -1150,14 +1203,13 @@ export class ApiService {
                             if (!clubName || earlySeenClubs.has(clubName)) continue;
                             earlySeenClubs.add(clubName);
                             if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) continue;
-                            const alias = await pool.query(
-                                `SELECT entity_id FROM entity_name_aliases
-                                 WHERE entity_type = 'club' AND alias_name = $1
-                                   AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                                 LIMIT 1`,
-                                [clubName, leagueCountryId],
-                            );
-                            if (alias.rows.length) continue;
+                                                        const aliasId = await this.resolvePersistentClubAlias(
+                                                                pool,
+                                                                clubName,
+                                                                sportId ?? transitional.sport ?? null,
+                                                                leagueCountryId,
+                                                        );
+                                                        if (aliasId !== null) continue;
                             const clubRes = await pool.query(
                                 `SELECT id FROM clubs
                                  WHERE (unaccent(lower(short_name)) = unaccent(lower($1)) OR unaccent(lower(name)) = unaccent(lower($1)))
@@ -1233,14 +1285,13 @@ export class ApiService {
                         }
 
                         // Respect persistent aliases (always, for both modes)
-                        const clubAlias = await pool.query(
-                            `SELECT entity_id FROM entity_name_aliases
-                             WHERE entity_type = 'club' AND alias_name = $1
-                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                             LIMIT 1`,
-                            [clubName, leagueCountryId],
-                        );
-                        if (clubAlias.rows.length) continue;
+                                                const clubAliasId = await this.resolvePersistentClubAlias(
+                                                        pool,
+                                                        clubName,
+                                                        sportId ?? transitional.sport ?? null,
+                                                        leagueCountryId,
+                                                );
+                                                if (clubAliasId !== null) continue;
 
                         // Check if club exists in the clubs table for the current sport
                         let clubFound = false;
@@ -1476,7 +1527,7 @@ export class ApiService {
     }
 
     // Parse a transitional payload into tabular rows/columns
-    async parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string) {
+    async parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string, fallbackCountry?: string | null) {
         const row = await this.getTransitional(id);
         if (!row) return { found: false };
 
@@ -1593,7 +1644,7 @@ export class ApiService {
         const effectiveRoundOverrides = { ...savedOverrides, ...(roundOverrides ?? {}) };
         // Check the origin and route to appropriate parser
         if (origin === 'Api-Espn') {
-            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase);
+            return this.parseTransitionalEspn(row, effectiveRoundOverrides, seasonPhase, fallbackCountry);
         }
         // Default: Api-Football parsing
         const payload = row.payload ?? row;
@@ -1678,7 +1729,7 @@ export class ApiService {
                             get(obj, 'fixture.venue.country') ??
                             firstRow['league.country'] ?? null;
                         const localInfo = convertToLocalTimezone(v, country);
-                        out[key] = localInfo.localDate.toISOString();
+                        out[key] = localInfo.localDateTimeString;
                     } catch (e) {
                         out[key] = v; // fallback to original value
                     }
@@ -1744,7 +1795,7 @@ export class ApiService {
         });
     }
 
-    private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>, seasonPhase?: string) {
+    private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>, seasonPhase?: string, fallbackCountry?: string | null) {
         const payload = row.payload ?? row;
         // ESPN data structure: { events: [...] }
         const rawEvents = payload?.events ?? [];
@@ -1807,7 +1858,7 @@ export class ApiService {
                     const parsedDate = rawDate ? new Date(String(rawDate)) : null;
 
                     // Get country for timezone conversion
-                    const country = competition?.venue?.address?.country ?? null;
+                    const country = resolveCountryName(competition?.venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
 
                     let localDateString: string | null = null;
                     let localDayUtc: number | null = null;
@@ -1818,11 +1869,8 @@ export class ApiService {
                         const localInfo = convertToLocalTimezone(parsedDate, country);
                         localDateString = localInfo.localDateString;
                         timezone = localInfo.timezone;
-                        localDayUtc = Date.UTC(
-                            localInfo.localDate.getFullYear(),
-                            localInfo.localDate.getMonth(),
-                            localInfo.localDate.getDate()
-                        );
+                        const [localYear, localMonth, localDay] = localDateString.split('-').map(Number);
+                        localDayUtc = Date.UTC(localYear, localMonth - 1, localDay);
 
                         timeToLocalDay.set(parsedDate.getTime(), localDayUtc);
                         timeToLocalDateString.set(parsedDate.getTime(), localDateString);
@@ -2428,7 +2476,7 @@ export class ApiService {
                 // League info (from first event or payload)
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Premier League',
                 'league.season': parsedSeasonYear,
-                'league.country': venue?.address?.country ?? null,
+                'league.country': resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
 
@@ -2456,9 +2504,9 @@ export class ApiService {
                 'fixture.date': (() => {
                     const rawDate = competition?.date ?? event?.date ?? null;
                     if (!rawDate) return null;
-                    const country = venue?.address?.country ?? null;
+                    const country = resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
                     const localInfo = convertToLocalTimezone(rawDate, country);
-                    return localInfo.localDate.toISOString();
+                    return localInfo.localDateTimeString;
                 })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
@@ -3067,7 +3115,19 @@ export class ApiService {
                 );
             `);
 
-            const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase) as any;
+                let fallbackCountry: string | null = null;
+                if (options.countryId) {
+                    const countryRes = await client.query(`SELECT name FROM countries WHERE id = $1 LIMIT 1`, [options.countryId]);
+                    fallbackCountry = countryRes.rows[0]?.name ?? null;
+                } else if (options.leagueId) {
+                    const countryRes = await client.query(
+                        `SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`,
+                        [options.leagueId],
+                    );
+                    fallbackCountry = countryRes.rows[0]?.name ?? null;
+                }
+
+                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase, fallbackCountry) as any;
             if (!parsed || !parsed.found) {
                 return {
                     applied: false,
@@ -3620,7 +3680,7 @@ export class ApiService {
     // parseTransitionalEspn but WITHOUT running round inference.  league.round is
     // set to null for every row — the per-row processing loop will preserve the
     // existing round_id via COALESCE when updating matches.
-    private parseTransitionalEspnLightweight(row: any, seasonPhase?: string) {
+    private parseTransitionalEspnLightweight(row: any, seasonPhase?: string, fallbackCountry?: string | null) {
         const payload = row.payload ?? row;
         const rawEvents = payload?.events ?? [];
         if (!Array.isArray(rawEvents) || rawEvents.length === 0) {
@@ -3649,7 +3709,7 @@ export class ApiService {
             const mapped: Record<string, any> = {
                 'league.name': leagueInfo?.name ?? leagueInfo?.abbreviation ?? seasonInfo?.slug?.replace(/-/g, ' ') ?? 'Unknown',
                 'league.season': parsedSeasonYear,
-                'league.country': venue?.address?.country ?? null,
+                'league.country': resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null,
                 'league.flag': null,
                 'league.image': leagueInfo?.logos?.[0]?.href ?? null,
                 'league.round': null,  // Skipped — rounds already exist in DB
@@ -3665,9 +3725,9 @@ export class ApiService {
                 'fixture.date': (() => {
                     const rawDate = competition?.date ?? event?.date ?? null;
                     if (!rawDate) return null;
-                    const country = venue?.address?.country ?? null;
+                    const country = resolveCountryName(venue?.address?.country) ?? resolveCountryName(leagueInfo?.country) ?? fallbackCountry ?? null;
                     const localInfo = convertToLocalTimezone(rawDate, country);
-                    return localInfo.localDate.toISOString();
+                    return localInfo.localDateTimeString;
                 })(),
                 'fixture.venue.city': venue?.address?.city ?? null,
                 'fixture.venue.name': venue?.fullName ?? venue?.shortName ?? null,
@@ -3763,6 +3823,7 @@ export class ApiService {
             const sportId = options.sportId ?? 36;
             let leagueId = options.leagueId ?? null;
             let seasonId = options.seasonId ?? null;
+            let parserFallbackCountry: string | null = null;
             let isSubsequentLoad = false;
             const meta = this.extractLeagueMetadata(transitionalRow);
             const espnLeagueCode: string | null = transitionalRow.league ?? null;
@@ -3791,6 +3852,11 @@ export class ApiService {
                 );
                 if (lRes.rows.length) {
                     const possibleLeagueId = lRes.rows[0].id;
+                    const countryRes = await client.query(
+                        `SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`,
+                        [possibleLeagueId],
+                    );
+                    parserFallbackCountry = countryRes.rows[0]?.name ?? parserFallbackCountry;
                     let seasonRow: any = null;
                     for (const year of seasonYears) {
                         const sRes = await client.query(
@@ -3827,16 +3893,24 @@ export class ApiService {
                     }
                 }
             }
+            if (!parserFallbackCountry && options.leagueId) {
+                const countryRes = await client.query(
+                    `SELECT c.name FROM leagues l LEFT JOIN countries c ON c.id = l.country_id WHERE l.id = $1 LIMIT 1`,
+                    [options.leagueId],
+                );
+                parserFallbackCountry = countryRes.rows[0]?.name ?? null;
+            }
+
             let rows: any[];
             if (isSubsequentLoad) {
                 // Fast path: skip round inference, only extract events
                 const origin = transitionalRow.origin ?? 'Api-Football';
                 let parsed: any;
                 if (origin === 'Api-Espn') {
-                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase);
+                    parsed = this.parseTransitionalEspnLightweight(transitionalRow, options.seasonPhase, parserFallbackCountry);
                 } else {
                     // Api-Football standard parse is already lightweight (just JSON flattening)
-                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase);
+                    parsed = await this.parseTransitional(id, undefined, options.seasonPhase, parserFallbackCountry);
                 }
                 if (!parsed || !parsed.found) {
                     return { applied: 0, reason: parsed?.reason ?? 'lightweight_parse_failed' };
@@ -3844,7 +3918,7 @@ export class ApiService {
                 rows = parsed.rows || [];
             } else {
                 // Full path: run parseTransitional with round inference
-                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase) as any;
+                const parsed = await this.parseTransitional(id, options.roundOverrides, options.seasonPhase, parserFallbackCountry) as any;
                 if (!parsed || !parsed.found) {
                     return {
                         applied: 0,
@@ -4279,7 +4353,7 @@ export class ApiService {
                         }
 
                         const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                        const _dateVal = _dateRaw ? new Date(String(_dateRaw)) : null;
+                        const _dateVal = formatTimestampForDb(_dateRaw);
                         const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                         const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                         const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
@@ -4544,32 +4618,32 @@ export class ApiService {
                         // Fast path: full result cached from a previous lookup — zero DB queries needed
                         if (clubResultCache[clubName]) return clubResultCache[clubName];
 
-                        // Step 0: Check persistent alias table (null-scoped aliases act as universal wildcards)
-                        const clubAlias = await client.query(
-                            `SELECT entity_id FROM entity_name_aliases
-                             WHERE entity_type = 'club' AND alias_name = $1
-                               AND (country_id IS NULL OR COALESCE(country_id, 0) = COALESCE($2, 0))
-                             LIMIT 1`,
-                            [clubName, leagueCountryId],
-                        );
-                        if (clubAlias.rows.length) {
-                            const aliasId = clubAlias.rows[0].entity_id;
+                        if (Object.prototype.hasOwnProperty.call(clubMappings, clubName)) {
+                            const mappedId = Number(clubMappings[clubName]);
+                            if (mappedId === -1) {
+                                return null;
+                            }
+                            if (Number.isFinite(mappedId) && mappedId > 0) {
+                                clubCache[clubName] = mappedId;
+                                const mappedClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [mappedId]);
+                                if (mappedClub.rows.length) {
+                                    const r2 = { id: mappedClub.rows[0].id, shortName: mappedClub.rows[0].short_name || clubName };
+                                    clubResultCache[clubName] = r2;
+                                    return r2;
+                                }
+                            }
+                        }
+
+                        const persistentAliasId = await this.resolvePersistentClubAlias(client, clubName, sportId, leagueCountryId);
+                        if (persistentAliasId === -1) {
+                            return null;
+                        }
+                        if (persistentAliasId !== null) {
+                            const aliasId = persistentAliasId;
                             clubCache[clubName] = aliasId;
                             const aliasClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [aliasId]);
                             if (aliasClub.rows.length) {
                                 const r2 = { id: aliasClub.rows[0].id, shortName: aliasClub.rows[0].short_name || clubName };
-                                clubResultCache[clubName] = r2;
-                                return r2;
-                            }
-                        }
-
-                        // Check if user mapped this club to an existing one
-                        if (clubMappings[clubName]) {
-                            const mappedId = clubMappings[clubName];
-                            clubCache[clubName] = mappedId;
-                            const mappedClub = await client.query(`SELECT id, short_name FROM clubs WHERE id = $1 LIMIT 1`, [mappedId]);
-                            if (mappedClub.rows.length) {
-                                const r2 = { id: mappedClub.rows[0].id, shortName: mappedClub.rows[0].short_name || clubName };
                                 clubResultCache[clubName] = r2;
                                 return r2;
                             }
@@ -4665,9 +4739,21 @@ export class ApiService {
                     const venueCity = r['fixture.venue.city'] ?? null;
                     const venueName = r['fixture.venue.name'] ?? null;
 
-                    // Skip games where either team is explicitly marked as ignored (mapping === -1)
-                    const homeIsIgnored = homeName !== null && clubMappings[String(homeName).trim()] === -1;
-                    const awayIsIgnored = awayName !== null && clubMappings[String(awayName).trim()] === -1;
+                    // Skip games where either team is explicitly or persistently marked as ignored.
+                    const homeMappingValue = homeName !== null && Object.prototype.hasOwnProperty.call(clubMappings, String(homeName).trim())
+                        ? Number(clubMappings[String(homeName).trim()])
+                        : null;
+                    const awayMappingValue = awayName !== null && Object.prototype.hasOwnProperty.call(clubMappings, String(awayName).trim())
+                        ? Number(clubMappings[String(awayName).trim()])
+                        : null;
+                    const homeAliasId = homeName !== null && homeMappingValue === null
+                        ? await this.resolvePersistentClubAlias(client, String(homeName).trim(), sportId, leagueCountryId)
+                        : null;
+                    const awayAliasId = awayName !== null && awayMappingValue === null
+                        ? await this.resolvePersistentClubAlias(client, String(awayName).trim(), sportId, leagueCountryId)
+                        : null;
+                    const homeIsIgnored = homeName !== null && (homeMappingValue === -1 || homeAliasId === -1);
+                    const awayIsIgnored = awayName !== null && (awayMappingValue === -1 || awayAliasId === -1);
                     if (homeIsIgnored || awayIsIgnored) {
                         continue;
                     }
@@ -4703,7 +4789,7 @@ export class ApiService {
 
                     // Prepare match insert
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                    const dateVal = dateRaw ? new Date(String(dateRaw)) : null;
+                    const dateVal = formatTimestampForDb(dateRaw);
                     const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
@@ -4792,9 +4878,7 @@ export class ApiService {
                         createdMatches++;
                         // Track the calendar day of this match (for date-based schedules)
                         if (isDateBasedSchedule && dateVal) {
-                            const dayKey = dateVal instanceof Date
-                                ? dateVal.toISOString().slice(0, 10)
-                                : String(dateVal).slice(0, 10);
+                            const dayKey = String(dateVal).slice(0, 10);
                             seenMatchDays.add(dayKey);
                         }
                         // create match_divisions rows for NEW matches

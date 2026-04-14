@@ -38,6 +38,7 @@ export declare class ApiService {
     private ensureEntityReviewTable;
     getEntityReview(id: number): Promise<any>;
     saveEntityReview(id: number, leagueMapping: number | null, clubMappings: Record<string, number>, stadiumMappings: Record<string, number>, countryMapping?: number | null): Promise<any>;
+    private resolvePersistentClubAlias;
     deleteEntityReview(id: number): Promise<{
         deleted: boolean;
     }>;
@@ -143,7 +144,7 @@ export declare class ApiService {
         id: any;
         status: any;
     }>;
-    parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string): Promise<{
+    parseTransitional(id: number, roundOverrides?: Record<string, number>, seasonPhase?: string, fallbackCountry?: string | null): Promise<{
         found: boolean;
         reason: string;
         error?: undefined;

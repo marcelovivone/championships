@@ -14,6 +14,11 @@
 - **User Profile Display**: Shows logged-in username in sidebar
 - **Logout Functionality**: Proper session cleanup
 
+### Recent Refinement (2026-04-14)
+- **Sticky Full-Height Sidebar**: Admin and common sidebars now stay pinned to the viewport with independent scroll for the navigation list
+- **Pinned Logout Action**: The logout button is now anchored to the bottom of the sidebar instead of moving with long menus
+- **Overflow Control**: The sidebar shell now uses fixed-height layout and scroll containment so longer menu trees do not push footer actions off-screen
+
 ### CRUD Pages Implemented
 
 #### Basic Entities
@@ -108,6 +113,7 @@
    - Active route highlighting
    - User info display
    - Logout functionality
+   - Sticky viewport-height layout with bottom-pinned logout
 
 ### API Integration
 
