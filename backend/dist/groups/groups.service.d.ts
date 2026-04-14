@@ -62,6 +62,7 @@ export declare class GroupsService {
             numberOfSubLeagues: number;
             flgRoundAutomatic: boolean;
             typeOfSchedule: string;
+            pointSystem: string;
             imageUrl: string;
             flgDefault: boolean;
             createdAt: Date;

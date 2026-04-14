@@ -232,7 +232,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
 
   // Columns: football shared default. Basketball overrides below.
   // Apply zebra (shaded) backgrounds starting at Pts (index 2) and alternating
-  const shouldShadeCol = (idx: number) => idx >= 2 && idx <= 10 && ((idx - 2) % 2 === 0);
+  const shouldShadeCol = (idx: number) => idx >= 2 && idx <= 12 && ((idx - 2) % 2 === 0);
 
   const enrichedRows: EnrichedRow[] = list.map((r, idx: number) => {
     const position = toNumber(r.position ?? r.rank ?? idx + 1, idx + 1);
@@ -413,7 +413,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
               if (result !== firstResult) break;
               streakCount += 1;
             }
-            streakDisplay = `${streakCount}${firstResult}`;
+            streakDisplay = `${firstResult}${streakCount}`;
           }
         }
       }
@@ -453,32 +453,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
     };
   });
 
-  // Ensure deterministic ordering: football default by points; basketball by % then GB.
-  const sortedList = [...enrichedRows].sort((a: EnrichedRow, b: EnrichedRow) => {
-    if (isBasketball) {
-      const pctA = Number(a.pct);
-      const pctB = Number(b.pct);
-      if (pctB !== pctA) return pctB - pctA;
-      const firstWins = Math.max(...enrichedRows.map((row: EnrichedRow) => Number(row.w ?? 0)), 0);
-      const gbA = firstWins - Number(a.w ?? 0);
-      const gbB = firstWins - Number(b.w ?? 0);
-      if (gbA !== gbB) return gbA - gbB;
-      if (Number(b.w ?? 0) !== Number(a.w ?? 0)) return Number(b.w ?? 0) - Number(a.w ?? 0);
-      return String(a.teamName).localeCompare(String(b.teamName));
-    }
-
-    const getEffective = (r: EnrichedRow) => {
-      return { pts: Number(r.pts || 0), w: Number(r.w || 0), gd: Number(r.gd || 0), gf: Number(r.gf || 0) };
-    };
-
-    const A = getEffective(a);
-    const B = getEffective(b);
-    if (B.pts !== A.pts) return B.pts - A.pts;
-    if (B.w !== A.w) return B.w - A.w;
-    if (B.gd !== A.gd) return B.gd - A.gd;
-    if (B.gf !== A.gf) return B.gf - A.gf;
-    return 0;
-  });
+  const sortedList = enrichedRows;
 
   if (isLoading) {
     return (
@@ -506,23 +481,23 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
       <div className="overflow-x-auto overflow-visible">
-        <table className={clsx('w-full table-fixed', isBasketball ? 'min-w-[1100px]' : 'min-w-[900px]')}>
+        <table className={clsx('w-full table-fixed', isBasketball ? 'min-w-[900px]' : 'min-w-[900px]')}>
         <thead>
           {isBasketball ? (
             <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
-              <th className="w-10 px-5 py-5 font-normal">#</th>
-              <th className="px-3 py-3 font-normal">{teamHeaderLabel ?? 'TEAM'}</th>
-              <th className="w-12 px-3 py-3 text-center font-normal"><Tooltip label="Played">Pl</Tooltip></th>
-              <th className="w-12 px-3 py-3 text-center font-normal"><Tooltip label="Wins">W</Tooltip></th>
-              <th className="w-12 px-3 py-3 text-center font-normal"><Tooltip label="Losses">L</Tooltip></th>
-              <th className="w-14 px-3 py-3 text-center font-normal"><Tooltip label="Winning percentage">%</Tooltip></th>
-              <th className="w-14 px-3 py-3 text-center font-normal"><Tooltip label="Games behind">GB</Tooltip></th>
-              <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Home record">HOME</Tooltip></th>
-              <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Away record">AWAY</Tooltip></th>
-              <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Overtime record">OT</Tooltip></th>
-              <th className="w-40 px-3 py-3 text-center font-normal"><Last5Header /></th>
-              <th className="w-24 px-3 py-3 text-center font-normal"><Tooltip label="Record in the last 10 games">LAST 10</Tooltip></th>
-              <th className="w-20 px-3 py-3 text-center font-normal"><Tooltip label="Streak">STRK</Tooltip></th>
+              <th className={clsx('w-10 px-5 py-5 font-normal', shouldShadeCol(0) && 'bg-gray-50')}>#</th>
+              <th className={clsx('px-3 py-3 font-normal', shouldShadeCol(1) && 'bg-gray-50')}>{teamHeaderLabel ?? 'TEAM'}</th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(2) && 'bg-gray-50')}><Tooltip label="Played">Pl</Tooltip></th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(3) && 'bg-gray-50')}><Tooltip label="Wins">W</Tooltip></th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(4) && 'bg-gray-50')}><Tooltip label="Losses">L</Tooltip></th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(5) && 'bg-gray-50')}><Tooltip label="Winning percentage">%</Tooltip></th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(6) && 'bg-gray-50')}><Tooltip label="Games behind">GB</Tooltip></th>
+              <th className={clsx('w-16 px-3 py-3 text-center font-normal', shouldShadeCol(7) && 'bg-gray-50')}><Tooltip label="Home record">HOME</Tooltip></th>
+              <th className={clsx('w-16 px-3 py-3 text-center font-normal', shouldShadeCol(8) && 'bg-gray-50')}><Tooltip label="Away record">AWAY</Tooltip></th>
+              <th className={clsx('w-12 px-3 py-3 text-center font-normal', shouldShadeCol(9) && 'bg-gray-50')}><Tooltip label="Overtime record">OT</Tooltip></th>
+              <th className={clsx('w-40 px-3 py-3 text-center font-normal', shouldShadeCol(10) && 'bg-gray-50')}><Last5Header /></th>
+              <th className={clsx('w-20 px-3 py-3 text-center font-normal', shouldShadeCol(11) && 'bg-gray-50')}><Tooltip label="Record in the last 10 games">LAST 10</Tooltip></th>
+              <th className={clsx('w-16 px-3 py-3 text-center font-normal', shouldShadeCol(12) && 'bg-gray-50')}><Tooltip label="Streak">STRK</Tooltip></th>
             </tr>
           ) : (
             <tr className="text-left text-sm text-gray-600 border-b border-gray-200">
@@ -543,8 +518,8 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
           )}
         </thead>
         <tbody>
-          {sortedList.map((r: EnrichedRow) => {
-            const position = r.position;
+          {sortedList.map((r: EnrichedRow, idx: number) => {
+            const position = idx + 1;
             const teamName = r.teamName;
             const pts = r.pts;
             const pl = r.pl;
@@ -560,21 +535,23 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
             const firstPlaceWins = Math.max(...sortedList.map((row: EnrichedRow) => Number(row.w ?? 0)), 0);
             const gb = Math.max(0, firstPlaceWins - Number(w ?? 0));
 
+            const rowKey = String(r.inferredClubId ?? r.teamName ?? position);
+
             return (
-              <tr key={position} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr key={rowKey} className="border-b border-gray-100 hover:bg-gray-50">
                 {isBasketball ? (
                   <>
-                    <td className="px-3 py-3 text-sm text-gray-800 text-center" style={ positionColorMap && positionColorMap[position] ? { borderLeftStyle: 'solid', borderLeftWidth: '3px', borderLeftColor: positionColorMap[position] } : undefined }>{position}</td>
-                    <td className="px-3 py-3 text-sm text-gray-800">{teamName}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{pl}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{w}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{l}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{pct}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{gb}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{r.basketball.homeRecord}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{r.basketball.awayRecord}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{r.basketball.otRecord}</td>
-                    <td className="px-3 py-3">
+                    <td className={clsx('px-3 py-3 text-sm text-gray-800 text-center', shouldShadeCol(0) && 'bg-gray-50')} style={ positionColorMap && positionColorMap[position] ? { borderLeftStyle: 'solid', borderLeftWidth: '3px', borderLeftColor: positionColorMap[position] } : undefined }>{position}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-800', shouldShadeCol(1) && 'bg-gray-50')}>{teamName}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(2) && 'bg-gray-50')}>{pl}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(3) && 'bg-gray-50')}>{w}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(4) && 'bg-gray-50')}>{l}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(5) && 'bg-gray-50')}>{pct}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(6) && 'bg-gray-50')}>{gb}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(7) && 'bg-gray-50')}>{r.basketball.homeRecord}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(8) && 'bg-gray-50')}>{r.basketball.awayRecord}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(9) && 'bg-gray-50')}>{r.basketball.otRecord}</td>
+                    <td className={clsx('px-3 py-3', shouldShadeCol(10) && 'bg-gray-50')}>
                       <div className="flex gap-2">
                         {(last5 || []).map((c: Last5Entry, i: number) => {
                           let char = String(c);
@@ -624,8 +601,8 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
                         })}
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{Number(last10?.d ?? 0) > 0 ? `${last10?.w ?? 0}-${last10?.d ?? 0}-${last10?.l ?? 0}` : `${last10?.w ?? 0}-${last10?.l ?? 0}`}</td>
-                    <td className="px-3 py-3 text-sm text-gray-700 text-center">{r.streakDisplay || '—'}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(11) && 'bg-gray-50')}>{Number(last10?.d ?? 0) > 0 ? `${last10?.w ?? 0}-${last10?.d ?? 0}-${last10?.l ?? 0}` : `${last10?.w ?? 0}-${last10?.l ?? 0}`}</td>
+                    <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(12) && 'bg-gray-50')}>{r.streakDisplay || '—'}</td>
                   </>
                 ) : (
                   <>
@@ -698,7 +675,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
                       })}
                     </div>
                 </td>
-                <td className="px-3 py-3 text-sm text-gray-700 text-center">{`${last10?.w ?? 0}-${last10?.d ?? 0}-${last10?.l ?? 0}`}</td>
+                <td className={clsx('px-3 py-3 text-sm text-gray-700 text-center', shouldShadeCol(12) && 'bg-gray-50')}>{`${last10?.w ?? 0}-${last10?.d ?? 0}-${last10?.l ?? 0}`}</td>
                   </>
                 )}
               </tr>

@@ -19,7 +19,12 @@ const drizzle_orm_1 = require("drizzle-orm");
 const schema = require("../db/schema");
 const schema_1 = require("../db/schema");
 const standings_calculator_service_1 = require("./standings-calculator.service");
+const tiebreaker_engine_1 = require("./tiebreaker.engine");
+const standing_order_rules_service_1 = require("../standing-order-rules/standing-order-rules.service");
 let StandingsService = class StandingsService {
+    getExecutor(executor) {
+        return executor ?? this.db;
+    }
     async findByLeagueIdAndSeasonIdAndRoundId(leagueId, seasonId, roundId, clubId) {
         try {
             const [currentRound] = await this.db
@@ -67,12 +72,8 @@ let StandingsService = class StandingsService {
                 }
             }
             const merged = [...existing, ...fallbacks];
-            merged.sort((a, b) => {
-                if ((b.points ?? 0) !== (a.points ?? 0))
-                    return (b.points ?? 0) - (a.points ?? 0);
-                return (a.goalsFor ?? 0) - (b.goalsFor ?? 0);
-            });
-            return merged;
+            const sportId = merged[0]?.sportId || allSeasonClubs[0]?.sportId || 0;
+            return await this.sortWithTiebreakers(merged, leagueId, sportId, seasonId);
         }
         catch (error) {
             if (error instanceof common_1.BadRequestException)
@@ -105,6 +106,8 @@ let StandingsService = class StandingsService {
             penaltyLosses: 0,
             setsWon: 0,
             setsLost: 0,
+            regulationWins: 0,
+            regulationOtWins: 0,
             homeGamesPlayed: 0,
             awayGamesPlayed: 0,
             homePoints: 0,
@@ -148,6 +151,8 @@ let StandingsService = class StandingsService {
             penaltyLosses: 0,
             setsWon: 0,
             setsLost: 0,
+            regulationWins: 0,
+            regulationOtWins: 0,
             homeGamesPlayed: 0,
             awayGamesPlayed: 0,
             homePoints: 0,
@@ -183,6 +188,28 @@ let StandingsService = class StandingsService {
             return goalsForDiff;
         return Number(a.clubId ?? 0) - Number(b.clubId ?? 0);
     }
+    async sortWithTiebreakers(rows, leagueId, sportId, seasonId, maxDate = null) {
+        try {
+            const [season] = await this.db.select().from(schema_1.seasons).where((0, drizzle_orm_1.eq)(schema_1.seasons.id, seasonId)).limit(1);
+            const startYear = season?.startYear ? Number(season.startYear) : new Date().getFullYear();
+            const criteria = await this.standingOrderRulesService.resolveForLeagueAndSeason(leagueId, sportId, startYear);
+            if (criteria.length === 0) {
+                rows.sort((a, b) => this.compareStandingRows(a, b));
+                return rows;
+            }
+            const [league] = await this.db.select().from(schema_1.leagues).where((0, drizzle_orm_1.eq)(schema_1.leagues.id, leagueId)).limit(1);
+            const pointSystem = league?.pointSystem || 'FOOTBALL_3_1_0';
+            return await this.tiebreakerEngine.sort(rows, criteria.map(c => ({
+                sortOrder: c.sortOrder,
+                criterion: c.criterion,
+                direction: c.direction,
+            })), seasonId, leagueId, maxDate, pointSystem);
+        }
+        catch {
+            rows.sort((a, b) => this.compareStandingRows(a, b));
+            return rows;
+        }
+    }
     async findByLeagueIdAndSeasonIdAndMatchDate(leagueId, seasonId, matchDate, clubId) {
         try {
             const selectedDate = new Date(matchDate);
@@ -208,14 +235,16 @@ let StandingsService = class StandingsService {
                 }
             }
             if (seasonClubRows.length === 0) {
-                return Array.from(latestStandingByClub.values()).sort((a, b) => this.compareStandingRows(a, b));
+                const vals = Array.from(latestStandingByClub.values());
+                const sportId = vals[0]?.sportId || 0;
+                return await this.sortWithTiebreakers(vals, leagueId, sportId, seasonId, selectedDate);
             }
             const mergedRows = seasonClubRows.map((seasonClubRow) => {
                 return latestStandingByClub.get(seasonClubRow.clubId)
                     ?? this.buildZeroMatchDateRow(leagueId, seasonId, selectedDate, seasonClubRow.clubId, seasonClubRow.sportId, seasonClubRow.groupId ?? null);
             });
-            mergedRows.sort((a, b) => this.compareStandingRows(a, b));
-            return mergedRows;
+            const sportId = mergedRows[0]?.sportId || seasonClubRows[0]?.sportId || 0;
+            return await this.sortWithTiebreakers(mergedRows, leagueId, sportId, seasonId, selectedDate);
         }
         catch (error) {
             if (error instanceof common_1.BadRequestException)
@@ -223,9 +252,11 @@ let StandingsService = class StandingsService {
             throw new common_1.BadRequestException('Failed to fetch standings by league, season, and matchDate');
         }
     }
-    constructor(db, calculator) {
+    constructor(db, calculator, tiebreakerEngine, standingOrderRulesService) {
         this.db = db;
         this.calculator = calculator;
+        this.tiebreakerEngine = tiebreakerEngine;
+        this.standingOrderRulesService = standingOrderRulesService;
     }
     async findAll() {
         try {
@@ -449,6 +480,8 @@ let StandingsService = class StandingsService {
                 overtimeLosses: homeStats.overtimeLosses,
                 penaltyWins: homeStats.penaltyWins,
                 penaltyLosses: homeStats.penaltyLosses,
+                regulationWins: homeStats.regulationWins,
+                regulationOtWins: homeStats.regulationOtWins,
             }).returning();
             const [awayResult] = await this.db.insert(schema_1.standings).values({
                 sportId: createStandingDto.sportId,
@@ -486,6 +519,8 @@ let StandingsService = class StandingsService {
                 overtimeLosses: awayStats.overtimeLosses,
                 penaltyWins: awayStats.penaltyWins,
                 penaltyLosses: awayStats.penaltyLosses,
+                regulationWins: awayStats.regulationWins,
+                regulationOtWins: awayStats.regulationOtWins,
             }).returning();
             if (roundId) {
                 await this.cascadeClubStandings(createStandingDto.homeClubId, createStandingDto.leagueId, createStandingDto.seasonId, createStandingDto.sportId, roundId, sportName);
@@ -608,9 +643,106 @@ let StandingsService = class StandingsService {
                 overtimeLosses: clubStats.overtimeLosses,
                 penaltyWins: clubStats.penaltyWins,
                 penaltyLosses: clubStats.penaltyLosses,
+                regulationWins: clubStats.regulationWins,
+                regulationOtWins: clubStats.regulationOtWins,
                 updatedAt: new Date(),
             })
                 .where((0, drizzle_orm_1.eq)(schema_1.standings.id, futureRow.standingsId));
+        }
+    }
+    async cascadeClubStandingsByMatchDate(clubId, leagueId, seasonId, sportId, _deletedMatchDate, _deletedStandingId, sportName, executor) {
+        const db = this.getExecutor(executor);
+        const remainingRows = await db
+            .select({
+            standingsId: schema_1.standings.id,
+            matchId: schema_1.standings.matchId,
+            roundId: schema_1.standings.roundId,
+            groupId: schema_1.standings.groupId,
+            actualMatchDate: schema_1.matches.date,
+        })
+            .from(schema_1.standings)
+            .innerJoin(schema_1.matches, (0, drizzle_orm_1.eq)(schema_1.standings.matchId, schema_1.matches.id))
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.standings.clubId, clubId), (0, drizzle_orm_1.eq)(schema_1.standings.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.standings.seasonId, seasonId)))
+            .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.standings.id));
+        if (remainingRows.length === 0)
+            return;
+        let previousStanding = null;
+        for (const row of remainingRows) {
+            if (!row.matchId)
+                continue;
+            const [matchRow] = await db
+                .select()
+                .from(schema_1.matches)
+                .where((0, drizzle_orm_1.eq)(schema_1.matches.id, row.matchId))
+                .limit(1);
+            if (!matchRow)
+                continue;
+            const divisionRows = await db
+                .select()
+                .from(schema_1.matchDivisions)
+                .where((0, drizzle_orm_1.eq)(schema_1.matchDivisions.matchId, row.matchId))
+                .orderBy((0, drizzle_orm_1.asc)(schema_1.matchDivisions.divisionNumber));
+            const isHome = matchRow.homeClubId === clubId;
+            const matchData = {
+                sportId,
+                leagueId,
+                seasonId,
+                roundId: row.roundId,
+                matchDate: matchRow.date,
+                groupId: row.groupId ?? matchRow.groupId,
+                homeClubId: matchRow.homeClubId,
+                awayClubId: matchRow.awayClubId,
+                homeScore: matchRow.homeScore ?? 0,
+                awayScore: matchRow.awayScore ?? 0,
+                matchId: row.matchId,
+                matchDivisions: divisionRows.map((division) => ({
+                    id: division.id,
+                    divisionNumber: division.divisionNumber,
+                    divisionType: division.divisionType,
+                    homeScore: division.homeScore,
+                    awayScore: division.awayScore,
+                })),
+            };
+            const { home: homeStats, away: awayStats } = isHome
+                ? this.calculator.calculate(sportName, matchData, previousStanding, null)
+                : this.calculator.calculate(sportName, matchData, null, previousStanding);
+            const clubStats = isHome ? homeStats : awayStats;
+            await db
+                .update(schema_1.standings)
+                .set({
+                points: clubStats.points,
+                played: clubStats.played,
+                wins: clubStats.wins,
+                draws: clubStats.draws,
+                losses: clubStats.losses,
+                goalsFor: clubStats.goalsFor,
+                goalsAgainst: clubStats.goalsAgainst,
+                setsWon: clubStats.setsWon,
+                setsLost: clubStats.setsLost,
+                homeGamesPlayed: clubStats.homeGamesPlayed || 0,
+                awayGamesPlayed: clubStats.awayGamesPlayed || 0,
+                homePoints: clubStats.homePoints || 0,
+                awayPoints: clubStats.awayPoints || 0,
+                homeWins: clubStats.homeWins || 0,
+                homeDraws: clubStats.homeDraws || 0,
+                homeLosses: clubStats.homeLosses || 0,
+                homeGoalsFor: clubStats.homeGoalsFor,
+                homeGoalsAgainst: clubStats.homeGoalsAgainst,
+                awayWins: clubStats.awayWins || 0,
+                awayDraws: clubStats.awayDraws || 0,
+                awayLosses: clubStats.awayLosses || 0,
+                awayGoalsFor: clubStats.awayGoalsFor,
+                awayGoalsAgainst: clubStats.awayGoalsAgainst,
+                overtimeWins: clubStats.overtimeWins,
+                overtimeLosses: clubStats.overtimeLosses,
+                penaltyWins: clubStats.penaltyWins,
+                penaltyLosses: clubStats.penaltyLosses,
+                regulationWins: clubStats.regulationWins,
+                regulationOtWins: clubStats.regulationOtWins,
+                updatedAt: new Date(),
+            })
+                .where((0, drizzle_orm_1.eq)(schema_1.standings.id, row.standingsId));
+            previousStanding = clubStats;
         }
     }
     async remove(id) {
@@ -670,28 +802,40 @@ let StandingsService = class StandingsService {
         }
         return result;
     }
-    async removeByMatchId(matchId) {
-        const [matchRow] = await this.db
+    async removeByMatchId(matchId, executor) {
+        const db = this.getExecutor(executor);
+        const [matchRow] = await db
             .select()
             .from(schema_1.matches)
             .where((0, drizzle_orm_1.eq)(schema_1.matches.id, matchId))
             .limit(1);
-        const result = await this.db
+        const standingsForMatch = await db
+            .select({
+            id: schema_1.standings.id,
+            clubId: schema_1.standings.clubId,
+            matchDate: schema_1.standings.matchDate,
+        })
+            .from(schema_1.standings)
+            .where((0, drizzle_orm_1.eq)(schema_1.standings.matchId, matchId))
+            .orderBy((0, drizzle_orm_1.asc)(schema_1.standings.id));
+        const result = await db
             .delete(schema_1.standings)
             .where((0, drizzle_orm_1.eq)(schema_1.standings.matchId, matchId))
             .returning();
         if (!result.length) {
             return result;
         }
-        if (matchRow && matchRow.roundId) {
-            const sport = await this.db
+        if (matchRow?.date) {
+            const sport = await db
                 .select()
                 .from(schema.sports)
                 .where((0, drizzle_orm_1.eq)(schema.sports.id, matchRow.sportId))
                 .limit(1);
             const sportName = sport.length > 0 ? sport[0].name : 'Football';
-            await this.cascadeClubStandings(matchRow.homeClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.roundId, sportName);
-            await this.cascadeClubStandings(matchRow.awayClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.roundId, sportName);
+            const homeStanding = standingsForMatch.find((row) => row.clubId === matchRow.homeClubId);
+            const awayStanding = standingsForMatch.find((row) => row.clubId === matchRow.awayClubId);
+            await this.cascadeClubStandingsByMatchDate(matchRow.homeClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.date, homeStanding?.id ?? null, sportName, db);
+            await this.cascadeClubStandingsByMatchDate(matchRow.awayClubId, matchRow.leagueId, matchRow.seasonId, matchRow.sportId, matchRow.date, awayStanding?.id ?? null, sportName, db);
         }
         return result;
     }
@@ -701,6 +845,8 @@ exports.StandingsService = StandingsService = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)('DRIZZLE')),
     __metadata("design:paramtypes", [node_postgres_1.NodePgDatabase,
-        standings_calculator_service_1.StandingsCalculatorService])
+        standings_calculator_service_1.StandingsCalculatorService,
+        tiebreaker_engine_1.TiebreakerEngine,
+        standing_order_rules_service_1.StandingOrderRulesService])
 ], StandingsService);
 //# sourceMappingURL=standings.service.js.map

@@ -41,6 +41,9 @@ import {
   StandingZone,
   CreateStandingZoneDto,
   UpdateStandingZoneDto,
+  StandingOrderRule,
+  CreateStandingOrderRuleDto,
+  UpdateStandingOrderRuleDto,
 } from './types';
 
 // import MatchDetailsEditor, { MatchDivision } from '../../app/admin/matches/MatchDetailsEditor';
@@ -433,5 +436,26 @@ export const standingsApi = {
   // Strict delete method for standings (now by matchId)
   strictDeleteByMatchId: async (matchId: number): Promise<void> => {
     await apiClient.delete(`/v1/standings/strict?matchId=${matchId}`);
+  },
+};
+
+// Standing Order Rules API
+export const standingOrderRulesApi = {
+  ...createCrudApi<StandingOrderRule, CreateStandingOrderRuleDto, UpdateStandingOrderRuleDto>('standing-order-rules'),
+  getFiltered: async (opts?: { sportId?: number; leagueId?: string; page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }) => {
+    const { page = 1, limit = 50, sortBy, sortOrder } = opts || {};
+    let url = `/v1/standing-order-rules?page=${page}&limit=${limit}`;
+    if (sortBy) url += `&sortBy=${sortBy}`;
+    if (sortOrder) url += `&sortOrder=${sortOrder}`;
+    if (opts?.sportId) url += `&sportId=${opts.sportId}`;
+    if (opts?.leagueId) url += `&leagueId=${opts.leagueId}`;
+    const response = await apiClient.get(url);
+    const result = response.data as any;
+    if (result.data && result.total !== undefined) return result;
+    return { data: Array.isArray(result) ? result : [], total: Array.isArray(result) ? result.length : 0, page, limit };
+  },
+  resequence: async (body: { sportId: number; leagueId?: number | null; startYear?: number | null }) => {
+    const response = await apiClient.post('/v1/standing-order-rules/resequence', body);
+    return response.data;
   },
 };

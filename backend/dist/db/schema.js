@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
+exports.standingOrderRules = exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
 const pg_core_1 = require("drizzle-orm/pg-core");
 exports.sports = (0, pg_core_1.pgTable)('sports', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
@@ -83,6 +83,7 @@ exports.leagues = (0, pg_core_1.pgTable)('leagues', {
     numberOfSubLeagues: (0, pg_core_1.integer)('number_of_sub_leagues'),
     flgRoundAutomatic: (0, pg_core_1.boolean)('flg_round_automatic').default(true).notNull(),
     typeOfSchedule: (0, pg_core_1.varchar)('type_of_schedule', { length: 10 }).default('Round').notNull(),
+    pointSystem: (0, pg_core_1.varchar)('point_system', { length: 20 }).default('FOOTBALL_3_1_0').notNull(),
     imageUrl: (0, pg_core_1.text)('image_url'),
     flgDefault: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
@@ -198,6 +199,8 @@ exports.standings = (0, pg_core_1.pgTable)('standings', {
     overtimeLosses: (0, pg_core_1.integer)('overtime_losses').default(0),
     penaltyWins: (0, pg_core_1.integer)('penalty_wins').default(0),
     penaltyLosses: (0, pg_core_1.integer)('penalty_losses').default(0),
+    regulationWins: (0, pg_core_1.integer)('regulation_wins').default(0),
+    regulationOtWins: (0, pg_core_1.integer)('regulation_ot_wins').default(0),
     setsWon: (0, pg_core_1.integer)('sets_won').default(0),
     setsLost: (0, pg_core_1.integer)('sets_lost').default(0),
     homeGamesPlayed: (0, pg_core_1.integer)('home_games_played').default(0),
@@ -277,5 +280,16 @@ exports.standingZones = (0, pg_core_1.pgTable)('standing_zones', {
     colorHex: (0, pg_core_1.varchar)('color_hex', { length: 7 }).default('#FFFFFF').notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
     updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+});
+exports.standingOrderRules = (0, pg_core_1.pgTable)('standing_order_rules', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
+    leagueId: (0, pg_core_1.integer)('league_id').references(() => exports.leagues.id),
+    startYear: (0, pg_core_1.integer)('start_year'),
+    endYear: (0, pg_core_1.integer)('end_year'),
+    sortOrder: (0, pg_core_1.integer)('sort_order').notNull(),
+    criterion: (0, pg_core_1.varchar)('criterion', { length: 40 }).notNull(),
+    direction: (0, pg_core_1.varchar)('direction', { length: 4 }).default('DESC').notNull(),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
 //# sourceMappingURL=schema.js.map

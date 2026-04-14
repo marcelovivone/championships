@@ -33,12 +33,12 @@ export declare class MatchDivisionsService {
     }[]>;
     create(createDivisionDto: CreateMatchDivisionDto): Promise<{
         id: number;
-        homeScore: number;
-        awayScore: number;
-        divisionNumber: number;
         divisionType: string;
         createdAt: Date;
+        homeScore: number;
+        awayScore: number;
         matchId: number;
+        divisionNumber: number;
     }>;
     update(id: number, updateDivisionDto: UpdateMatchDivisionDto): Promise<{
         id: number;
@@ -51,11 +51,11 @@ export declare class MatchDivisionsService {
     }>;
     remove(id: number): Promise<{
         id: number;
-        homeScore: number;
-        awayScore: number;
-        divisionNumber: number;
         divisionType: string;
         createdAt: Date;
+        homeScore: number;
+        awayScore: number;
         matchId: number;
+        divisionNumber: number;
     }>;
 }

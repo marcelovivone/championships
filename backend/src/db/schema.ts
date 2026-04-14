@@ -128,6 +128,8 @@ export const leagues = pgTable('leagues', {
   flgRoundAutomatic: boolean('flg_round_automatic').default(true).notNull(),
   typeOfSchedule: varchar('type_of_schedule', { length: 10 }).default('Round').notNull(),
   
+  pointSystem: varchar('point_system', { length: 20 }).default('FOOTBALL_3_1_0').notNull(),
+  
   imageUrl: text('image_url'),
   flgDefault: boolean('flg_default').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -296,6 +298,8 @@ export const standings = pgTable('standings', {
   overtimeLosses: integer('overtime_losses').default(0), // Losses in overtime
   penaltyWins: integer('penalty_wins').default(0), // Wins via shootout/penalties
   penaltyLosses: integer('penalty_losses').default(0), // Losses via shootout/penalties
+  regulationWins: integer('regulation_wins').default(0), // NHL: wins in regulation time
+  regulationOtWins: integer('regulation_ot_wins').default(0), // NHL: wins in regulation + OT (excl. shootout)
   
   // Volleyball specific: set statistics
   setsWon: integer('sets_won').default(0), // Total sets won
@@ -404,4 +408,19 @@ export const standingZones = pgTable('standing_zones', {
   colorHex: varchar('color_hex', { length: 7 }).default('#FFFFFF').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+// ============================================================================
+// 25. STANDING_ORDER_RULES TABLE - Tiebreaker criteria per sport/league
+// ============================================================================
+export const standingOrderRules = pgTable('standing_order_rules', {
+  id: serial('id').primaryKey(),
+  sportId: integer('sport_id').references(() => sports.id).notNull(),
+  leagueId: integer('league_id').references(() => leagues.id), // NULL = sport-level default
+  startYear: integer('start_year'),                             // NULL = applies to all years
+  endYear: integer('end_year'),                                 // NULL = still in effect
+  sortOrder: integer('sort_order').notNull(),                    // gapped: 100, 200, 300...
+  criterion: varchar('criterion', { length: 40 }).notNull(),    // e.g. 'POINTS', 'H2H_GOALS_FOR'
+  direction: varchar('direction', { length: 4 }).default('DESC').notNull(), // 'DESC' or 'ASC'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });

@@ -32,6 +32,7 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
+        pointSystem: string;
         imageUrl: string;
         flgDefault: boolean;
         createdAt: Date;
@@ -58,6 +59,7 @@ export declare class LeaguesService {
             numberOfSubLeagues: number;
             flgRoundAutomatic: boolean;
             typeOfSchedule: string;
+            pointSystem: string;
             imageUrl: string;
             flgDefault: boolean;
             createdAt: Date;
@@ -68,15 +70,15 @@ export declare class LeaguesService {
     create(createLeagueDto: CreateLeagueDto): Promise<{
         typeOfSchedule: "Round" | "Date";
         id: number;
-        originalName: string;
-        secondaryName: string;
-        countryId: number;
         divisionTime: number;
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
-        cityId: number;
         sportId: number;
+        originalName: string;
+        secondaryName: string;
+        countryId: number;
+        cityId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
@@ -89,6 +91,7 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
+        pointSystem: string;
     }>;
     update(id: number, updateLeagueDto: UpdateLeagueDto): Promise<{
         typeOfSchedule: "Round" | "Date";
@@ -111,21 +114,22 @@ export declare class LeaguesService {
         hasSubLeagues: boolean;
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
+        pointSystem: string;
         imageUrl: string;
         flgDefault: boolean;
         createdAt: Date;
     }>;
     remove(id: number): Promise<{
         id: number;
-        originalName: string;
-        secondaryName: string;
-        countryId: number;
         divisionTime: number;
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
-        cityId: number;
         sportId: number;
+        originalName: string;
+        secondaryName: string;
+        countryId: number;
+        cityId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
@@ -139,6 +143,7 @@ export declare class LeaguesService {
         numberOfSubLeagues: number;
         flgRoundAutomatic: boolean;
         typeOfSchedule: string;
+        pointSystem: string;
     }>;
     addLink(leagueId: number, label: string, url: string): Promise<{
         id: number;

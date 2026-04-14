@@ -36,9 +36,9 @@ export declare class CountriesService {
     create(createCountryDto: CreateCountryDto): Promise<{
         id: number;
         name: string;
-        code: string;
         createdAt: Date;
         continent: string;
+        code: string;
         flagUrl: string;
     }>;
     update(id: number, updateCountryDto: UpdateCountryDto): Promise<{
@@ -52,9 +52,9 @@ export declare class CountriesService {
     remove(id: number): Promise<{
         id: number;
         name: string;
-        code: string;
         createdAt: Date;
         continent: string;
+        code: string;
         flagUrl: string;
     }>;
 }

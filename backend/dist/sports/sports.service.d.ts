@@ -63,9 +63,9 @@ export declare class SportsService {
     create(createSportDto: CreateSportDto): Promise<{
         id: number;
         name: string;
-        divisionType: string;
         reducedName: string;
         type: string;
+        divisionType: string;
         minMatchDivisionNumber: number;
         maxMatchDivisionNumber: number;
         divisionTime: number;
@@ -97,9 +97,9 @@ export declare class SportsService {
     remove(id: number): Promise<{
         id: number;
         name: string;
-        divisionType: string;
         reducedName: string;
         type: string;
+        divisionType: string;
         minMatchDivisionNumber: number;
         maxMatchDivisionNumber: number;
         divisionTime: number;

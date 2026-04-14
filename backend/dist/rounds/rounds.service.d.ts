@@ -76,12 +76,12 @@ export declare class RoundsService {
     }[]>;
     create(createRoundDto: CreateRoundDto): Promise<{
         id: number;
-        startDate: Date;
-        endDate: Date;
-        roundNumber: number;
         createdAt: Date;
         leagueId: number;
         seasonId: number;
+        roundNumber: number;
+        startDate: Date;
+        endDate: Date;
         flgCurrent: boolean;
     }>;
     update(id: number, updateRoundDto: UpdateRoundDto): Promise<{

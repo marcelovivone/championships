@@ -8,8 +8,8 @@ export declare class MenuItemsService {
     create(createMenuItemDto: CreateMenuItemDto): Promise<{
         id: number;
         name: string;
-        code: string;
         createdAt: Date;
+        code: string;
         description: string;
         isActive: boolean;
         category: string;
@@ -63,8 +63,8 @@ export declare class MenuItemsService {
     remove(id: number): Promise<{
         id: number;
         name: string;
-        code: string;
         createdAt: Date;
+        code: string;
         description: string;
         isActive: boolean;
         category: string;

@@ -1232,6 +1232,25 @@ export declare const leagues: import("drizzle-orm/pg-core").PgTableWithColumns<{
         }, {}, {
             length: 10;
         }>;
+        pointSystem: import("drizzle-orm/pg-core").PgColumn<{
+            name: "point_system";
+            tableName: "leagues";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 20;
+        }>;
         imageUrl: import("drizzle-orm/pg-core").PgColumn<{
             name: "image_url";
             tableName: "leagues";
@@ -2120,7 +2139,7 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             tableName: "matches";
             dataType: "string";
             columnType: "PgEnumColumn";
-            data: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
+            data: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
             driverParam: string;
             notNull: true;
             hasDefault: true;
@@ -2824,6 +2843,40 @@ export declare const standings: import("drizzle-orm/pg-core").PgTableWithColumns
         }, {}, {}>;
         penaltyLosses: import("drizzle-orm/pg-core").PgColumn<{
             name: "penalty_losses";
+            tableName: "standings";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        regulationWins: import("drizzle-orm/pg-core").PgColumn<{
+            name: "regulation_wins";
+            tableName: "standings";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        regulationOtWins: import("drizzle-orm/pg-core").PgColumn<{
+            name: "regulation_ot_wins";
             tableName: "standings";
             dataType: "number";
             columnType: "PgInteger";
@@ -4026,6 +4079,170 @@ export declare const standingZones: import("drizzle-orm/pg-core").PgTableWithCol
         updatedAt: import("drizzle-orm/pg-core").PgColumn<{
             name: "updated_at";
             tableName: "standing_zones";
+            dataType: "date";
+            columnType: "PgTimestamp";
+            data: Date;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+    };
+    dialect: "pg";
+}>;
+export declare const standingOrderRules: import("drizzle-orm/pg-core").PgTableWithColumns<{
+    name: "standing_order_rules";
+    schema: undefined;
+    columns: {
+        id: import("drizzle-orm/pg-core").PgColumn<{
+            name: "id";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgSerial";
+            data: number;
+            driverParam: number;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: true;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        sportId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "sport_id";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        leagueId: import("drizzle-orm/pg-core").PgColumn<{
+            name: "league_id";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        startYear: import("drizzle-orm/pg-core").PgColumn<{
+            name: "start_year";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        endYear: import("drizzle-orm/pg-core").PgColumn<{
+            name: "end_year";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        sortOrder: import("drizzle-orm/pg-core").PgColumn<{
+            name: "sort_order";
+            tableName: "standing_order_rules";
+            dataType: "number";
+            columnType: "PgInteger";
+            data: number;
+            driverParam: string | number;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        criterion: import("drizzle-orm/pg-core").PgColumn<{
+            name: "criterion";
+            tableName: "standing_order_rules";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 40;
+        }>;
+        direction: import("drizzle-orm/pg-core").PgColumn<{
+            name: "direction";
+            tableName: "standing_order_rules";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 4;
+        }>;
+        createdAt: import("drizzle-orm/pg-core").PgColumn<{
+            name: "created_at";
+            tableName: "standing_order_rules";
             dataType: "date";
             columnType: "PgTimestamp";
             data: Date;

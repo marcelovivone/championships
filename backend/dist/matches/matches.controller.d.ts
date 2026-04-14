@@ -4,20 +4,20 @@ export declare class MatchesController {
     private readonly matchesService;
     constructor(matchesService: MatchesService);
     create(createMatchDto: CreateMatchDto): Promise<{
-        id: number;
         date: Date;
-        homeScore: number;
-        awayScore: number;
-        status: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
+        id: number;
         createdAt: Date;
         sportId: number;
-        stadiumId: number;
         leagueId: number;
+        status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         seasonId: number;
-        groupId: number;
         roundId: number;
+        groupId: number;
         homeClubId: number;
         awayClubId: number;
+        stadiumId: number;
+        homeScore: number;
+        awayScore: number;
         originApiId: string;
         updatedAt: Date;
     }>;
@@ -35,29 +35,12 @@ export declare class MatchesController {
         awayClubId: number;
         stadiumId: number;
         date: Date;
-        status: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
+        status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         homeScore: number;
         awayScore: number;
         originApiId: string;
         createdAt: Date;
         updatedAt: Date;
     }>;
-    remove(id: number): Promise<{
-        id: number;
-        date: Date;
-        homeScore: number;
-        awayScore: number;
-        status: "Finished" | "Scheduled" | "Postponed" | "Cancelled";
-        createdAt: Date;
-        sportId: number;
-        stadiumId: number;
-        leagueId: number;
-        seasonId: number;
-        groupId: number;
-        roundId: number;
-        homeClubId: number;
-        awayClubId: number;
-        originApiId: string;
-        updatedAt: Date;
-    }>;
+    remove(id: number): Promise<any>;
 }

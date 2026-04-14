@@ -19,6 +19,7 @@ import {
     LogOut,
     Link2,
     ClipboardList,
+    ListOrdered,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -44,6 +45,16 @@ const menuItems: MenuItem[] = [
     { label: 'Sport Clubs', icon: <Users size={20} />, href: '/admin/sport-clubs' },
     { label: 'Stadiums', icon: <Building2 size={20} />, href: '/admin/stadiums' },
     { label: 'Standing Zones', icon: <Table size={20} />, href: '/admin/standing-zones' },
+    {
+        label: 'Standing Order',
+        icon: <ListOrdered size={20} />,
+        href: '',
+        children: [
+            { label: 'Rules', icon: <ListOrdered size={16} />, href: '/admin/standing-order/rules' },
+            { label: 'Point Systems', icon: <ListOrdered size={16} />, href: '/admin/standing-order/point-systems' },
+            { label: 'Criteria Reference', icon: <ListOrdered size={16} />, href: '/admin/standing-order/criteria' },
+        ],
+    },
     { label: 'Users', icon: <UserCog size={20} />, href: '/admin/users' },
     {
         label: 'API',

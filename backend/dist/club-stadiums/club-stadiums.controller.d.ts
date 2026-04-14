@@ -6,9 +6,9 @@ export declare class ClubStadiumsController {
     constructor(clubStadiumsService: ClubStadiumsService);
     create(createClubStadiumDto: CreateClubStadiumDto): Promise<{
         id: number;
+        createdAt: Date;
         startDate: Date;
         endDate: Date;
-        createdAt: Date;
         clubId: number;
         stadiumId: number;
     }>;

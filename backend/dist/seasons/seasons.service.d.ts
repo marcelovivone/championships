@@ -106,6 +106,7 @@ export declare class SeasonsService {
             numberOfSubLeagues: number;
             flgRoundAutomatic: boolean;
             typeOfSchedule: string;
+            pointSystem: string;
             imageUrl: string;
             flgDefault: boolean;
             createdAt: Date;
@@ -138,7 +139,6 @@ export declare class SeasonsService {
     }>;
     create(createSeasonDto: CreateSeasonDto): Promise<{
         id: number;
-        status: string;
         flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
@@ -146,6 +146,7 @@ export declare class SeasonsService {
         leagueId: number;
         startYear: number;
         endYear: number;
+        status: string;
         numberOfGroups: number;
     }>;
     update(id: number, updateSeasonDto: UpdateSeasonDto): Promise<{
@@ -174,7 +175,6 @@ export declare class SeasonsService {
     }>;
     remove(id: number): Promise<{
         id: number;
-        status: string;
         flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
@@ -182,6 +182,7 @@ export declare class SeasonsService {
         leagueId: number;
         startYear: number;
         endYear: number;
+        status: string;
         numberOfGroups: number;
     }>;
 }

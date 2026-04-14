@@ -19,3 +19,4 @@ export * from './auth.dto';
 export * from './pagination.dto';
 export * from './filtering.dto';
 export * from './standing-zone.dto';
+export * from './standing-order-rule.dto';

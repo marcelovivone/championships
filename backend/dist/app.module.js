@@ -32,6 +32,7 @@ const menu_items_module_1 = require("./menu-items/menu-items.module");
 const permissions_module_1 = require("./permissions/permissions.module");
 const admin_module_1 = require("./admin/admin.module");
 const standing_zones_module_1 = require("./standing-zones/standing-zones.module");
+const standing_order_rules_module_1 = require("./standing-order-rules/standing-order-rules.module");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
@@ -70,6 +71,7 @@ exports.AppModule = AppModule = __decorate([
             permissions_module_1.PermissionsModule,
             admin_module_1.AdminModule,
             standing_zones_module_1.StandingZonesModule,
+            standing_order_rules_module_1.StandingOrderRulesModule,
         ],
         providers: [
             {

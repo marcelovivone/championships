@@ -30,6 +30,8 @@ export interface StandingStats {
     penaltyLosses: number;
     setsWon: number;
     setsLost: number;
+    regulationWins: number;
+    regulationOtWins: number;
 }
 
 @Injectable()
@@ -73,6 +75,8 @@ export class StandingsCalculatorService {
             penaltyLosses: Number(previousHomeStanding?.penaltyLosses ?? 0),
             setsWon: Number(previousHomeStanding?.setsWon ?? 0),
             setsLost: Number(previousHomeStanding?.setsLost ?? 0),
+            regulationWins: Number(previousHomeStanding?.regulationWins ?? 0),
+            regulationOtWins: Number(previousHomeStanding?.regulationOtWins ?? 0),
         };
         const awayStats: StandingStats = {
             points: Number(previousAwayStanding?.points ?? 0),
@@ -102,6 +106,8 @@ export class StandingsCalculatorService {
             penaltyLosses: Number(previousAwayStanding?.penaltyLosses ?? 0),
             setsWon: Number(previousAwayStanding?.setsWon ?? 0),
             setsLost: Number(previousAwayStanding?.setsLost ?? 0),
+            regulationWins: Number(previousAwayStanding?.regulationWins ?? 0),
+            regulationOtWins: Number(previousAwayStanding?.regulationOtWins ?? 0),
         };
 
         // Set games played based on the presence of scores (assuming a match with scores means both teams played)
@@ -177,6 +183,36 @@ export class StandingsCalculatorService {
                     }
                 }
             });
+        }
+
+        // Track regulation wins and regulation+OT wins for ice hockey
+        if (sport.includes('ice hockey')) {
+            const matchDivisionsList = match.matchDivisions || [];
+            const hasOvertime = matchDivisionsList.some((d: any) => {
+                const dt = String(d.divisionType ?? '').trim().toUpperCase();
+                const dn = Number(d.divisionNumber ?? 0);
+                return d.id === -10 || dt === 'OVERTIME' || (dn > 3 && dt !== 'PENALTIES');
+            });
+            const hasShootout = matchDivisionsList.some((d: any) => {
+                const dt = String(d.divisionType ?? '').trim().toUpperCase();
+                return d.id === -11 || dt === 'PENALTIES';
+            });
+
+            if (match.homeScore > match.awayScore) {
+                if (!hasOvertime && !hasShootout) {
+                    homeStats.regulationWins++;
+                    homeStats.regulationOtWins++;
+                } else if (hasOvertime && !hasShootout) {
+                    homeStats.regulationOtWins++;
+                }
+            } else if (match.awayScore > match.homeScore) {
+                if (!hasOvertime && !hasShootout) {
+                    awayStats.regulationWins++;
+                    awayStats.regulationOtWins++;
+                } else if (hasOvertime && !hasShootout) {
+                    awayStats.regulationOtWins++;
+                }
+            }
         }
 
         return { home: homeStats, away: awayStats };

@@ -27,6 +27,8 @@ export interface StandingStats {
     penaltyLosses: number;
     setsWon: number;
     setsLost: number;
+    regulationWins: number;
+    regulationOtWins: number;
 }
 export declare class StandingsCalculatorService {
     calculate(sportName: string, match: any, previousHomeStanding?: any, previousAwayStanding?: any): {

@@ -38,6 +38,8 @@ let StandingsCalculatorService = class StandingsCalculatorService {
             penaltyLosses: Number(previousHomeStanding?.penaltyLosses ?? 0),
             setsWon: Number(previousHomeStanding?.setsWon ?? 0),
             setsLost: Number(previousHomeStanding?.setsLost ?? 0),
+            regulationWins: Number(previousHomeStanding?.regulationWins ?? 0),
+            regulationOtWins: Number(previousHomeStanding?.regulationOtWins ?? 0),
         };
         const awayStats = {
             points: Number(previousAwayStanding?.points ?? 0),
@@ -67,6 +69,8 @@ let StandingsCalculatorService = class StandingsCalculatorService {
             penaltyLosses: Number(previousAwayStanding?.penaltyLosses ?? 0),
             setsWon: Number(previousAwayStanding?.setsWon ?? 0),
             setsLost: Number(previousAwayStanding?.setsLost ?? 0),
+            regulationWins: Number(previousAwayStanding?.regulationWins ?? 0),
+            regulationOtWins: Number(previousAwayStanding?.regulationOtWins ?? 0),
         };
         homeStats.played = Number(homeStats.played) + 1;
         homeStats.homeGamesPlayed = Number(homeStats.homeGamesPlayed) + 1;
@@ -131,6 +135,36 @@ let StandingsCalculatorService = class StandingsCalculatorService {
                     }
                 }
             });
+        }
+        if (sport.includes('ice hockey')) {
+            const matchDivisionsList = match.matchDivisions || [];
+            const hasOvertime = matchDivisionsList.some((d) => {
+                const dt = String(d.divisionType ?? '').trim().toUpperCase();
+                const dn = Number(d.divisionNumber ?? 0);
+                return d.id === -10 || dt === 'OVERTIME' || (dn > 3 && dt !== 'PENALTIES');
+            });
+            const hasShootout = matchDivisionsList.some((d) => {
+                const dt = String(d.divisionType ?? '').trim().toUpperCase();
+                return d.id === -11 || dt === 'PENALTIES';
+            });
+            if (match.homeScore > match.awayScore) {
+                if (!hasOvertime && !hasShootout) {
+                    homeStats.regulationWins++;
+                    homeStats.regulationOtWins++;
+                }
+                else if (hasOvertime && !hasShootout) {
+                    homeStats.regulationOtWins++;
+                }
+            }
+            else if (match.awayScore > match.homeScore) {
+                if (!hasOvertime && !hasShootout) {
+                    awayStats.regulationWins++;
+                    awayStats.regulationOtWins++;
+                }
+                else if (hasOvertime && !hasShootout) {
+                    awayStats.regulationOtWins++;
+                }
+            }
         }
         return { home: homeStats, away: awayStats };
     }

@@ -1,13 +1,19 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq, and, desc, asc, lt, gt, lte } from 'drizzle-orm';
+import { eq, and, desc, asc, lt, gt, lte, or } from 'drizzle-orm';
 import * as schema from '../db/schema';
 import { standings, seasons, leagues, groups, rounds, matches, matchDivisions, seasonClubs } from '../db/schema';
 import { CreateStandingDto } from '../common/dtos';
 import { StandingsCalculatorService } from './standings-calculator.service';
+import { TiebreakerEngine } from './tiebreaker.engine';
+import { StandingOrderRulesService } from '../standing-order-rules/standing-order-rules.service';
 
 @Injectable()
 export class StandingsService {
+    private getExecutor(executor?: any) {
+        return executor ?? this.db;
+    }
+
         /**
          * Get standings by leagueId, seasonId, and roundId.
          * Clubs with postponed matches that have no row for this round are filled with
@@ -99,11 +105,8 @@ export class StandingsService {
 
                 // 5. Merge and sort by points desc, then goalsFor asc
                 const merged = [...existing, ...fallbacks];
-                merged.sort((a, b) => {
-                    if ((b.points ?? 0) !== (a.points ?? 0)) return (b.points ?? 0) - (a.points ?? 0);
-                    return (a.goalsFor ?? 0) - (b.goalsFor ?? 0);
-                });
-                return merged;
+                const sportId = merged[0]?.sportId || allSeasonClubs[0]?.sportId || 0;
+                return await this.sortWithTiebreakers(merged, leagueId, sportId, seasonId);
             } catch (error) {
                 if (error instanceof BadRequestException) throw error;
                 throw new BadRequestException('Failed to fetch standings by league, season, and round');
@@ -136,6 +139,8 @@ export class StandingsService {
                 penaltyLosses: 0,
                 setsWon: 0,
                 setsLost: 0,
+                regulationWins: 0,
+                regulationOtWins: 0,
                 homeGamesPlayed: 0,
                 awayGamesPlayed: 0,
                 homePoints: 0,
@@ -180,6 +185,8 @@ export class StandingsService {
                 penaltyLosses: 0,
                 setsWon: 0,
                 setsLost: 0,
+                regulationWins: 0,
+                regulationOtWins: 0,
                 homeGamesPlayed: 0,
                 awayGamesPlayed: 0,
                 homePoints: 0,
@@ -215,6 +222,53 @@ export class StandingsService {
             if (goalsForDiff !== 0) return goalsForDiff;
 
             return Number(a.clubId ?? 0) - Number(b.clubId ?? 0);
+        }
+
+        /**
+         * Sort standings using tiebreaker rules if configured, else legacy sort.
+         */
+        private async sortWithTiebreakers(
+            rows: any[],
+            leagueId: number,
+            sportId: number,
+            seasonId: number,
+            maxDate: Date | null = null,
+        ): Promise<any[]> {
+            try {
+                // Look up the season's start year
+                const [season] = await this.db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
+                const startYear = season?.startYear ? Number(season.startYear) : new Date().getFullYear();
+
+                // Resolve tiebreaker rules
+                const criteria = await this.standingOrderRulesService.resolveForLeagueAndSeason(leagueId, sportId, startYear);
+
+                if (criteria.length === 0) {
+                    // Fallback: legacy behavior
+                    rows.sort((a, b) => this.compareStandingRows(a, b));
+                    return rows;
+                }
+
+                // Get league's point system
+                const [league] = await this.db.select().from(leagues).where(eq(leagues.id, leagueId)).limit(1);
+                const pointSystem = league?.pointSystem || 'FOOTBALL_3_1_0';
+
+                return await this.tiebreakerEngine.sort(
+                    rows,
+                    criteria.map(c => ({
+                        sortOrder: c.sortOrder,
+                        criterion: c.criterion,
+                        direction: c.direction,
+                    })),
+                    seasonId,
+                    leagueId,
+                    maxDate,
+                    pointSystem,
+                );
+            } catch {
+                // If anything goes wrong, fall back to legacy sort
+                rows.sort((a, b) => this.compareStandingRows(a, b));
+                return rows;
+            }
         }
 
         /**
@@ -263,7 +317,9 @@ export class StandingsService {
                 }
 
                 if (seasonClubRows.length === 0) {
-                    return Array.from(latestStandingByClub.values()).sort((a, b) => this.compareStandingRows(a, b));
+                    const vals = Array.from(latestStandingByClub.values());
+                    const sportId = vals[0]?.sportId || 0;
+                    return await this.sortWithTiebreakers(vals, leagueId, sportId, seasonId, selectedDate);
                 }
 
                 const mergedRows = seasonClubRows.map((seasonClubRow) => {
@@ -278,8 +334,8 @@ export class StandingsService {
                         );
                 });
 
-                mergedRows.sort((a, b) => this.compareStandingRows(a, b));
-                return mergedRows;
+                const sportId = mergedRows[0]?.sportId || seasonClubRows[0]?.sportId || 0;
+                return await this.sortWithTiebreakers(mergedRows, leagueId, sportId, seasonId, selectedDate);
             } catch (error) {
                 if (error instanceof BadRequestException) throw error;
                 throw new BadRequestException('Failed to fetch standings by league, season, and matchDate');
@@ -289,6 +345,8 @@ export class StandingsService {
         @Inject('DRIZZLE')
         private db: NodePgDatabase<typeof schema>,
         private readonly calculator: StandingsCalculatorService,
+        private readonly tiebreakerEngine: TiebreakerEngine,
+        private readonly standingOrderRulesService: StandingOrderRulesService,
     ) { }
 
     /**
@@ -590,6 +648,8 @@ export class StandingsService {
                 overtimeLosses: homeStats.overtimeLosses,
                 penaltyWins: homeStats.penaltyWins,
                 penaltyLosses: homeStats.penaltyLosses,
+                regulationWins: homeStats.regulationWins,
+                regulationOtWins: homeStats.regulationOtWins,
             }).returning();
             const [awayResult] = await this.db.insert(standings).values({
                 sportId: createStandingDto.sportId,
@@ -627,6 +687,8 @@ export class StandingsService {
                 overtimeLosses: awayStats.overtimeLosses,
                 penaltyWins: awayStats.penaltyWins,
                 penaltyLosses: awayStats.penaltyLosses,
+                regulationWins: awayStats.regulationWins,
+                regulationOtWins: awayStats.regulationOtWins,
             }).returning();
 
             // Cascade: recalculate future-round standings for both clubs
@@ -818,9 +880,134 @@ export class StandingsService {
                     overtimeLosses: clubStats.overtimeLosses,
                     penaltyWins: clubStats.penaltyWins,
                     penaltyLosses: clubStats.penaltyLosses,
+                    regulationWins: clubStats.regulationWins,
+                    regulationOtWins: clubStats.regulationOtWins,
                     updatedAt: new Date(),
                 })
                 .where(eq(standings.id, futureRow.standingsId));
+        }
+    }
+
+    /**
+     * Rebuild the entire remaining standings timeline for a club in chronological
+     * match order. This is more reliable than patching only the forward slice after
+     * a deletion because it removes any dependency on the deleted row still existing.
+     */
+    private async cascadeClubStandingsByMatchDate(
+        clubId: number,
+        leagueId: number,
+        seasonId: number,
+        sportId: number,
+        _deletedMatchDate: Date,
+        _deletedStandingId: number | null,
+        sportName: string,
+        executor?: any,
+    ) {
+        const db = this.getExecutor(executor);
+
+        const remainingRows = await db
+            .select({
+                standingsId: standings.id,
+                matchId: standings.matchId,
+                roundId: standings.roundId,
+                groupId: standings.groupId,
+                actualMatchDate: matches.date,
+            })
+            .from(standings)
+            .innerJoin(matches, eq(standings.matchId, matches.id))
+            .where(
+                and(
+                    eq(standings.clubId, clubId),
+                    eq(standings.leagueId, leagueId),
+                    eq(standings.seasonId, seasonId),
+                ),
+            )
+            .orderBy(asc(matches.date), asc(standings.id));
+
+        if (remainingRows.length === 0) return;
+
+        let previousStanding: any = null;
+
+        for (const row of remainingRows) {
+            if (!row.matchId) continue;
+
+            const [matchRow] = await db
+                .select()
+                .from(matches)
+                .where(eq(matches.id, row.matchId))
+                .limit(1);
+            if (!matchRow) continue;
+
+            const divisionRows = await db
+                .select()
+                .from(matchDivisions)
+                .where(eq(matchDivisions.matchId, row.matchId))
+                .orderBy(asc(matchDivisions.divisionNumber));
+
+            const isHome = matchRow.homeClubId === clubId;
+            const matchData = {
+                sportId,
+                leagueId,
+                seasonId,
+                roundId: row.roundId,
+                matchDate: matchRow.date,
+                groupId: row.groupId ?? matchRow.groupId,
+                homeClubId: matchRow.homeClubId,
+                awayClubId: matchRow.awayClubId,
+                homeScore: matchRow.homeScore ?? 0,
+                awayScore: matchRow.awayScore ?? 0,
+                matchId: row.matchId,
+                matchDivisions: divisionRows.map((division) => ({
+                    id: division.id,
+                    divisionNumber: division.divisionNumber,
+                    divisionType: division.divisionType,
+                    homeScore: division.homeScore,
+                    awayScore: division.awayScore,
+                })),
+            };
+
+            const { home: homeStats, away: awayStats } = isHome
+                ? this.calculator.calculate(sportName, matchData, previousStanding, null)
+                : this.calculator.calculate(sportName, matchData, null, previousStanding);
+            const clubStats = isHome ? homeStats : awayStats;
+
+            await db
+                .update(standings)
+                .set({
+                    points: clubStats.points,
+                    played: clubStats.played,
+                    wins: clubStats.wins,
+                    draws: clubStats.draws,
+                    losses: clubStats.losses,
+                    goalsFor: clubStats.goalsFor,
+                    goalsAgainst: clubStats.goalsAgainst,
+                    setsWon: clubStats.setsWon,
+                    setsLost: clubStats.setsLost,
+                    homeGamesPlayed: clubStats.homeGamesPlayed || 0,
+                    awayGamesPlayed: clubStats.awayGamesPlayed || 0,
+                    homePoints: clubStats.homePoints || 0,
+                    awayPoints: clubStats.awayPoints || 0,
+                    homeWins: clubStats.homeWins || 0,
+                    homeDraws: clubStats.homeDraws || 0,
+                    homeLosses: clubStats.homeLosses || 0,
+                    homeGoalsFor: clubStats.homeGoalsFor,
+                    homeGoalsAgainst: clubStats.homeGoalsAgainst,
+                    awayWins: clubStats.awayWins || 0,
+                    awayDraws: clubStats.awayDraws || 0,
+                    awayLosses: clubStats.awayLosses || 0,
+                    awayGoalsFor: clubStats.awayGoalsFor,
+                    awayGoalsAgainst: clubStats.awayGoalsAgainst,
+                    overtimeWins: clubStats.overtimeWins,
+                    overtimeLosses: clubStats.overtimeLosses,
+                    penaltyWins: clubStats.penaltyWins,
+                    penaltyLosses: clubStats.penaltyLosses,
+                    regulationWins: clubStats.regulationWins,
+                    regulationOtWins: clubStats.regulationOtWins,
+                    updatedAt: new Date(),
+                })
+                .where(eq(standings.id, row.standingsId));
+
+            previousStanding = clubStats;
         }
     }
 
@@ -942,15 +1129,27 @@ export class StandingsService {
      * Delete all standings for a given matchId, then cascade-recalculate
      * all future-round standings for both clubs involved.
      */
-    async removeByMatchId(matchId: number) {
+    async removeByMatchId(matchId: number, executor?: any) {
+        const db = this.getExecutor(executor);
+
         // Fetch the match to get club IDs, round, league, season, sport
-        const [matchRow] = await this.db
+        const [matchRow] = await db
             .select()
             .from(matches)
             .where(eq(matches.id, matchId))
             .limit(1);
 
-        const result = await this.db
+        const standingsForMatch = await db
+            .select({
+                id: standings.id,
+                clubId: standings.clubId,
+                matchDate: standings.matchDate,
+            })
+            .from(standings)
+            .where(eq(standings.matchId, matchId))
+            .orderBy(asc(standings.id));
+
+        const result = await db
             .delete(standings)
             .where(eq(standings.matchId, matchId))
             .returning();
@@ -959,30 +1158,36 @@ export class StandingsService {
             return result;
         }
 
-        // Cascade recalculation for future rounds of both clubs
-        if (matchRow && matchRow.roundId) {
-            const sport = await this.db
+        if (matchRow?.date) {
+            const sport = await db
                 .select()
                 .from(schema.sports)
                 .where(eq(schema.sports.id, matchRow.sportId))
                 .limit(1);
             const sportName = sport.length > 0 ? sport[0].name : 'Football';
 
-            await this.cascadeClubStandings(
+            const homeStanding = standingsForMatch.find((row) => row.clubId === matchRow.homeClubId);
+            const awayStanding = standingsForMatch.find((row) => row.clubId === matchRow.awayClubId);
+
+            await this.cascadeClubStandingsByMatchDate(
                 matchRow.homeClubId,
                 matchRow.leagueId,
                 matchRow.seasonId,
                 matchRow.sportId,
-                matchRow.roundId,
+                matchRow.date,
+                homeStanding?.id ?? null,
                 sportName,
+                db,
             );
-            await this.cascadeClubStandings(
+            await this.cascadeClubStandingsByMatchDate(
                 matchRow.awayClubId,
                 matchRow.leagueId,
                 matchRow.seasonId,
                 matchRow.sportId,
-                matchRow.roundId,
+                matchRow.date,
+                awayStanding?.id ?? null,
                 sportName,
+                db,
             );
         }
 

@@ -895,12 +895,9 @@ async findOne(id: number) {
             const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
             const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
 
-            // Convert the date string to a date object and create a range for the whole day
-            const startDate = new Date(date);
-            startDate.setHours(0, 0, 0, 0);
-
-            const endDate = new Date(date);
-            endDate.setHours(23, 59, 59, 999);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD.');
+            }
 
             // 1️⃣ Fetch matches (UNCHANGED QUERY, just stored in a variable)
             const matchesData = await this.db
@@ -970,8 +967,7 @@ async findOne(id: number) {
                 .where(
                     and(
                         eq(matches.seasonId, seasonId),
-                        gte(matches.date, startDate),
-                        lte(matches.date, endDate),
+                        sql`DATE(${matches.date}) = CAST(${date} AS DATE)`,
                     ),
                 )
                 .orderBy(asc(matches.date), asc(matches.id));
@@ -1047,39 +1043,28 @@ async findOne(id: number) {
     async remove(id: number) {
         try {
             // Verify match exists
-            await this.findOne(id);
+            const existingMatch = await this.findOne(id);
 
-            // Check if match has any divisions or events
-            const divisions = await this.db
-                .select()
-                .from(schema.matchDivisions)
-                .where(eq(schema.matchDivisions.matchId, id))
-                .limit(1);
+            const deletedMatch = await (this.db as any).transaction(async (tx: any) => {
+                await this.standingsService.removeByMatchId(id, tx);
 
-            if (divisions && divisions.length > 0) {
-                throw new BadRequestException(
-                    'Cannot delete match. Match divisions are recorded.',
-                );
-            }
+                await tx
+                    .delete(schema.matchDivisions)
+                    .where(eq(schema.matchDivisions.matchId, id));
 
-            const events = await this.db
-                .select()
-                .from(schema.matchEvents)
-                .where(eq(schema.matchEvents.matchId, id))
-                .limit(1);
+                await tx
+                    .delete(schema.matchEvents)
+                    .where(eq(schema.matchEvents.matchId, id));
 
-            if (events && events.length > 0) {
-                throw new BadRequestException(
-                    'Cannot delete match. Match events are recorded.',
-                );
-            }
+                const result = await tx
+                    .delete(matches)
+                    .where(eq(matches.id, id))
+                    .returning();
 
-            const result = await this.db
-                .delete(matches)
-                .where(eq(matches.id, id))
-                .returning();
+                return result[0] ?? existingMatch;
+            });
 
-            return result[0];
+            return deletedMatch;
         } catch (error) {
             if (error instanceof BadRequestException || error instanceof NotFoundException)
                 throw error;

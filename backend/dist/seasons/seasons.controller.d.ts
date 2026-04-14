@@ -49,6 +49,7 @@ export declare class SeasonsController {
             numberOfSubLeagues: number;
             flgRoundAutomatic: boolean;
             typeOfSchedule: string;
+            pointSystem: string;
             imageUrl: string;
             flgDefault: boolean;
             createdAt: Date;
@@ -92,7 +93,6 @@ export declare class SeasonsController {
     }>;
     create(createDto: any): Promise<{
         id: number;
-        status: string;
         flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
@@ -100,6 +100,7 @@ export declare class SeasonsController {
         leagueId: number;
         startYear: number;
         endYear: number;
+        status: string;
         numberOfGroups: number;
     }>;
     update(id: number, updateDto: any): Promise<{
@@ -116,7 +117,6 @@ export declare class SeasonsController {
     }>;
     remove(id: number): Promise<{
         id: number;
-        status: string;
         flgDefault: boolean;
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
@@ -124,6 +124,7 @@ export declare class SeasonsController {
         leagueId: number;
         startYear: number;
         endYear: number;
+        status: string;
         numberOfGroups: number;
     }>;
 }

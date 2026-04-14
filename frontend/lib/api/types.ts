@@ -568,3 +568,28 @@ export interface CreateStandingZoneDto {
 }
 
 export interface UpdateStandingZoneDto extends Partial<CreateStandingZoneDto> {}
+
+// Standing Order Rule Types
+export interface StandingOrderRule {
+  id: number;
+  sportId: number;
+  leagueId: number | null;
+  startYear: number | null;
+  endYear: number | null;
+  sortOrder: number;
+  criterion: string;
+  direction: string;
+  createdAt: string;
+}
+
+export interface CreateStandingOrderRuleDto {
+  sportId: number;
+  leagueId?: number | null;
+  startYear?: number | null;
+  endYear?: number | null;
+  sortOrder: number;
+  criterion: string;
+  direction?: string;
+}
+
+export interface UpdateStandingOrderRuleDto extends Partial<CreateStandingOrderRuleDto> {}

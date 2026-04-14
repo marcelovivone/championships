@@ -766,10 +766,9 @@ let MatchesService = class MatchesService {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
             const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
-            const startDate = new Date(date);
-            startDate.setHours(0, 0, 0, 0);
-            const endDate = new Date(date);
-            endDate.setHours(23, 59, 59, 999);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+                throw new common_1.BadRequestException('Invalid date format. Expected YYYY-MM-DD.');
+            }
             const matchesData = await this.db
                 .select({
                 id: schema_1.matches.id,
@@ -834,7 +833,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.gte)(schema_1.matches.date, startDate), (0, drizzle_orm_1.lte)(schema_1.matches.date, endDate)))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.sql) `DATE(${schema_1.matches.date}) = CAST(${date} AS DATE)`))
                 .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await this.attachAvailableStadiums(matchesData);
             const matchesWithDivisions = await this.attachMatchDivisions(matchesWithStadiums);
@@ -882,28 +881,22 @@ let MatchesService = class MatchesService {
     }
     async remove(id) {
         try {
-            await this.findOne(id);
-            const divisions = await this.db
-                .select()
-                .from(schema.matchDivisions)
-                .where((0, drizzle_orm_1.eq)(schema.matchDivisions.matchId, id))
-                .limit(1);
-            if (divisions && divisions.length > 0) {
-                throw new common_1.BadRequestException('Cannot delete match. Match divisions are recorded.');
-            }
-            const events = await this.db
-                .select()
-                .from(schema.matchEvents)
-                .where((0, drizzle_orm_1.eq)(schema.matchEvents.matchId, id))
-                .limit(1);
-            if (events && events.length > 0) {
-                throw new common_1.BadRequestException('Cannot delete match. Match events are recorded.');
-            }
-            const result = await this.db
-                .delete(schema_1.matches)
-                .where((0, drizzle_orm_1.eq)(schema_1.matches.id, id))
-                .returning();
-            return result[0];
+            const existingMatch = await this.findOne(id);
+            const deletedMatch = await this.db.transaction(async (tx) => {
+                await this.standingsService.removeByMatchId(id, tx);
+                await tx
+                    .delete(schema.matchDivisions)
+                    .where((0, drizzle_orm_1.eq)(schema.matchDivisions.matchId, id));
+                await tx
+                    .delete(schema.matchEvents)
+                    .where((0, drizzle_orm_1.eq)(schema.matchEvents.matchId, id));
+                const result = await tx
+                    .delete(schema_1.matches)
+                    .where((0, drizzle_orm_1.eq)(schema_1.matches.id, id))
+                    .returning();
+                return result[0] ?? existingMatch;
+            });
+            return deletedMatch;
         }
         catch (error) {
             if (error instanceof common_1.BadRequestException || error instanceof common_1.NotFoundException)

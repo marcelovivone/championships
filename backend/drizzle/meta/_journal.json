@@ -134,6 +134,20 @@
       "when": 1775546036024,
       "tag": "0018_add_dates_priority_to_standing_zones_table",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1775886753949,
+      "tag": "0019_create_standing_order_rules_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1775886959998,
+      "tag": "0020_seed_standing_order_rules",
+      "breakpoints": true
     }
   ]
 }

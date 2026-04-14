@@ -7,9 +7,9 @@ export declare class ClubStadiumsService {
     constructor(db: NodePgDatabase<typeof schema>);
     create(createClubStadiumDto: CreateClubStadiumDto): Promise<{
         id: number;
+        createdAt: Date;
         startDate: Date;
         endDate: Date;
-        createdAt: Date;
         clubId: number;
         stadiumId: number;
     }>;

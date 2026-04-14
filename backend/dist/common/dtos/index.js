@@ -35,4 +35,5 @@ __exportStar(require("./auth.dto"), exports);
 __exportStar(require("./pagination.dto"), exports);
 __exportStar(require("./filtering.dto"), exports);
 __exportStar(require("./standing-zone.dto"), exports);
+__exportStar(require("./standing-order-rule.dto"), exports);
 //# sourceMappingURL=index.js.map

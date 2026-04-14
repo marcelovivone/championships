@@ -6,6 +6,9 @@
 > **Last updated**: 2026-04-05
 > **Last updated**: 2026-04-09
 
+> **Scope note**: The configurable standing-order and tiebreaker system is documented separately in `documentation/STANDING_ORDER_IMPLEMENTATION_REFERENCE.md`.  
+> This file remains the canonical reference for ETL, data flow, standings creation, and the public standings pages, but not for the new standing-order rules engine.
+
 ---
 
 ## Developer Session Prompt (Script/Prompt.txt) — 2026-04-08
