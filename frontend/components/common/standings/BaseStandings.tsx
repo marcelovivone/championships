@@ -2,11 +2,12 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { seasonsApi, standingZonesApi } from '@/lib/api/entities';
+import { matchesApi, seasonsApi, standingZonesApi } from '@/lib/api/entities';
 import { apiClient } from '@/lib/api/client';
 import FilterBar from './FilterBar';
 import StandingsTable from './StandingsTable';
 import GamesList from './GamesList';
+import PostseasonBracket from './PostseasonBracket';
 
 type Props = {
   title?: string;
@@ -49,6 +50,8 @@ export default function BaseStandings({
   const [viewType, setViewType] = React.useState<'all' | 'home' | 'away'>('all');
   const [group, setGroup] = React.useState<string>('all');
   const [combineGroups, setCombineGroups] = React.useState(false);
+  const [seasonPhase, setSeasonPhase] = React.useState<string>('Regular');
+  const [seasonPhaseDetail, setSeasonPhaseDetail] = React.useState<string>('Regular');
   const [showUserTimezone, setShowUserTimezone] = useState(true);
 
   // Fetch seasons for the selected league
@@ -69,6 +72,40 @@ export default function BaseStandings({
   const seasonHasGroups = Boolean(
     hasGroups || Number(selectedSeasonData?.numberOfGroups ?? selectedSeasonData?.number_of_groups ?? 0) > 0
   );
+  const selectedSeasonHasPostseason = Boolean(selectedSeasonData?.flgHasPostseason);
+  const isPostseasonView = selectedSeasonHasPostseason && seasonPhase !== 'Regular';
+
+  React.useEffect(() => {
+    if (!selectedSeasonData) {
+      setSeasonPhase('Regular');
+      setSeasonPhaseDetail('Regular');
+      return;
+    }
+
+    if (!selectedSeasonData.flgHasPostseason) {
+      setSeasonPhase('Regular');
+      setSeasonPhaseDetail('Regular');
+      return;
+    }
+
+    const isFinishedSeason = isSeasonFinished(selectedSeasonData);
+    const nextPhase = isFinishedSeason ? 'Regular' : String(selectedSeasonData.currentPhase ?? 'Regular');
+    const nextDetail = isFinishedSeason
+      ? 'Regular'
+      : String(selectedSeasonData.currentPhaseDetail ?? (nextPhase === 'Play-ins' ? 'Play-ins' : 'Regular'));
+    setSeasonPhase(nextPhase);
+    setSeasonPhaseDetail(nextDetail);
+  }, [season]);
+
+  React.useEffect(() => {
+    if (seasonPhase === 'Regular') {
+      setSeasonPhaseDetail('Regular');
+    } else if (seasonPhase === 'Play-ins') {
+      setSeasonPhaseDetail('Play-ins');
+    } else if (seasonPhaseDetail === 'Regular' || seasonPhaseDetail === 'Play-ins') {
+      setSeasonPhaseDetail(String(selectedSeasonData?.currentPhaseDetail ?? 'Round of 64'));
+    }
+  }, [seasonPhase, seasonPhaseDetail, selectedSeasonData]);
   const seasonGroupsQuery = useQuery({
     queryKey: ['seasonGroups', season],
     queryFn: async ({ signal }: { signal?: AbortSignal }) => {
@@ -152,14 +189,19 @@ export default function BaseStandings({
           const roundParam = roundIdToUse ? `roundId=${encodeURIComponent(String(roundIdToUse))}` : `roundId=${encodeURIComponent(String(debouncedRoundOrDay))}`;
           url = `/v1/standings?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}`;
         }
-        const resp = await apiClient.get(url, { signal });
+        if (!isPostseasonView) {
+          url += `${url.includes('?') ? '&' : '?'}seasonPhase=Regular`;
+        }
+          // When not viewing postseason, only request Regular matches
+          if (!isPostseasonView) url += `${url.includes('?') ? '&' : '?'}seasonPhase=Regular`;
+          const resp = await apiClient.get(url, { signal });
         const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
         return data;
       } catch (e) {
         return [];
       }
     },
-    enabled: Boolean(league && season && debouncedRoundOrDay),
+    enabled: Boolean(!isPostseasonView && league && season && debouncedRoundOrDay),
     
     staleTime: 1000 * 60 * 2,
     refetchOnWindowFocus: false,
@@ -297,14 +339,16 @@ export default function BaseStandings({
           if (sportId) url = `/v1/matches?sportId=${Number(sportId)}&leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
           else url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}&${roundParam}${groupParam}`;
         }
-        const resp = await apiClient.get(url, { signal });
+          // For round-based queries, restrict to Regular matches when not in postseason view
+          if (!isPostseasonView) url += `${url.includes('?') ? '&' : '?'}seasonPhase=Regular`;
+          const resp = await apiClient.get(url, { signal });
         const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
         return data;
       } catch (e) {
         return [];
       }
     },
-    enabled: Boolean(league && season && debouncedRoundOrDay),
+    enabled: Boolean(!isPostseasonView && league && season && debouncedRoundOrDay),
     
     staleTime: 1000 * 60 * 2,
     refetchOnWindowFocus: false,
@@ -316,6 +360,60 @@ export default function BaseStandings({
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
   });
 
+  const postseasonBracketQuery = useQuery({
+    queryKey: ['postseasonBracket', league, season, group],
+    queryFn: () => matchesApi.getPostseasonBracket(Number(league), Number(season), group !== 'all' ? Number(group) : undefined),
+    // Fetch whenever the season has a postseason (not just when already in postseason view),
+    // so availablePhases/availablePhaseDetails are populated for the Phase dropdown immediately.
+    enabled: Boolean(selectedSeasonHasPostseason && league && season),
+    staleTime: 1000 * 60 * 2,
+    refetchOnWindowFocus: false,
+  });
+
+  // Derive the set of phases and details that actually exist in the bracket data.
+  // Used to populate the Phase/Detail filter dropdowns dynamically.
+  const BRACKET_DETAIL_ORDER = ['Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'];
+  const bracketPhases: Array<{ phase: string; detail: string }> = React.useMemo(() => {
+    const raw = postseasonBracketQuery.data as any;
+    const rawPhases: Array<{ phase: string; detail: string }> = raw?.phases ?? [];
+    if (!rawPhases.length) return [];
+    // Sort by detail order
+    return [...rawPhases]
+      .filter((p) => p.detail && p.phase)
+      .sort((a, b) => BRACKET_DETAIL_ORDER.indexOf(a.detail) - BRACKET_DETAIL_ORDER.indexOf(b.detail));
+  }, [postseasonBracketQuery.data]);
+
+  const availablePhases: string[] = React.useMemo(() => {
+    if (!bracketPhases.length) return [];
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const p of bracketPhases) {
+      if (!seen.has(p.phase)) { seen.add(p.phase); result.push(p.phase); }
+    }
+    return result;
+  }, [bracketPhases]);
+
+  const availablePhaseDetails: string[] = React.useMemo(() => {
+    if (!bracketPhases.length) return [];
+    const matching = bracketPhases.filter((p) => !seasonPhase || seasonPhase === 'Regular' || p.phase === seasonPhase);
+    if (!matching.length) return [];
+    const existingDetails = matching.map((p) => p.detail);
+
+    // Playoffs are progressive: if Round of 16 exists then Quarterfinals/Semifinals/Finals
+    // will also happen. Expand to include all subsequent rounds from the earliest present one.
+    const PLAYOFFS_ORDER = ['Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'];
+    const presentPlayoffDetails = existingDetails.filter((d) => PLAYOFFS_ORDER.includes(d));
+    if (presentPlayoffDetails.length > 0) {
+      const minIndex = Math.min(...presentPlayoffDetails.map((d) => PLAYOFFS_ORDER.indexOf(d)));
+      const expanded = PLAYOFFS_ORDER.slice(minIndex);
+      // Keep any non-playoff details (e.g. 'Play-ins') that are also in the result set
+      const nonPlayoff = existingDetails.filter((d) => !PLAYOFFS_ORDER.includes(d));
+      return [...nonPlayoff, ...expanded];
+    }
+
+    return existingDetails;
+  }, [bracketPhases, seasonPhase]);
+
   // Fetch all matches for the selected season/league (used to compute historical last10)
   const allMatchesQuery = useQuery({
     queryKey: ['matchesAll', sportId, league, season],
@@ -325,7 +423,9 @@ export default function BaseStandings({
       if (cooldown && Date.now() < cooldown) return [];
       try {
         const sportParam = sportId ? `&sportId=${Number(sportId)}` : '';
-        const url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}${sportParam}`;
+        let url = `/v1/matches?leagueId=${Number(league)}&seasonId=${Number(season)}${sportParam}`;
+        // allMatchesQuery is used for regular-view historical computations; only request Regular matches
+        if (!isPostseasonView) url += `${url.includes('?') ? '&' : '?'}seasonPhase=Regular`;
         const resp = await apiClient.get(url, { signal });
         const data = (resp.data && Array.isArray(resp.data)) ? resp.data : (Array.isArray(resp) ? resp : []);
         return data;
@@ -333,7 +433,7 @@ export default function BaseStandings({
         return [];
       }
     },
-    enabled: Boolean(league && season),
+    enabled: Boolean(!isPostseasonView && league && season),
     
     staleTime: 1000 * 60 * 5,
   });
@@ -662,6 +762,13 @@ export default function BaseStandings({
           setLeague(v);
           setTimeout(() => refetchSeasons(), 0);
         }}
+        selectedSeason={selectedSeason}
+        seasonPhase={seasonPhase}
+        setSeasonPhase={setSeasonPhase}
+        seasonPhaseDetail={seasonPhaseDetail}
+        setSeasonPhaseDetail={setSeasonPhaseDetail}
+        availablePhases={availablePhases}
+        availablePhaseDetails={availablePhaseDetails}
         roundOrDay={roundOrDay}
         setRoundOrDay={setRoundOrDay}
         viewType={viewType}
@@ -678,6 +785,23 @@ export default function BaseStandings({
         setCombineGroups={setCombineGroups}
       />
 
+      {isPostseasonView ? (
+        <div className="mt-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">POSTSEASON BRACKET</h2>
+            <div className="text-sm text-gray-500 whitespace-nowrap">Phase: {seasonPhaseDetail}</div>
+          </div>
+          {postseasonBracketQuery.isLoading ? (
+            <div className="bg-white rounded-lg shadow p-4">Loading bracket...</div>
+          ) : (
+            <PostseasonBracket
+              bracket={postseasonBracketQuery.data}
+              activePhase={seasonPhase}
+              activePhaseDetail={seasonPhaseDetail}
+            />
+          )}
+        </div>
+      ) : (
       <div className="mt-6 flex flex-col lg:flex-row gap-6">
         <div className="lg:basis-2/3 lg:flex-1">
           <div className="flex items-start justify-between mb-3">
@@ -696,6 +820,11 @@ export default function BaseStandings({
                     setLeague(v);
                     setTimeout(() => refetchSeasons(), 0);
                   }}
+                  selectedSeason={selectedSeason}
+                  seasonPhase={seasonPhase}
+                  setSeasonPhase={setSeasonPhase}
+                  seasonPhaseDetail={seasonPhaseDetail}
+                  setSeasonPhaseDetail={setSeasonPhaseDetail}
                   roundOrDay={roundOrDay}
                   setRoundOrDay={setRoundOrDay}
                   viewType={viewType}
@@ -896,8 +1025,8 @@ export default function BaseStandings({
               const list = Array.isArray(src) ? src.map((m: any) => {
                 const stadium = m.stadium?.name ?? m.stadiumName ?? m.stadium?.originalName ?? m.stadiumId ?? '';
                 const dateTime = m.date ?? m.dateTime ?? m.matchDate ?? m.datetime ?? '';
-                const homeName = m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.name ?? m.homeClub?.originalName ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined);
-                const awayName = m.awayClub?.short_name ?? m.awayClub?.shortName ?? m.awayClub?.name ?? m.awayClub?.originalName ?? (m.awayClubId ? clubsMap[String(m.awayClubId)] : undefined) ?? (m.awayClubId ? `#${m.awayClubId}` : undefined);
+                const homeName = m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.name ?? m.homeClub?.originalName ?? m.homeClubPlaceholder ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined) ?? 'TBD';
+                const awayName = m.awayClub?.short_name ?? m.awayClub?.shortName ?? m.awayClub?.name ?? m.awayClub?.originalName ?? m.awayClubPlaceholder ?? (m.awayClubId ? clubsMap[String(m.awayClubId)] : undefined) ?? (m.awayClubId ? `#${m.awayClubId}` : undefined) ?? 'TBD';
                 const status = m.status ?? m.matchStatus ?? null;
                 const score = (typeof m.homeScore !== 'undefined' && typeof m.awayScore !== 'undefined') ? `${m.homeScore} - ${m.awayScore}` : (m.homeScore || m.awayScore ? `${m.homeScore ?? 0}-${m.awayScore ?? 0}` : null);
                 return {
@@ -931,6 +1060,7 @@ export default function BaseStandings({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }

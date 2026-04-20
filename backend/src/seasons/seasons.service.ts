@@ -61,6 +61,9 @@ export class SeasonsService {
           status: seasons.status,
           flgDefault: seasons.flgDefault,
           numberOfGroups: seasons.numberOfGroups,
+          flgHasPostseason: seasons.flgHasPostseason,
+          currentPhase: seasons.currentPhase,
+          currentPhaseDetail: seasons.currentPhaseDetail,
           createdAt: seasons.createdAt,
           sport: {
             id: sports.id,
@@ -101,6 +104,9 @@ export class SeasonsService {
         status: seasons.status,
         flgDefault: seasons.flgDefault,
         numberOfGroups: seasons.numberOfGroups,
+        flgHasPostseason: seasons.flgHasPostseason,
+        currentPhase: seasons.currentPhase,
+        currentPhaseDetail: seasons.currentPhaseDetail,
         createdAt: seasons.createdAt,
         sport: {
           id: sports.id,
@@ -137,6 +143,9 @@ export class SeasonsService {
           status: schema.seasons.status,
           flgDefault: schema.seasons.flgDefault,
           numberOfGroups: schema.seasons.numberOfGroups,
+          flgHasPostseason: schema.seasons.flgHasPostseason,
+          currentPhase: schema.seasons.currentPhase,
+          currentPhaseDetail: schema.seasons.currentPhaseDetail,
           sport: schema.sports,
           league: schema.leagues,
           createdAt: schema.seasons.createdAt,
@@ -217,6 +226,9 @@ export class SeasonsService {
           status: createSeasonDto.status || 'planned',
           flgDefault: createSeasonDto.flgDefault || false,
           numberOfGroups: createSeasonDto.numberOfGroups || 0,
+          flgHasPostseason: createSeasonDto.flgHasPostseason || false,
+          currentPhase: createSeasonDto.currentPhase || 'Regular',
+          currentPhaseDetail: createSeasonDto.currentPhaseDetail || 'Regular',
         })
         .returning();
 

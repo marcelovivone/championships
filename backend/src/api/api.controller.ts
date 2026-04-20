@@ -29,6 +29,7 @@ export class ApiController {
       seasonStatus?: string;
       isSeasonDefault?: boolean;
       sameYears?: boolean;
+      hasPostseason?: boolean;
       scheduleType?: string;
       isLeagueDefault?: boolean;
       hasDivisions?: boolean;
@@ -48,6 +49,7 @@ export class ApiController {
       body.seasonStatus,
       body.isSeasonDefault,
       body.sameYears,
+      body.hasPostseason,
       body.scheduleType,
       body.isLeagueDefault,
       body.hasDivisions,

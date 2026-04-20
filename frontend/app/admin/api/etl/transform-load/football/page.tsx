@@ -432,7 +432,7 @@ export default function EtlPage() {
 
         // Pre-check: parse the row to detect if round assignment input is needed before confirming.
         // Skip this entirely for subsequent loads — rounds already exist, no review needed.
-        if (!isSubsequentLoad && !skipEntityReview) {
+        if (!skipEntityReview) {
           try {
             const params = new URLSearchParams();
             if (Object.keys(effectiveOverrides).length > 0) {
@@ -474,7 +474,7 @@ export default function EtlPage() {
         }
 
         // Pre-check: detect if entity (club/stadium) mapping is needed before confirming.
-        if (!isSubsequentLoad && !skipEntityReview) {
+        if (!skipEntityReview) {
           try {
             
             // Always check for entity conflicts - backend will use existing mappings if available

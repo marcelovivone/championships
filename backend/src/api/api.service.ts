@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { StandingsCalculatorService } from '../standings/standings-calculator.service';
 import { Pool } from 'pg';
 import { matches } from 'class-validator/types/decorator/string/Matches';
@@ -311,6 +311,7 @@ export class ApiService {
         seasonStatus?: boolean | string,
         isSeasonDefault?: boolean,
         sameYears?: boolean,
+        hasPostseason?: boolean,
         scheduleType?: string,
         isLeagueDefault?: boolean,
         hasDivisions?: boolean,
@@ -382,17 +383,20 @@ export class ApiService {
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
+                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
 
                     const placeholderRes = await pool.query(
                         `INSERT INTO api_transitional 
                              (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
                               flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
-                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status)
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status,
+                              flg_has_postseason)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
                          RETURNING id, fetched_at`,
                         [league || null, season || null, sport || null, url.toString(), '{}', effectiveOrigin,
                          seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, 
-                         hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching'],
+                         hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching', 
+                         hasPostseason ?? false],
                     );
 
                     const bgId: number = placeholderRes.rows[0].id;
@@ -490,19 +494,25 @@ export class ApiService {
                 flg_infer_clubs BOOLEAN DEFAULT false
                 );
             `);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS fetch_status TEXT DEFAULT 'done'`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
 
             const insertRes = await pool.query(
                 `INSERT 
                         INTO api_transitional 
                              (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
                               flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
-                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs) 
-                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) 
+                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, flg_has_postseason) 
+                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) 
                       RETURNING id, fetched_at;`,
                 [league || null, season || null, sport || null, url.toString(), json, effectiveOrigin,
                     seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, 
-                    hasGroups, numberOfGroups, runInBackground, inferClubs ?? false],
+                    hasGroups, numberOfGroups, runInBackground, inferClubs ?? false, hasPostseason ?? false],
             );
+
             return { id: insertRes.rows[0].id, fetched_at: insertRes.rows[0].fetched_at };
         } finally {
             await pool.end();
@@ -533,6 +543,7 @@ export class ApiService {
                         number_of_groups,
                         flg_run_in_background,
                         flg_infer_clubs,
+                        flg_has_postseason,
                         COALESCE(fetch_status, 'done') as fetch_status
                  FROM api_transitional
                  ORDER BY fetched_at DESC LIMIT $1`,
@@ -1201,6 +1212,7 @@ export class ApiService {
                         const awayName: string | null = r['teams.away.name'] ?? r['away_team'] ?? null;
                         for (const clubName of [homeName, awayName]) {
                             if (!clubName || earlySeenClubs.has(clubName)) continue;
+                            if (this.isAmbiguousClubPlaceholderName(clubName)) continue;
                             earlySeenClubs.add(clubName);
                             if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) continue;
                                                         const aliasId = await this.resolvePersistentClubAlias(
@@ -1236,7 +1248,7 @@ export class ApiService {
                             }
                             earlyClubbsToReview.push({
                                 name: clubName,
-                                suggestions: suggestions.rows.map((s: any) => ({ id: s.id, name: s.name, shortName: s.short_name })),
+                                suggestions: this.rankClubSuggestionRows(suggestions.rows, clubName).map((s: any) => ({ id: s.id, name: s.name, shortName: s.short_name })),
                             });
                         }
                     }
@@ -1277,6 +1289,7 @@ export class ApiService {
                 if (leagueCountryId || !inferClubs) {
                     for (const clubName of [homeName, awayName]) {
                         if (!clubName || seenClubs.has(clubName)) continue;
+                        if (this.isAmbiguousClubPlaceholderName(clubName)) continue;
                         seenClubs.add(clubName);
 
                         // Skip if user has already provided a mapping for this club
@@ -1366,7 +1379,7 @@ export class ApiService {
                             }
                             clubsToReview.push({
                                 name: clubName,
-                                suggestions: suggestions.rows.map((s: any) => ({
+                                suggestions: this.rankClubSuggestionRows(suggestions.rows, clubName).map((s: any) => ({
                                     id: s.id,
                                     name: s.name,
                                     shortName: s.short_name,
@@ -1744,6 +1757,14 @@ export class ApiService {
 
         // Apply season-phase filter for Api-Football payloads
         flatRows = this.filterApiFootballFixturesBySeasonPhase(flatRows, seasonPhase);
+        flatRows = flatRows.map((item) => {
+            const phaseInfo = this.inferApiFootballSeasonPhase(item);
+            return {
+                ...item,
+                'season.phase': phaseInfo.seasonPhase,
+                'season.phase_detail': phaseInfo.seasonPhaseDetail,
+            };
+        });
 
         // collect columns
         const columns = Array.from(new Set(flatRows.flatMap(Object.keys)));
@@ -1760,18 +1781,104 @@ export class ApiService {
         return 'all';
     }
 
+    private isAmbiguousClubPlaceholderName(clubNameRaw: any) {
+        const name = String(clubNameRaw ?? '').trim().toLowerCase();
+        if (!name) return true;
+
+        return (
+            name === 'tbd' ||
+            name === 'to be defined' ||
+            name === 'winner' ||
+            name === 'loser' ||
+            name.includes('winner of') ||
+            name.includes('loser of') ||
+            name.includes('to be determined') ||
+            name.includes('/')
+        );
+    }
+
+    private rankClubSuggestionRows(rows: any[], clubNameRaw: any) {
+        const normalizedName = String(clubNameRaw ?? '').trim();
+        if (!normalizedName || !Array.isArray(rows) || rows.length === 0) return rows;
+
+        const tokens = Array.from(new Set(
+            normalizedName
+                .split('/')
+                .map((token) => normalizeLookupKey(token))
+                .filter((token) => token && token !== 'tbd' && token !== 'tobedefined'),
+        ));
+
+        if (tokens.length === 0) return rows;
+
+        const scored = rows
+            .map((row: any) => {
+                const haystack = `${normalizeLookupKey(row?.name ?? '')} ${normalizeLookupKey(row?.short_name ?? '')}`.trim();
+                const score = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
+                return { row, score };
+            })
+            .filter((entry) => entry.score > 0)
+            .sort((left, right) => right.score - left.score || String(left.row?.name ?? '').localeCompare(String(right.row?.name ?? '')))
+            .map((entry) => entry.row);
+
+        return scored.length > 0 ? scored : rows;
+    }
+
+    private classifyEspnEventSeasonPhase(event: any): 'regular-season' | 'postseason' | null {
+        const candidateValues = [
+            event?.season?.slug,
+            event?.seasonType?.slug,
+            event?.seasonType?.name,
+            event?.seasonType?.abbreviation,
+            event?.seasonType?.description,
+            event?.header?.seasonType?.slug,
+            event?.header?.seasonType?.name,
+            event?.header?.seasonType?.abbreviation,
+            event?.header?.seasonType?.description,
+            event?.season?.type?.slug,
+            event?.season?.type?.name,
+            event?.season?.type?.abbreviation,
+            event?.season?.type?.description,
+            event?.status?.type?.slug,
+            event?.status?.type?.name,
+        ];
+
+        for (const rawValue of candidateValues) {
+            if (typeof rawValue !== 'string') continue;
+            const value = rawValue.trim().toLowerCase();
+            if (!value) continue;
+
+            if (value === 'regular-season' || value.includes('regular season')) {
+                return 'regular-season';
+            }
+
+            if (
+                value === 'postseason' ||
+                value.includes('post season') ||
+                value.includes('postseason') ||
+                value.includes('playoff') ||
+                value.includes('play-off') ||
+                value.includes('knockout')
+            ) {
+                return 'postseason';
+            }
+        }
+
+        return null;
+    }
+
     private filterEspnEventsBySeasonPhase(events: any[], seasonPhase?: string) {
         const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
         if (normalized === 'all') return events;
 
         return events.filter((event: any) => {
-            const slug = String(event?.season?.slug ?? '').trim().toLowerCase();
-            // Day-by-day scoreboard responses sometimes omit season.slug. When
-            // that happens prefer to include the event rather than drop it —
-            // callers performing day-by-day NBA fetches expect those events.
-            if (!slug) return true;
-            if (normalized === 'regular-season') return slug === 'regular-season';
-            return slug !== 'regular-season';
+            const phase = this.classifyEspnEventSeasonPhase(event);
+            // ESPN soccer scoreboard payloads often only expose a season slug
+            // like "2025-26-english-premier-league", which is not a phase.
+            // When the payload does not expose an authoritative phase marker,
+            // fail open so existing imports keep working instead of dropping
+            // every event as a false postseason mismatch.
+            if (!phase) return true;
+            return normalized === phase;
         });
     }
 
@@ -1793,6 +1900,91 @@ export class ApiService {
             if (normalized === 'regular-season') return isRegularSeason;
             return !isRegularSeason;
         });
+    }
+
+    private inferSeasonPhaseDetailFromText(phaseTextRaw: any, detailTextRaw?: any) {
+        const phaseText = String(phaseTextRaw ?? '').trim().toLowerCase();
+        const detailText = String(detailTextRaw ?? '').trim().toLowerCase();
+        const haystack = `${phaseText} ${detailText}`.trim();
+
+        const playoffsDetail = () => {
+            if (/(rd\s*64|round\s*of\s*64)/.test(haystack)) return 'Round of 64';
+            if (/(rd\s*32|round\s*of\s*32)/.test(haystack)) return 'Round of 32';
+            if (/(rd\s*16|round\s*of\s*16|eighth[-\s]?final)/.test(haystack)) return 'Round of 16';
+            if (/(qtr|quarter[-\s]?final)/.test(haystack)) return 'Quarterfinals';
+            if (/(semi|semi[-\s]?final)/.test(haystack)) return 'Semifinals';
+            if (/(final|finals)/.test(haystack)) return 'Finals';
+            return 'Quarterfinals';
+        };
+
+        if (!haystack || haystack.includes('regular season') || haystack === 'regular') {
+            return { seasonPhase: 'Regular', seasonPhaseDetail: 'Regular' };
+        }
+
+        if (haystack.includes('play-in')) {
+            return { seasonPhase: 'Play-ins', seasonPhaseDetail: 'Play-ins' };
+        }
+
+        if (
+            haystack.includes('post season') ||
+            haystack.includes('post-season') ||
+            haystack.includes('postseason') ||
+            haystack.includes('playoff') ||
+            haystack.includes('play-off') ||
+            haystack.includes('knockout') ||
+            haystack.includes('semifinal') ||
+            haystack.includes('quarterfinal') ||
+            haystack.includes('final') ||
+            /rd\s*(16|32|64)/.test(haystack)
+        ) {
+            return { seasonPhase: 'Playoffs', seasonPhaseDetail: playoffsDetail() };
+        }
+
+        return { seasonPhase: 'Regular', seasonPhaseDetail: 'Regular' };
+    }
+
+    private inferEspnSeasonPhase(event: any) {
+        const slug = event?.season?.slug
+            ?? event?.season?.type?.slug
+            ?? event?.seasonType?.slug
+            ?? event?.header?.seasonType?.slug
+            ?? null;
+        const abbreviation = event?.competitions?.[0]?.type?.abbreviation ?? null;
+        return this.inferSeasonPhaseDetailFromText(slug, abbreviation);
+    }
+
+    private inferApiFootballSeasonPhase(row: any) {
+        const roundValue = row?.league?.round ?? row?.['league.round'] ?? null;
+        return this.inferSeasonPhaseDetailFromText(roundValue);
+    }
+
+    private isRawEspnEventFinished(event: any) {
+        const status = event?.competitions?.[0]?.status?.type ?? event?.status?.type ?? {};
+        return status?.completed === true || status?.state === 'post' || String(status?.shortDetail ?? '').trim().toUpperCase() === 'FT';
+    }
+
+    private isRawApiFootballFixtureFinished(fixture: any) {
+        const short = String(fixture?.fixture?.status?.short ?? '').trim().toUpperCase();
+        return short === 'FT';
+    }
+
+    private detectCurrentSeasonPhase(row: any) {
+        const payload = row?.payload ?? row;
+        const origin = row?.origin ?? 'Api-Football';
+
+        if (origin === 'Api-Espn') {
+            const events = Array.isArray(payload?.events) ? payload.events : [];
+            const latestFinished = events
+                .filter((event: any) => this.isRawEspnEventFinished(event))
+                .sort((a: any, b: any) => new Date(b?.date ?? 0).getTime() - new Date(a?.date ?? 0).getTime())[0];
+            return latestFinished ? this.inferEspnSeasonPhase(latestFinished) : null;
+        }
+
+        const fixtures = Array.isArray(payload?.response) ? payload.response : [];
+        const latestFinished = fixtures
+            .filter((fixture: any) => this.isRawApiFootballFixtureFinished(fixture))
+            .sort((a: any, b: any) => Number(b?.fixture?.timestamp ?? 0) - Number(a?.fixture?.timestamp ?? 0))[0];
+        return latestFinished ? this.inferApiFootballSeasonPhase(latestFinished) : null;
     }
 
     private parseTransitionalEspn(row: any, roundOverrides?: Record<string, number>, seasonPhase?: string, fallbackCountry?: string | null) {
@@ -2898,22 +3090,48 @@ export class ApiService {
     }
 
     private getEspnSeasonStartYear(payload: any, seasonInfo?: any): number | null {
-        const candidateDates = [
-            payload?.leagues?.[0]?.season?.startDate,
-            payload?.leagues?.[0]?.calendarStartDate,
-            seasonInfo?.startDate,
-        ];
+        // Two independent year candidates:
+        //
+        //  1. events[0].season.year — directly reflects the events' season.
+        //     European soccer uses the START year (2024 for 2024/25).
+        //     NBA uses the END year (2026 for 2025/26).
+        //
+        //  2. leagues[0].season.startDate — this is the *currently active*
+        //     season's start date for that league as returned by ESPN.  For
+        //     live-season queries it equals the events' season start; for
+        //     historical queries it can point to a NEWER active season
+        //     (e.g., fetching 2024/25 Eredivisie in April 2026 yields
+        //     startDate = "2025-06-01" — the 2025/26 season's start).
+        //
+        // Strategy: take the MINIMUM of both years when both are available.
+        //   Historical soccer (ev=2024, sd_yr=2025) → 2024  ✓
+        //   Current    soccer (ev=2025, sd_yr=2025) → 2025  ✓
+        //   NBA current       (ev=2026, sd_yr=2025) → 2025  ✓  (NBA uses end year for events)
+        const eventSeasonYear = Number(seasonInfo?.year);
+        const hasEvent = Number.isFinite(eventSeasonYear) && eventSeasonYear > 1900;
 
-        for (const rawDate of candidateDates) {
-            if (!rawDate) continue;
-            const parsed = new Date(String(rawDate));
-            if (!Number.isNaN(parsed.getTime())) {
-                return parsed.getUTCFullYear();
+        const sdYearCandidate = (() => {
+            const candidateDates = [
+                payload?.leagues?.[0]?.season?.startDate,
+                payload?.leagues?.[0]?.calendarStartDate,
+                seasonInfo?.startDate,
+            ];
+            for (const rawDate of candidateDates) {
+                if (!rawDate) continue;
+                const parsed = new Date(String(rawDate));
+                if (!Number.isNaN(parsed.getTime())) {
+                    return parsed.getUTCFullYear();
+                }
             }
-        }
+            return null;
+        })();
 
-        const fallbackYear = Number(seasonInfo?.year);
-        return Number.isFinite(fallbackYear) ? fallbackYear : null;
+        const hasSd = sdYearCandidate !== null;
+
+        if (hasEvent && hasSd) return Math.min(eventSeasonYear, sdYearCandidate);
+        if (hasEvent) return eventSeasonYear;
+        if (hasSd) return sdYearCandidate;
+        return null;
     }
 
     /**
@@ -3142,7 +3360,7 @@ export class ApiService {
                 const tRes = await client.query(
                     `SELECT season_status, flg_season_default, flg_season_same_years, league_schedule_type, 
                             flg_league_default, flg_has_divisions, flg_has_groups, number_of_groups, 
-                            flg_infer_clubs, flg_run_in_background 
+                                                        flg_infer_clubs, flg_run_in_background, flg_has_postseason 
                        FROM api_transitional 
                       WHERE id = $1 LIMIT 1`,
                     [id],
@@ -3158,6 +3376,7 @@ export class ApiService {
                     number_of_groups: 0,
                     flg_infer_clubs: true,
                     flg_run_in_background: true,
+                    flg_has_postseason: false,
                 };
                 const row = tRes && tRes.rows && tRes.rows.length ? tRes.rows[0] : {};
                 transitionalDbRow = { ...defaults, ...row };
@@ -3176,6 +3395,7 @@ export class ApiService {
                     number_of_groups: 0,
                     flg_infer_clubs: true,
                     flg_run_in_background: true,
+                    flg_has_postseason: false,
                     sameYears: false,
                 };
             }
@@ -3223,8 +3443,8 @@ export class ApiService {
             const sportId = options.sportId ?? 36;
             const clubNameSet = new Set<string>();
             for (const row of rows) {
-                if (row['teams.home.name']) clubNameSet.add(String(row['teams.home.name']).trim());
-                if (row['teams.away.name']) clubNameSet.add(String(row['teams.away.name']).trim());
+                if (row['teams.home.name'] && !this.isAmbiguousClubPlaceholderName(row['teams.home.name'])) clubNameSet.add(String(row['teams.home.name']).trim());
+                if (row['teams.away.name'] && !this.isAmbiguousClubPlaceholderName(row['teams.away.name'])) clubNameSet.add(String(row['teams.away.name']).trim());
             }
             // For each club name, resolve club_id (by name or short_name, case-insensitive, unaccent)
             for (const clubNameRaw of clubNameSet) {
@@ -3459,6 +3679,9 @@ export class ApiService {
             // Upsert season: check by sport_id, league_id, start_year
             let seasonId: number | null = null;
             let seasonWasCreated = false;
+            const detectedSeasonPhase = transitionalDbRow.flg_has_postseason && options.seasonPhase !== 'regular-season'
+                ? this.detectCurrentSeasonPhase(await this.getTransitional(id))
+                : null;
             if (leagueSeason && leagueId) {
                 const sportId = options.sportId ?? 36;
                 const sRes = await client.query(
@@ -3474,12 +3697,30 @@ export class ApiService {
                     const startYear = Number.isFinite(startYearNum) ? Math.trunc(startYearNum) : leagueSeason;
                     const endYear = transitionalDbRow.sameYears ? startYear : Number.isFinite(startYearNum) ? startYearNum + 1 : startYear;
                     const ins = await client.query(
-                        `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-                        [sportId, leagueId, transitionalDbRow.season_status, transitionalDbRow.flg_season_default, 0, startYear, endYear],
+                        `INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year, flg_has_postseason, current_phase, current_phase_detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+                        [
+                            sportId,
+                            leagueId,
+                            transitionalDbRow.season_status,
+                            transitionalDbRow.flg_season_default,
+                            0,
+                            startYear,
+                            endYear,
+                            transitionalDbRow.flg_has_postseason || false,
+                            detectedSeasonPhase?.seasonPhase ?? 'Regular',
+                            detectedSeasonPhase?.seasonPhaseDetail ?? 'Regular',
+                        ],
                     );
                     seasonId = ins.rows[0].id;
                     seasonWasCreated = true;
                 }
+            }
+
+            if (seasonId && transitionalDbRow.flg_has_postseason && options.seasonPhase !== 'regular-season' && detectedSeasonPhase) {
+                await client.query(
+                    `UPDATE seasons SET current_phase = $1, current_phase_detail = $2 WHERE id = $3`,
+                    [detectedSeasonPhase.seasonPhase, detectedSeasonPhase.seasonPhaseDetail, seasonId],
+                );
             }
 
             if (seasonWasCreated && transitionalDbRow.flg_has_groups && leagueId && seasonId) {
@@ -3738,6 +3979,9 @@ export class ApiService {
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
             };
+            const phaseInfo = this.inferEspnSeasonPhase(event);
+            mapped['season.phase'] = phaseInfo.seasonPhase;
+            mapped['season.phase_detail'] = phaseInfo.seasonPhaseDetail;
 
             // Extract per-period linescores (e.g. basketball quarters, OT) so that
             // createMatchDivisions uses the fast path with real partial scores
@@ -4284,6 +4528,29 @@ export class ApiService {
             let createdStadiums = 0;
             const stadiumsCreated: Array<{ id: number; name: string; clubName?: string; clubId?: number }> = [];
 
+            // Track postseason phases encountered during this import.
+            // current_phase / current_phase_detail is set to the EARLIEST phase that still has
+            // upcoming (Scheduled) matches.  Falls back to the most advanced phase if all are Finished.
+            const PHASE_ORDER: Record<string, number> = { 'Regular': 0, 'Play-ins': 1, 'Playoffs': 2 };
+            const PHASE_DETAIL_ORDER: Record<string, number> = {
+                'Regular': 0, 'Play-ins': 1,
+                'Round of 64': 2, 'Round of 32': 3, 'Round of 16': 4,
+                'Quarterfinals': 5, 'Semifinals': 6, 'Finals': 7,
+            };
+            // Map from phase detail -> { phase, detail, hasScheduled, detailOrder }
+            const postseasonDetailTracker = new Map<string, { phase: string; detail: string; hasScheduled: boolean; detailOrder: number; }>();
+            const trackPostseasonPhase = (phaseStr: string, detailStr: string, matchStatus: string): void => {
+                if ((PHASE_ORDER[phaseStr] ?? 0) <= 0) return; // skip Regular
+                const detailOrder = PHASE_DETAIL_ORDER[detailStr] ?? 0;
+                const isScheduled = matchStatus !== 'Finished';
+                const existing = postseasonDetailTracker.get(detailStr);
+                if (!existing) {
+                    postseasonDetailTracker.set(detailStr, { phase: phaseStr, detail: detailStr, hasScheduled: isScheduled, detailOrder });
+                } else if (isScheduled && !existing.hasScheduled) {
+                    existing.hasScheduled = true;
+                }
+            };
+
             // Sort rows by round number ascending BEFORE processing.
             // This is critical when a reserved/relocated match (e.g. a postponed game that was
             // looked-up from a later position in the JSON) has a lower round number than the
@@ -4300,11 +4567,19 @@ export class ApiService {
 
             // Check whether `matches` table contains `origin_api_id` so we can conditionally include it
             const matchColsRes = await client.query(
-                `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+                `SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = $1`,
                 ['matches'],
             );
             const matchCols = matchColsRes.rows.map((c: any) => c.column_name);
             const hasOriginApiIdCol = matchCols.includes('origin_api_id');
+            const hasSeasonPhaseCol = matchCols.includes('season_phase');
+            const hasSeasonPhaseDetailCol = matchCols.includes('season_phase_detail');
+            const hasHomeClubPlaceholderCol = matchCols.includes('home_club_placeholder');
+            const hasAwayClubPlaceholderCol = matchCols.includes('away_club_placeholder');
+            const homeClubIdColumn = matchColsRes.rows.find((c: any) => c.column_name === 'home_club_id');
+            const awayClubIdColumn = matchColsRes.rows.find((c: any) => c.column_name === 'away_club_id');
+            const supportsNullableHomeClub = String(homeClubIdColumn?.is_nullable ?? 'NO').toUpperCase() === 'YES';
+            const supportsNullableAwayClub = String(awayClubIdColumn?.is_nullable ?? 'NO').toUpperCase() === 'YES';
 
             // Counters for upsert tracking
             let skippedUnchanged = 0;
@@ -4312,6 +4587,7 @@ export class ApiService {
 
             for (const r of sortedRows) {
                 try {
+                    let shouldFallbackToFullUpsert = false;
                     const roundNumber = r['league.round'] ?? r['round'] ?? null;
                     // In the case of football-api, the payload comes with the games played to define the relegarion, after the regular season
                     if (roundNumber === 'Relegation Round') continue; // Skip relegation round if present, as it can interfere with round inference logic in parsing
@@ -4339,42 +4615,81 @@ export class ApiService {
                         );
 
                         if (!_existingRes.rows.length) {
-                            // Match not found — nothing to update on a subsequent load
-                            applied += 1;
-                            continue;
+                            // Match not found by origin_api_id.
+                            // If this is a Regular-season row, the match likely exists under a
+                            // different origin (e.g. loaded via Api-Football on first import).
+                            // Do NOT recreate it — skip to avoid cross-source duplicates.
+                            // Only fall through to full upsert for non-Regular (postseason) matches.
+                            const _rowPhase = String(
+                                transitionalOrigin === 'Api-Espn'
+                                    ? (r['season.phase'] ?? 'Regular')
+                                    : this.inferApiFootballSeasonPhase(r).seasonPhase,
+                            ).trim();
+                            if (_rowPhase === 'Regular') {
+                                applied += 1;
+                                continue;
+                            }
+                            shouldFallbackToFullUpsert = true;
                         }
+
+                        if (shouldFallbackToFullUpsert) {
+                            // Continue below into the standard entity-resolution + upsert flow.
+                        } else {
 
                         const _existing = _existingRes.rows[0];
 
-                        if (_existing.status === 'Finished') {
-                            skippedUnchanged += 1;
-                            applied += 1;
-                            continue;
-                        }
+                            if (_existing.home_club_id == null || _existing.away_club_id == null) {
+                                shouldFallbackToFullUpsert = true;
+                            }
 
-                        const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                        const _dateVal = formatTimestampForDb(_dateRaw);
-                        const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
-                        const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
-                        const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+                            if (shouldFallbackToFullUpsert) {
+                                // Continue below into the standard entity-resolution + upsert flow.
+                            } else {
 
-                        if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
-                            // Not yet finished in this payload — nothing to do
-                            skippedUnchanged += 1;
-                            applied += 1;
-                            continue;
-                        }
+                            if (_existing.status === 'Finished') {
+                                skippedUnchanged += 1;
+                                applied += 1;
+                                continue;
+                            }
 
-                        const _matchId: number = _existing.id;
-                        const _roundId: number | null = _existing.round_id ?? null;
-                        const _homeClubId: number = _existing.home_club_id;
-                        const _awayClubId: number = _existing.away_club_id;
+                            const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
+                            const _dateVal = formatTimestampForDb(_dateRaw);
+                            const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                            const _phaseInfo = transitionalOrigin === 'Api-Espn'
+                                ? {
+                                    seasonPhase: String(r['season.phase'] ?? 'Regular'),
+                                    seasonPhaseDetail: String(r['season.phase_detail'] ?? 'Regular'),
+                                }
+                                : this.inferApiFootballSeasonPhase(r);
+                            // Track postseason phase for current-phase inference
+                            trackPostseasonPhase(_phaseInfo.seasonPhase, _phaseInfo.seasonPhaseDetail, _status);
+                            const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+                            const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+
+                            if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
+                                // Not yet finished in this payload — nothing to do
+                                skippedUnchanged += 1;
+                                applied += 1;
+                                continue;
+                            }
+
+                            const _matchId: number = _existing.id;
+                            const _roundId: number | null = _existing.round_id ?? null;
+                            const _homeClubId: number = _existing.home_club_id;
+                            const _awayClubId: number = _existing.away_club_id;
 
                         // 1. Update the match to Finished
-                        await client.query(
-                            `UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), updated_at = now() WHERE id = $5`,
-                            [_status, _homeScore, _awayScore, _dateVal, _matchId],
-                        );
+                        if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                            await client.query(
+                                `UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), season_phase = $5, season_phase_detail = $6, updated_at = now() WHERE id = $7`,
+                                [_status, _homeScore, _awayScore, _dateVal, _phaseInfo.seasonPhase, _phaseInfo.seasonPhaseDetail, _matchId],
+                            );
+                        } else {
+                            await client.query(
+                                `UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), updated_at = now() WHERE id = $5`,
+                                [_status, _homeScore, _awayScore, _dateVal, _matchId],
+                            );
+                        }
                         updatedMatches += 1;
 
                         // 2. Recreate match_divisions
@@ -4387,7 +4702,11 @@ export class ApiService {
                             matchesForEnrichment.push({ matchId: _matchId, originApiId: _originApiId });
                         }
 
-                        // 3. Standings — guard against duplicates
+                        // 3. Standings — only for regular-season matches, and guard against duplicates
+                        if (_phaseInfo.seasonPhase !== 'Regular') {
+                            applied += 1;
+                            continue;
+                        }
                         const _existingStdRes = await client.query(
                             `SELECT COUNT(*)::int as cnt FROM standings WHERE match_id = $1`, [_matchId]);
                         if (Number(_existingStdRes.rows[0]?.cnt ?? 0) > 0) {
@@ -4563,8 +4882,10 @@ export class ApiService {
                         await _cascadeClub(_homeClubId);
                         await _cascadeClub(_awayClubId);
 
-                        applied += 1;
-                        continue;
+                            applied += 1;
+                            continue;
+                            }
+                        }
                     }
                     // ── END SUBSEQUENT LOAD FAST PATH ─────────────────────────────
 
@@ -4614,6 +4935,9 @@ export class ApiService {
                         if (!clubNameRaw) return null;
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName) return null;
+                        if (this.isAmbiguousClubPlaceholderName(clubName)) {
+                            throw new BadRequestException(`Club review required before loading ambiguous club name: ${clubName}`);
+                        }
 
                         // Fast path: full result cached from a previous lookup — zero DB queries needed
                         if (clubResultCache[clubName]) return clubResultCache[clubName];
@@ -4734,6 +5058,8 @@ export class ApiService {
 
                     const homeName = r['teams.home.name'] ?? r['home_team'] ?? null;
                     const awayName = r['teams.away.name'] ?? r['away_team'] ?? null;
+                    const homeParticipantPlaceholder = homeName && this.isAmbiguousClubPlaceholderName(homeName) ? String(homeName).trim() : null;
+                    const awayParticipantPlaceholder = awayName && this.isAmbiguousClubPlaceholderName(awayName) ? String(awayName).trim() : null;
                     const homeLogo = r['teams.home.logo'] ?? null;
                     const awayLogo = r['teams.away.logo'] ?? null;
                     const venueCity = r['fixture.venue.city'] ?? null;
@@ -4758,12 +5084,26 @@ export class ApiService {
                         continue;
                     }
 
-                    const homeClubResult = await findOrCreateClub(homeName, homeLogo);
-                    const awayClubResult = await findOrCreateClub(awayName, awayLogo);
+                    const homeClubResult = homeParticipantPlaceholder ? null : await findOrCreateClub(homeName, homeLogo);
+                    const awayClubResult = awayParticipantPlaceholder ? null : await findOrCreateClub(awayName, awayLogo);
                     const homeClubId = homeClubResult?.id ?? null;
                     const awayClubId = awayClubResult?.id ?? null;
-                    const homeClubShortName = homeClubResult?.shortName ?? homeName;
-                    const awayClubShortName = awayClubResult?.shortName ?? awayName;
+                    const homeClubShortName = homeClubResult?.shortName ?? homeParticipantPlaceholder ?? homeName;
+                    const awayClubShortName = awayClubResult?.shortName ?? awayParticipantPlaceholder ?? awayName;
+
+                    if (
+                        (homeParticipantPlaceholder || awayParticipantPlaceholder) &&
+                        (
+                            !hasHomeClubPlaceholderCol ||
+                            !hasAwayClubPlaceholderCol ||
+                            !supportsNullableHomeClub ||
+                            !supportsNullableAwayClub
+                        )
+                    ) {
+                        throw new BadRequestException(
+                            'This payload contains unresolved postseason participants such as TBD or Magic/Hornets, but the matches table is not ready to store them yet. Apply migration 0023_allow_placeholder_participants_on_matches before loading this postseason payload.'
+                        );
+                    }
 
                     await ensureSportClub(homeClubId, homeClubShortName);
                     await ensureSportClub(awayClubId, awayClubShortName);
@@ -4774,7 +5114,7 @@ export class ApiService {
                     // On subsequent loads the stadium already exists; skip creation to avoid
                     // unnecessary DB writes and false "stadium created" side-effects.
                     let stadiumId: number | null = null;
-                    if (!isSubsequentLoad) {
+                    if (!isSubsequentLoad || shouldFallbackToFullUpsert) {
                         const cityId = await ensureCity(venueCity);
                         const stadiumResult = await ensureStadium(venueName, cityId);
                         stadiumId = stadiumResult ? stadiumResult.id : null;
@@ -4791,6 +5131,14 @@ export class ApiService {
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                     const dateVal = formatTimestampForDb(dateRaw);
                     const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                    const phaseInfo = transitionalOrigin === 'Api-Espn'
+                        ? {
+                            seasonPhase: String(r['season.phase'] ?? 'Regular'),
+                            seasonPhaseDetail: String(r['season.phase_detail'] ?? 'Regular'),
+                        }
+                        : this.inferApiFootballSeasonPhase(r);
+                    // Track postseason phase for current-phase inference
+                    trackPostseasonPhase(phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, status);
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
                     // Resolve the origin API identifier from whichever key the parser emitted:
@@ -4812,32 +5160,63 @@ export class ApiService {
                     let isExistingMatch = false;
 
                     if (hasOriginApiIdCol && originApiId) {
+                        const existingMatchColumns = [
+                            'id',
+                            'status',
+                            'home_score',
+                            'away_score',
+                            'round_id',
+                            'home_club_id',
+                            'away_club_id',
+                            ...(hasHomeClubPlaceholderCol ? ['home_club_placeholder'] : []),
+                            ...(hasAwayClubPlaceholderCol ? ['away_club_placeholder'] : []),
+                        ];
                         const existingRes = await client.query(
-                            `SELECT id, status, home_score, away_score, round_id FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
+                            `SELECT ${existingMatchColumns.join(', ')} FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
                             [originApiId, leagueId, seasonId],
                         );
                         if (existingRes.rows.length > 0) {
                             const existing = existingRes.rows[0];
+                            const participantsChanged =
+                                Number(existing.home_club_id ?? 0) !== Number(homeClubId ?? 0) ||
+                                Number(existing.away_club_id ?? 0) !== Number(awayClubId ?? 0) ||
+                                String(existing.home_club_placeholder ?? '') !== String(homeParticipantPlaceholder ?? '') ||
+                                String(existing.away_club_placeholder ?? '') !== String(awayParticipantPlaceholder ?? '');
                             // On subsequent loads league.round is null → preserve the DB round_id
                             if (roundId == null && existing.round_id != null) {
                                 roundId = existing.round_id;
                             }
-                            if (existing.status === 'Finished') {
+                            if (existing.status === 'Finished' && !participantsChanged) {
                                 // Match already fully loaded — nothing to do
                                 skippedUnchanged += 1;
                                 applied += 1;
                                 continue;
                             }
-                            // Match exists but is not finished yet
-                            if (status === 'Finished' && homeScore != null && awayScore != null) {
-                                // Payload now has scores → update the match
-                                await client.query(
-                                    `UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), updated_at = now() WHERE id = $6`,
-                                    [status, homeScore, awayScore, roundId, dateVal, existing.id],
-                                );
+                            // Match exists and either got resolved participants or now has scores.
+                            if (participantsChanged || (status === 'Finished' && homeScore != null && awayScore != null)) {
+                                if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                    await client.query(
+                                        `UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), season_phase = $6, season_phase_detail = $7, home_club_id = $8, away_club_id = $9, home_club_placeholder = $10, away_club_placeholder = $11, updated_at = now() WHERE id = $12`,
+                                        [status, homeScore, awayScore, roundId, dateVal, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, existing.id],
+                                    );
+                                } else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                    await client.query(
+                                        `UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), season_phase = $6, season_phase_detail = $7, home_club_id = $8, away_club_id = $9, updated_at = now() WHERE id = $10`,
+                                        [status, homeScore, awayScore, roundId, dateVal, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeClubId, awayClubId, existing.id],
+                                    );
+                                } else {
+                                    await client.query(
+                                        `UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), home_club_id = $6, away_club_id = $7, updated_at = now() WHERE id = $8`,
+                                        [status, homeScore, awayScore, roundId, dateVal, homeClubId, awayClubId, existing.id],
+                                    );
+                                }
                                 matchId = existing.id;
                                 isExistingMatch = true;
                                 updatedMatches += 1;
+                                if (status !== 'Finished' || homeScore == null || awayScore == null) {
+                                    applied += 1;
+                                    continue;
+                                }
                                 // Recreate match_divisions for the now-finished match
                                 await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [matchId]);
                                 try {
@@ -4864,15 +5243,39 @@ export class ApiService {
                         // Insert new match
                         let matchRes;
                         if (hasOriginApiIdCol) {
-                            matchRes = await client.query(
-                                `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-                                [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, originApiId],
-                            );
+                            if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, home_club_placeholder, away_club_placeholder, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore, originApiId],
+                                );
+                            } else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore, originApiId],
+                                );
+                            } else {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, originApiId],
+                                );
+                            }
                         } else {
-                            matchRes = await client.query(
-                                `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-                                [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
-                            );
+                            if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, home_club_placeholder, away_club_placeholder, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore],
+                                );
+                            } else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore],
+                                );
+                            } else {
+                                matchRes = await client.query(
+                                    `INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                                    [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore],
+                                );
+                            }
                         }
                         matchId = matchRes.rows[0].id;
                         createdMatches++;
@@ -4895,10 +5298,15 @@ export class ApiService {
                         }
                     }
 
-                    // Build standings only for finished matches: fetch previous standings and match_divisions, compute stats, insert two rows
+                    // Build standings only for finished regular-season matches: fetch previous standings and match_divisions, compute stats, insert two rows
                     try {
                         if (status !== 'Finished') {
                             // skip standings update for non-finished matches
+                            applied += 1;
+                            continue;
+                        }
+                        if (phaseInfo.seasonPhase !== 'Regular') {
+                            // Postseason matches should not create standings snapshots.
                             applied += 1;
                             continue;
                         }
@@ -5313,6 +5721,25 @@ export class ApiService {
                         details,
                     ]);
                     return { applied: 0, error: String(e), rolledBack: true, details: includeDebug ? details : undefined };
+                }
+            }
+
+            // Auto-update season postseason flags when postseason matches were processed.
+            // current_phase/detail = earliest phase with upcoming scheduled matches; falls back
+            // to most advanced phase if all matches are already finished.
+            if (!options.dryRun && seasonId && postseasonDetailTracker.size > 0) {
+                try {
+                    const _allEntries = [...postseasonDetailTracker.values()].sort((a, b) => a.detailOrder - b.detailOrder);
+                    const _currentEntry = _allEntries.find(e => e.hasScheduled)
+                        ?? [..._allEntries].sort((a, b) => b.detailOrder - a.detailOrder)[0];
+                    if (_currentEntry) {
+                        await client.query(
+                            `UPDATE seasons SET flg_has_postseason = true, current_phase = $1, current_phase_detail = $2 WHERE id = $3`,
+                            [_currentEntry.phase, _currentEntry.detail, seasonId],
+                        );
+                    }
+                } catch (e) {
+                    this.logger.error('Failed to update season postseason flags', e as any);
                 }
             }
 

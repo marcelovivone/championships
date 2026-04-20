@@ -45,6 +45,21 @@ export class CreateSeasonDto {
   @IsInt()
   @Min(0)
   numberOfGroups?: number;
+
+  @ApiProperty({ example: false, description: 'Whether the season has postseason', required: false })
+  @IsOptional()
+  @IsBoolean()
+  flgHasPostseason?: boolean;
+
+  @ApiProperty({ example: 'Regular', description: 'Current season phase', enum: ['Regular', 'Play-ins', 'Playoffs'], required: false })
+  @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Playoffs'])
+  currentPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+
+  @ApiProperty({ example: 'Regular', description: 'Current season phase detail', enum: ['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'], required: false })
+  @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'])
+  currentPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
 }
 
 export class UpdateSeasonDto extends PartialType(CreateSeasonDto) {}

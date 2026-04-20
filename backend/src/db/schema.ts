@@ -135,6 +135,23 @@ export const leagues = pgTable('leagues', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const seasonPhaseEnum = pgEnum('season_phase', [
+  'Regular',
+  'Play-ins',
+  'Playoffs',
+]);
+
+export const seasonPhaseDetailEnum = pgEnum('season_phase_detail', [
+  'Regular',
+  'Play-ins',
+  'Round of 64',
+  'Round of 32',
+  'Round of 16',
+  'Quarterfinals',
+  'Semifinals',
+  'Finals',
+]);
+
 // ============================================================================
 // 8. LEAGUE_LINKS TABLE - Multiple external links per league
 // ============================================================================
@@ -158,6 +175,9 @@ export const seasons = pgTable('seasons', {
   status: varchar('status', { length: 20 }).default('planned').notNull(), // 'planned', 'ongoing', 'finished'
   flgDefault: boolean('flg_default').default(false).notNull(),
   numberOfGroups: integer('number_of_groups').default(0).notNull(),
+  flgHasPostseason: boolean('flg_has_postseason').default(false).notNull(),
+  currentPhase: seasonPhaseEnum('current_phase').default('Regular').notNull(),
+  currentPhaseDetail: seasonPhaseDetailEnum('current_phase_detail').default('Regular').notNull(),
   flgEspnApiPartialScores: boolean('flg_default').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
@@ -223,11 +243,15 @@ export const matches = pgTable('matches', {
   seasonId: integer('season_id').references(() => seasons.id).notNull(),
   roundId: integer('round_id').references(() => rounds.id).notNull(),
   groupId: integer('group_id').references(() => groups.id), // NULL if not part of group stage
-  homeClubId: integer('home_club_id').references(() => clubs.id).notNull(),
-  awayClubId: integer('away_club_id').references(() => clubs.id).notNull(),
+  homeClubId: integer('home_club_id').references(() => clubs.id),
+  awayClubId: integer('away_club_id').references(() => clubs.id),
+  homeClubPlaceholder: varchar('home_club_placeholder', { length: 120 }),
+  awayClubPlaceholder: varchar('away_club_placeholder', { length: 120 }),
   stadiumId: integer('stadium_id').references(() => stadiums.id), // Stadium where match was played
   date: timestamp('date').notNull(),
   status: matchStatusEnum('status').default('Scheduled').notNull(), // 'Scheduled', 'Finished', 'Postponed', 'Cancelled'
+  seasonPhase: seasonPhaseEnum('season_phase').default('Regular').notNull(),
+  seasonPhaseDetail: seasonPhaseDetailEnum('season_phase_detail').default('Regular').notNull(),
   homeScore: integer('home_score'), // Only set when match is finished
   awayScore: integer('away_score'), // Only set when match is finished
   originApiId: varchar('origin_api_id', { length: 50 }), // For integration with external API (if needed)

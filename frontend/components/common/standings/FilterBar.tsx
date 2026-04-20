@@ -29,6 +29,11 @@ export default function FilterBar({
     setSeason,
     league,
     setLeague,
+    selectedSeason,
+    seasonPhase = 'Regular',
+    setSeasonPhase = () => {},
+    seasonPhaseDetail = 'Regular',
+    setSeasonPhaseDetail = () => {},
     roundOrDay,
     setRoundOrDay,
     viewType,
@@ -44,6 +49,8 @@ export default function FilterBar({
     effectiveMaxRound,
     combineGroups = false,
     setCombineGroups = () => {},
+    availablePhases = [],
+    availablePhaseDetails = [],
 }: any) {
     const dateInputRef = React.useRef<HTMLInputElement | null>(null);
     const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
@@ -79,6 +86,15 @@ export default function FilterBar({
             return bStart - aStart;
         })
         : [];
+    const selectedSeasonData = selectedSeason ?? (Array.isArray(seasonsDesc) ? seasonsDesc.find((s: any) => String(s.id) === String(season)) : null);
+    const showSeasonPhaseControls = Boolean(selectedSeasonData?.flgHasPostseason);
+
+    // Use dynamic lists when provided (derived from actual bracket data), otherwise fall back to full lists
+    const phaseDetailOptions: string[] = availablePhaseDetails.length > 0
+        ? availablePhaseDetails
+        : (seasonPhase === 'Play-ins'
+            ? ['Play-ins']
+            : ['Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals']);
     const commitRoundInput = (rawValue?: string) => {
         const v = (rawValue ?? inputRoundValue).trim();
         const min = 1;
@@ -106,13 +122,13 @@ export default function FilterBar({
 
     // Top row: League / Season / Round controls
     const TopRow = () => (
-        <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 bg-white p-1 rounded-lg">
-            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:gap-4 bg-white p-1 rounded-lg">
+            <div className="flex flex-col gap-1 w-full sm:w-56">
                 <label className="text-sm text-gray-600">League</label>
-                <select value={league} onChange={(e) => setLeague(e.target.value)} className="ml-0 xs:ml-2 px-2 py-1 border rounded w-full xs:w-48">
+                <select value={league} onChange={(e) => setLeague(e.target.value)} className="px-2 py-1 border rounded w-full">
                     {Array.isArray(leagues) && leagues.length > 0 ? (
                         leagues.map((l: any) => (
-                            <option key={l.id} value={String(l.id)}>{l.originalName}</option>
+                            <option key={l.id} value={String(l.id)}>{l.secondaryName}</option>
                         ))
                     ) : (
                         <>
@@ -123,9 +139,9 @@ export default function FilterBar({
                 </select>
             </div>
 
-            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto">
+            <div className="flex flex-col gap-1 w-full sm:w-44">
                 <label className="text-sm text-gray-600">Season</label>
-                <select value={season} onChange={(e) => setSeason(e.target.value)} className="ml-0 xs:ml-2 px-2 py-1 border rounded w-full xs:w-32">
+                <select value={season} onChange={(e) => setSeason(e.target.value)} className="px-2 py-1 border rounded w-full">
                     {Array.isArray(seasonsDesc) && seasonsDesc.length > 0 ? (
                         seasonsDesc.map((s: any) => (
                             <option key={s.id} value={String(s.id)}>{`${s.startYear}/${s.endYear}`}</option>
@@ -139,9 +155,41 @@ export default function FilterBar({
                 </select>
             </div>
 
-            <div className="flex flex-col xs:flex-row xs:items-center gap-2 w-full sm:w-auto sm:ml-auto">
+            {showSeasonPhaseControls && (
+                <div className="flex flex-col gap-1 w-full sm:w-44">
+                    <label className="text-sm text-gray-600">Phase</label>
+                    <select
+                        value={seasonPhase}
+                        onChange={(e) => setSeasonPhase(e.target.value)}
+                        className="px-2 py-1 border rounded w-full"
+                    >
+                        <option value="Regular">Regular</option>
+                        {(availablePhases.length > 0 ? availablePhases : ['Play-ins', 'Playoffs']).map((p: string) => (
+                            <option key={p} value={p}>{p}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {showSeasonPhaseControls && seasonPhase !== 'Regular' && (
+                <div className="flex flex-col gap-1 w-full sm:w-44">
+                    <label className="text-sm text-gray-600">Detail</label>
+                    <select
+                        value={seasonPhaseDetail}
+                        onChange={(e) => setSeasonPhaseDetail(e.target.value)}
+                        className="px-2 py-1 border rounded w-full"
+                    >
+                        {phaseDetailOptions.map((detail) => (
+                            <option key={detail} value={detail}>{detail}</option>
+                        ))}
+                    </select>
+                </div>
+            )}
+
+            {(!showSeasonPhaseControls || seasonPhase === 'Regular') && (
+            <div className="flex flex-col gap-1 w-full sm:w-auto sm:ml-auto">
                 <label className="text-sm text-gray-600">{scheduleIsDate ? 'Date' : 'Round'}</label>
-                <div className="mt-0 flex items-center gap-2 whitespace-nowrap">
+                <div className="flex items-center gap-2 whitespace-nowrap">
                     {scheduleIsDate ? (
                         <div className="flex items-center overflow-hidden rounded-md border bg-white shadow-sm">
                             <button
@@ -218,6 +266,7 @@ export default function FilterBar({
                     )}
                 </div>
             </div>
+            )}
         </div>
     );
 

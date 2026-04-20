@@ -22,6 +22,7 @@ export default function AdminApiPage() {
   const [scheduleType, setScheduleType] = useState<string>('Date');
   const [hasDivisions, setHasDivisions] = useState<boolean>(false);
   const [hasGroups, setHasGroups] = useState<boolean>(false);
+  const [hasPostseason, setHasPostseason] = useState<boolean>(false);
   const [numberOfGroups, setNumberOfGroups] = useState<number>(0);
   const [inferClubs, setInferClubs] = useState<boolean>(true);
   const [runInBackground, setRunInBackground] = useState<boolean>(true);
@@ -223,6 +224,7 @@ export default function AdminApiPage() {
           seasonStatus,
           isSeasonDefault,
           sameYears,
+          hasPostseason,
           scheduleType,
           isLeagueDefault,
           hasDivisions,
@@ -321,7 +323,7 @@ export default function AdminApiPage() {
       </div>
 
       {/* Secondary row: remaining fields (moved below) */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mt-2 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2 mb-6">
         {origin !== 'Api-Espn' && (
           <div>
             <label className="block text-sm text-gray-600">Season</label>
@@ -387,6 +389,17 @@ export default function AdminApiPage() {
             className="h-4 w-4"
           />
           <label htmlFor="etl-season-default-checkbox" className="text-sm text-gray-600">Default</label>
+        </div>
+
+        <div className="flex items-center gap-2 ml-10 mt-6 md:mt-0">
+            <input
+            id="season-has-postseason-checkbox"
+            type="checkbox"
+            checked={hasPostseason}
+            onChange={(e) => setHasPostseason(e.target.checked)}
+            className="h-4 w-4"
+            />
+            <label htmlFor="season-has-postseason-checkbox" className="text-sm text-gray-600">Has Postseason</label>
         </div>
       </div>
 

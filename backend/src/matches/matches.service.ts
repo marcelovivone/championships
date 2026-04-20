@@ -17,6 +17,20 @@ export class MatchesService {
         private standingsCalculator: StandingsCalculatorService,
     ) { }
 
+    private buildSeasonPhaseConditions(seasonPhase?: string, seasonPhaseDetail?: string) {
+        const conditions: any[] = [];
+
+        if (seasonPhase) {
+            conditions.push(eq(matches.seasonPhase, seasonPhase as any));
+        }
+
+        if (seasonPhaseDetail) {
+            conditions.push(eq(matches.seasonPhaseDetail, seasonPhaseDetail as any));
+        }
+
+        return conditions;
+    }
+
     /**
      * Get all matches
      */
@@ -32,8 +46,12 @@ export class MatchesService {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     stadiumId: matches.stadiumId,
@@ -165,9 +183,13 @@ export class MatchesService {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     createdAt: matches.createdAt,
@@ -298,9 +320,13 @@ async findOne(id: number) {
                 groupId: matches.groupId,
                 homeClubId: matches.homeClubId,
                 awayClubId: matches.awayClubId,
+                homeClubPlaceholder: matches.homeClubPlaceholder,
+                awayClubPlaceholder: matches.awayClubPlaceholder,
                 stadiumId: matches.stadiumId,
                 date: matches.date,
                 status: matches.status,
+                seasonPhase: matches.seasonPhase,
+                seasonPhaseDetail: matches.seasonPhaseDetail,
                 homeScore: matches.homeScore,
                 awayScore: matches.awayScore,
                 createdAt: matches.createdAt,
@@ -460,9 +486,13 @@ async findOne(id: number) {
                     groupId: createMatchDto.groupId || null,
                     homeClubId: createMatchDto.homeClubId,
                     awayClubId: createMatchDto.awayClubId,
+                    homeClubPlaceholder: null,
+                    awayClubPlaceholder: null,
                     stadiumId: createMatchDto.stadiumId || null,
                     date: new Date(createMatchDto.date),
                     status: createMatchDto.status || 'Scheduled', // Use provided status or default
+                    seasonPhase: createMatchDto.seasonPhase || 'Regular',
+                    seasonPhaseDetail: createMatchDto.seasonPhaseDetail || 'Regular',
                     homeScore: createMatchDto.homeScore === null || typeof createMatchDto.homeScore === 'undefined' ? null : createMatchDto.homeScore,
                     awayScore: createMatchDto.awayScore === null || typeof createMatchDto.awayScore === 'undefined' ? null : createMatchDto.awayScore,
                 })
@@ -585,6 +615,8 @@ async findOne(id: number) {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
@@ -651,10 +683,11 @@ async findOne(id: number) {
     /**
      * Get matches by sport, league, season, and optional group
      */
-    async findBySportLeagueSeasonAndGroup(sportId: number, leagueId: number, seasonId: number, groupId: number | null) {
+    async findBySportLeagueSeasonAndGroup(sportId: number, leagueId: number, seasonId: number, groupId: number | null, seasonPhase?: string, seasonPhaseDetail?: string) {
         try {
             const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
             const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
 
             let whereCondition;
             if (groupId) {
@@ -662,13 +695,15 @@ async findOne(id: number) {
                     eq(matches.sportId, sportId),
                     eq(matches.leagueId, leagueId),
                     eq(matches.seasonId, seasonId),
-                    eq(matches.groupId, groupId)
+                    eq(matches.groupId, groupId),
+                    ...phaseConditions,
                 );
             } else {
                 whereCondition = and(
                     eq(matches.sportId, sportId),
                     eq(matches.leagueId, leagueId),
-                    eq(matches.seasonId, seasonId)
+                    eq(matches.seasonId, seasonId),
+                    ...phaseConditions,
                 );
             }
 
@@ -682,9 +717,13 @@ async findOne(id: number) {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     createdAt: matches.createdAt,
@@ -747,10 +786,11 @@ async findOne(id: number) {
     /**
      * Get matches by league and season (without requiring sportId)
      */
-    async findByLeagueAndSeason(leagueId: number, seasonId: number) {
+    async findByLeagueAndSeason(leagueId: number, seasonId: number, seasonPhase?: string, seasonPhaseDetail?: string) {
         try {
             const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
             const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
             const results = await this.db
                 .select({
                     id: matches.id,
@@ -761,9 +801,13 @@ async findOne(id: number) {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     createdAt: matches.createdAt,
@@ -786,7 +830,7 @@ async findOne(id: number) {
                 .leftJoin(awayClubAlias, eq(matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schemaStadiums, eq(matches.stadiumId, schemaStadiums.id))
                 .leftJoin(schemaGroups, eq(matches.groupId, schemaGroups.id))
-                .where(and(eq(matches.leagueId, leagueId), eq(matches.seasonId, seasonId)))
+                .where(and(eq(matches.leagueId, leagueId), eq(matches.seasonId, seasonId), ...phaseConditions))
                 .orderBy(asc(matches.date), asc(matches.id));
             return results.map(match => ({ ...match, status: match.status as MatchStatus }));
         } catch (error) {
@@ -797,10 +841,11 @@ async findOne(id: number) {
     /**
      * Get matches by season and round
      */
-    async findBySeasonAndRound(seasonId: number, roundId: number) {
+    async findBySeasonAndRound(seasonId: number, roundId: number, seasonPhase?: string, seasonPhaseDetail?: string) {
         try {
             const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
             const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
 
             // 1️⃣ Fetch matches (UNCHANGED QUERY, just stored in a variable)
             const matchesData = await this.db
@@ -813,9 +858,13 @@ async findOne(id: number) {
                     groupId: matches.groupId,
                     homeClubId: matches.homeClubId,
                     awayClubId: matches.awayClubId,
+                    homeClubPlaceholder: matches.homeClubPlaceholder,
+                    awayClubPlaceholder: matches.awayClubPlaceholder,
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     createdAt: matches.createdAt,
@@ -871,6 +920,7 @@ async findOne(id: number) {
                     and(
                         eq(matches.seasonId, seasonId),
                         eq(matches.roundId, roundId),
+                        ...phaseConditions,
                     ),
                     )
                     .orderBy(asc(matches.date), asc(matches.id));
@@ -890,10 +940,11 @@ async findOne(id: number) {
     /**
      * Get matches by season and date
      */
-    async findBySeasonAndDate(seasonId: number, date: string) {
+    async findBySeasonAndDate(seasonId: number, date: string, seasonPhase?: string, seasonPhaseDetail?: string) {
         try {
             const homeClubAlias = aliasedTable(schemaClubs, 'home_club');
             const awayClubAlias = aliasedTable(schemaClubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
 
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
                 throw new BadRequestException('Invalid date format. Expected YYYY-MM-DD.');
@@ -913,6 +964,8 @@ async findOne(id: number) {
                     stadiumId: matches.stadiumId,
                     date: matches.date,
                     status: matches.status,
+                    seasonPhase: matches.seasonPhase,
+                    seasonPhaseDetail: matches.seasonPhaseDetail,
                     homeScore: matches.homeScore,
                     awayScore: matches.awayScore,
                     createdAt: matches.createdAt,
@@ -968,6 +1021,7 @@ async findOne(id: number) {
                     and(
                         eq(matches.seasonId, seasonId),
                         sql`DATE(${matches.date}) = CAST(${date} AS DATE)`,
+                        ...phaseConditions,
                     ),
                 )
                 .orderBy(asc(matches.date), asc(matches.id));
@@ -983,6 +1037,103 @@ async findOne(id: number) {
 
         } catch (error) {
             throw new BadRequestException('Failed to fetch matches by season and date');
+        }
+    }
+
+    async getPostseasonBracket(leagueId: number, seasonId: number, groupId: number | null) {
+        try {
+            const [seasonRow] = await this.db
+                .select({
+                    id: seasons.id,
+                    sportId: seasons.sportId,
+                    leagueId: seasons.leagueId,
+                    flgHasPostseason: seasons.flgHasPostseason,
+                    currentPhase: seasons.currentPhase,
+                    currentPhaseDetail: seasons.currentPhaseDetail,
+                })
+                .from(seasons)
+                .where(eq(seasons.id, seasonId))
+                .limit(1);
+
+            if (!seasonRow) {
+                throw new NotFoundException(`Season with ID ${seasonId} not found`);
+            }
+
+            const allSeasonMatches = await this.findByLeagueAndSeason(leagueId, seasonId);
+            const postseasonMatches = allSeasonMatches.filter((match: any) => {
+                const isPostseason = String(match.seasonPhase ?? 'Regular') !== 'Regular';
+                if (!isPostseason) return false;
+                if (groupId == null) return true;
+                return Number(match.groupId ?? 0) === Number(groupId);
+            });
+
+            const phasesOrder = ['Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'];
+            const phases = phasesOrder
+                .map((detail) => ({
+                    phase: detail === 'Play-ins' ? 'Play-ins' : 'Playoffs',
+                    detail,
+                    matches: postseasonMatches.filter((match: any) => String(match.seasonPhaseDetail ?? 'Regular') === detail),
+                }))
+                .filter((entry) => entry.matches.length > 0);
+
+            const latestRegularRound = await this.db
+                .select({
+                    roundId: rounds.id,
+                    roundNumber: rounds.roundNumber,
+                })
+                .from(matches)
+                .innerJoin(rounds, eq(matches.roundId, rounds.id))
+                .where(and(
+                    eq(matches.leagueId, leagueId),
+                    eq(matches.seasonId, seasonId),
+                    eq(matches.seasonPhase, 'Regular'),
+                    groupId != null ? eq(matches.groupId, groupId) : undefined,
+                ))
+                .orderBy(desc(rounds.roundNumber), desc(matches.date), desc(matches.id))
+                .limit(1);
+
+            const latestRegularDate = latestRegularRound.length === 0
+                ? await this.db
+                    .select({ date: matches.date })
+                    .from(matches)
+                    .where(and(
+                        eq(matches.leagueId, leagueId),
+                        eq(matches.seasonId, seasonId),
+                        eq(matches.seasonPhase, 'Regular'),
+                        groupId != null ? eq(matches.groupId, groupId) : undefined,
+                    ))
+                    .orderBy(desc(matches.date), desc(matches.id))
+                    .limit(1)
+                : [];
+
+            let regularSeasonStandings: any[] = [];
+            if (latestRegularRound.length > 0) {
+                regularSeasonStandings = await this.standingsService.findByLeagueIdAndSeasonIdAndRoundId(leagueId, seasonId, latestRegularRound[0].roundId);
+            } else if (latestRegularDate.length > 0) {
+                regularSeasonStandings = await this.standingsService.findByLeagueIdAndSeasonIdAndMatchDate(
+                    leagueId,
+                    seasonId,
+                    new Date(latestRegularDate[0].date).toISOString().slice(0, 10),
+                );
+            }
+
+            const filteredRegularStandings = groupId == null
+                ? regularSeasonStandings
+                : regularSeasonStandings.filter((standing: any) => Number(standing.groupId ?? 0) === Number(groupId));
+
+            return {
+                season: seasonRow,
+                regularSeasonStandings: filteredRegularStandings.map((standing: any, index: number) => ({
+                    clubId: standing.clubId,
+                    groupId: standing.groupId ?? null,
+                    position: index + 1,
+                    points: standing.points,
+                })),
+                phases,
+            };
+        } catch (error) {
+            if (error instanceof NotFoundException) throw error;
+            throw new BadRequestException('Failed to fetch postseason bracket');
         }
     }
 

@@ -55,6 +55,8 @@ export class MatchesController {
     @Query('leagueId') leagueId?: string,
     @Query('seasonId') seasonId?: string,
     @Query('date') date?: string,
+    @Query('seasonPhase') seasonPhase?: string,
+    @Query('seasonPhaseDetail') seasonPhaseDetail?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('sortBy') sortBy?: string,
@@ -68,7 +70,7 @@ export class MatchesController {
       if (isNaN(seasonIdNum) || seasonIdNum <= 0) {
         throw new BadRequestException('Invalid seasonId format. Must be a positive integer.');
       }
-      return this.matchesService.findBySeasonAndDate(seasonIdNum, date);
+      return this.matchesService.findBySeasonAndDate(seasonIdNum, date, seasonPhase, seasonPhaseDetail);
     }
     
     if (roundId && seasonId) {
@@ -80,7 +82,7 @@ export class MatchesController {
       if (isNaN(roundIdNum) || roundIdNum <= 0) {
         throw new BadRequestException('Invalid roundId format. Must be a positive integer.');
       }
-      return this.matchesService.findBySeasonAndRound(seasonIdNum, roundIdNum);
+      return this.matchesService.findBySeasonAndRound(seasonIdNum, roundIdNum, seasonPhase, seasonPhaseDetail);
     }
 
     // If sportId, leagueId, seasonId are provided (with optional groupId), filter by all
@@ -105,7 +107,9 @@ export class MatchesController {
           sportIdNum,
           leagueIdNum,
           seasonIdNum,
-          groupIdValue
+          groupIdValue,
+          seasonPhase,
+          seasonPhaseDetail,
         );
       } catch (error) {
         throw new BadRequestException('Invalid filter parameters');
@@ -119,7 +123,7 @@ export class MatchesController {
       if (isNaN(leagueIdNum) || leagueIdNum <= 0 || isNaN(seasonIdNum) || seasonIdNum <= 0) {
         throw new BadRequestException('leagueId and seasonId must be positive integers.');
       }
-      return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum);
+      return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum, seasonPhase, seasonPhaseDetail);
     }
     
     // // Then check individual filters
@@ -173,6 +177,28 @@ export class MatchesController {
 
     const result = await this.matchesService.findAllPaginated(pageNum, limitNum, sort, order);
     return result.data; // Return only the data array to match the expected return type
+  }
+
+  @ApiOperation({ summary: 'Retrieve postseason bracket data for a season' })
+  @Get('postseason-bracket')
+  async getPostseasonBracket(
+    @Query('leagueId') leagueId?: string,
+    @Query('seasonId') seasonId?: string,
+    @Query('groupId') groupId?: string,
+  ) {
+    const leagueIdNum = parseInt(String(leagueId ?? ''), 10);
+    const seasonIdNum = parseInt(String(seasonId ?? ''), 10);
+    const groupIdNum = groupId ? parseInt(groupId, 10) : null;
+
+    if (!Number.isFinite(leagueIdNum) || leagueIdNum <= 0 || !Number.isFinite(seasonIdNum) || seasonIdNum <= 0) {
+      throw new BadRequestException('leagueId and seasonId must be positive integers.');
+    }
+
+    if (groupId && (!Number.isFinite(groupIdNum) || Number(groupIdNum) <= 0)) {
+      throw new BadRequestException('groupId must be a positive integer if provided.');
+    }
+
+    return this.matchesService.getPostseasonBracket(leagueIdNum, seasonIdNum, groupIdNum);
   }
 
   /**

@@ -48,6 +48,16 @@ export class CreateMatchDto {
   @IsDateString()
   date: string;
 
+  @ApiProperty({ example: 'Regular', description: 'Season phase', enum: ['Regular', 'Play-ins', 'Playoffs'], required: false })
+  @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Playoffs'])
+  seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+
+  @ApiProperty({ example: 'Regular', description: 'Season phase detail', enum: ['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'], required: false })
+  @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'])
+  seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
+
   @ApiProperty({ example: 2, description: 'Home score (optional)', required: false })
   @IsOptional()
   @Type(() => Number)
@@ -115,6 +125,14 @@ export class UpdateMatchDto {
   date?: string;
 
   @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Playoffs'])
+  seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+
+  @IsOptional()
+  @IsEnum(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'])
+  seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
+
+  @IsOptional()
   @IsInt()
   homeScore?: number;
 
@@ -159,6 +177,18 @@ export class MatchResponseDto {
 
   @ApiProperty({ example: '2024-05-20T15:00:00Z' })
   date: Date;
+
+  @ApiProperty({ example: 'Regular', required: false })
+  seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+
+  @ApiProperty({ example: 'Regular', required: false })
+  seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
+
+  @ApiProperty({ example: 'TBD', required: false })
+  homeClubPlaceholder?: string | null;
+
+  @ApiProperty({ example: 'Magic/Hornets', required: false })
+  awayClubPlaceholder?: string | null;
 
   @ApiProperty({ example: 2, required: false })
   homeScore?: number;

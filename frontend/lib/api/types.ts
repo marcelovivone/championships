@@ -160,6 +160,9 @@ export interface Season {
   status: 'planned' | 'active' | 'finished';
   flgDefault: boolean;
   numberOfGroups: number;
+  flgHasPostseason: boolean;
+  currentPhase: 'Regular' | 'Play-ins' | 'Playoffs';
+  currentPhaseDetail: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
   sport?: Sport;
   league?: League;
   createdAt: string;
@@ -173,6 +176,9 @@ export interface CreateSeasonDto {
   status?: 'planned' | 'active' | 'finished';
   flgDefault?: boolean;
   numberOfGroups?: number;
+  flgHasPostseason?: boolean;
+  currentPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+  currentPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
 }
 
 export interface UpdateSeasonDto extends Partial<CreateSeasonDto> {}
@@ -245,12 +251,16 @@ export interface Match {
   leagueId: number;
   seasonId: number;
   roundId: number | null; // Nullable for Date-based leagues
-  homeClubId: number;
-  awayClubId: number;
+  homeClubId: number | null;
+  awayClubId: number | null;
+  homeClubPlaceholder?: string | null;
+  awayClubPlaceholder?: string | null;
   date: string;
   stadiumId: number | null;
   groupId: number | null;
   status: 'Scheduled' | 'Finished' | 'Postponed' | 'Cancelled';
+  seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+  seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
   homeScore: number | null;
   awayScore: number | null;
   sport?: Sport;
@@ -437,6 +447,8 @@ export interface CreateMatchDto {
   stadiumId?: number;
   groupId?: number;
   status?: 'Scheduled' | 'Finished' | 'Postponed' | 'Cancelled';
+  seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+  seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
 }
 
 export interface CreateSportClubDto {

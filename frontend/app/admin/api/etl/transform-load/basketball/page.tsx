@@ -480,7 +480,7 @@ export default function EtlPage() {
         }
 
         // Pre-check: detect if entity (club/stadium) mapping is needed before confirming.
-        if (!isSubsequentLoad && !skipEntityReview) {
+                if (!skipEntityReview) {
           try {
             
             // Always check for entity conflicts - backend will use existing mappings if available

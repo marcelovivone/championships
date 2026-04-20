@@ -232,26 +232,56 @@ export const matchesApi = {
     sportId: number, 
     leagueId: number, 
     seasonId: number, 
-    groupId: number | null
+    groupId: number | null,
+    seasonPhase?: string,
+    seasonPhaseDetail?: string,
   ): Promise<Match[]> => {
     let url = `/v1/matches?sportId=${sportId}&leagueId=${leagueId}&seasonId=${seasonId}`;
     if (groupId) {
       url += `&groupId=${groupId}`;
+    }
+    if (seasonPhase) {
+      url += `&seasonPhase=${encodeURIComponent(seasonPhase)}`;
+    }
+    if (seasonPhaseDetail) {
+      url += `&seasonPhaseDetail=${encodeURIComponent(seasonPhaseDetail)}`;
     }
     
     const response = await apiClient.get<Match[]>(url);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
   },
-  getBySeasonAndRound: async (seasonId: number, roundId: number): Promise<Match[]> => {
-    const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&roundId=${roundId}`);
+  getBySeasonAndRound: async (seasonId: number, roundId: number, seasonPhase?: string, seasonPhaseDetail?: string): Promise<Match[]> => {
+    let url = `/v1/matches?seasonId=${seasonId}&roundId=${roundId}`;
+    if (seasonPhase) {
+      url += `&seasonPhase=${encodeURIComponent(seasonPhase)}`;
+    }
+    if (seasonPhaseDetail) {
+      url += `&seasonPhaseDetail=${encodeURIComponent(seasonPhaseDetail)}`;
+    }
+    const response = await apiClient.get<Match[]>(url);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
   },
-  getBySeasonAndDate: async (seasonId: number, date: string): Promise<Match[]> => {
-    const response = await apiClient.get<Match[]>(`/v1/matches?seasonId=${seasonId}&date=${date}`);
+  getBySeasonAndDate: async (seasonId: number, date: string, seasonPhase?: string, seasonPhaseDetail?: string): Promise<Match[]> => {
+    let url = `/v1/matches?seasonId=${seasonId}&date=${date}`;
+    if (seasonPhase) {
+      url += `&seasonPhase=${encodeURIComponent(seasonPhase)}`;
+    }
+    if (seasonPhaseDetail) {
+      url += `&seasonPhaseDetail=${encodeURIComponent(seasonPhaseDetail)}`;
+    }
+    const response = await apiClient.get<Match[]>(url);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
+  },
+  getPostseasonBracket: async (leagueId: number, seasonId: number, groupId?: number | null) => {
+    let url = `/v1/matches/postseason-bracket?leagueId=${leagueId}&seasonId=${seasonId}`;
+    if (groupId) {
+      url += `&groupId=${groupId}`;
+    }
+    const response = await apiClient.get(url);
+    return response.data;
   }
 };
 

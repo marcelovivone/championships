@@ -51,6 +51,8 @@ export default function SeasonsPage() {
 
   // Watch sportId to filter leagues
   const selectedSportId = watch('sportId');
+  const hasPostseason = watch('flgHasPostseason');
+  const currentPhase = watch('currentPhase');
 
   // Filter leagues based on selected sport
   const filteredLeagues = selectedSportId 
@@ -93,6 +95,9 @@ export default function SeasonsPage() {
       status: 'planned',
       flgDefault: false,
       numberOfGroups: 0,
+      flgHasPostseason: false,
+      currentPhase: 'Regular',
+      currentPhaseDetail: 'Regular',
     });
     setIsModalOpen(true);
   };
@@ -104,9 +109,14 @@ export default function SeasonsPage() {
       leagueId: season.leagueId,
       startYear: season.startYear,
       endYear: season.endYear,
-      status: season.status,
+      status: season.status
+        ? (String(season.status).toLowerCase() as 'planned' | 'active' | 'finished')
+        : undefined,
       flgDefault: season.flgDefault,
       numberOfGroups: season.numberOfGroups,
+      flgHasPostseason: season.flgHasPostseason,
+      currentPhase: season.currentPhase,
+      currentPhaseDetail: season.currentPhaseDetail,
     });
     setIsModalOpen(true);
   };
@@ -158,6 +168,9 @@ export default function SeasonsPage() {
       sportId: Number(data.sportId),
       leagueId: Number(data.leagueId),
       numberOfGroups: data.numberOfGroups ? Number(data.numberOfGroups) : 0,
+      flgHasPostseason: Boolean(data.flgHasPostseason),
+      currentPhase: data.flgHasPostseason ? (data.currentPhase || 'Regular') : 'Regular',
+      currentPhaseDetail: data.flgHasPostseason ? (data.currentPhaseDetail || 'Regular') : 'Regular',
     };
     
     if (editingSeason) {
@@ -229,7 +242,42 @@ export default function SeasonsPage() {
       sortable: true,
       width: '120px',
     },
+    {
+      header: 'Postseason',
+      accessor: (season: Season) => (season.flgHasPostseason ? 'Yes' : 'No'),
+      sortKey: 'flgHasPostseason',
+      sortable: true,
+      width: '120px',
+    },
+    {
+      header: 'Current Phase',
+      accessor: (season: Season) => season.currentPhase || 'Regular',
+      sortKey: 'currentPhase',
+      sortable: true,
+      width: '140px',
+    },
+    {
+      header: 'Phase Detail',
+      accessor: (season: Season) => season.currentPhaseDetail || 'Regular',
+      sortKey: 'currentPhaseDetail',
+      sortable: true,
+      width: '150px',
+    },
   ];
+
+  useEffect(() => {
+    if (!hasPostseason) {
+      setValue('currentPhase', 'Regular');
+      setValue('currentPhaseDetail', 'Regular');
+      return;
+    }
+
+    if (currentPhase === 'Regular') {
+      setValue('currentPhaseDetail', 'Regular');
+    } else if (currentPhase === 'Play-ins') {
+      setValue('currentPhaseDetail', 'Play-ins');
+    }
+  }, [currentPhase, hasPostseason, setValue]);
 
   return (
     <div>
@@ -450,6 +498,19 @@ export default function SeasonsPage() {
           </div>
 
           <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                {...register('flgHasPostseason')}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <span className="text-sm font-medium text-gray-700">
+                Season has postseason
+              </span>
+            </label>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Number of Groups
             </label>
@@ -464,6 +525,41 @@ export default function SeasonsPage() {
             {errors.numberOfGroups && (
               <p className="mt-1 text-sm text-red-600">{errors.numberOfGroups.message}</p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Current Phase
+            </label>
+            <select
+              {...register('currentPhase')}
+              disabled={!hasPostseason}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            >
+              <option value="Regular">Regular</option>
+              <option value="Play-ins">Play-ins</option>
+              <option value="Playoffs">Playoffs</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phase Detail
+            </label>
+            <select
+              {...register('currentPhaseDetail')}
+              disabled={!hasPostseason || currentPhase === 'Regular'}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            >
+              <option value="Regular">Regular</option>
+              <option value="Play-ins">Play-ins</option>
+              <option value="Round of 64">Round of 64</option>
+              <option value="Round of 32">Round of 32</option>
+              <option value="Round of 16">Round of 16</option>
+              <option value="Quarterfinals">Quarterfinals</option>
+              <option value="Semifinals">Semifinals</option>
+              <option value="Finals">Finals</option>
+            </select>
           </div>
 
           <div className="flex justify-end gap-2 pt-4">
