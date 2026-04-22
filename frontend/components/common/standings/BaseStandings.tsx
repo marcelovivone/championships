@@ -454,10 +454,10 @@ export default function BaseStandings({
     const map: Record<string, string> = {};
     src.forEach((m: any) => {
       if (m.homeClub && m.homeClub.id) {
-        map[String(m.homeClub.id)] = m.homeClub.short_name ?? m.homeClub.shortName ?? m.homeClub.name ?? m.homeClub.originalName ?? m.homeClub.fullName ?? m.homeClub.longName ?? m.homeClub.officialName ?? m.homeClub.clubName ?? '';
+        map[String(m.homeClub.id)] = m.homeClub.name ?? m.homeClub.short_name ?? m.homeClub.shortName ?? m.homeClub.originalName ?? m.homeClub.fullName ?? m.homeClub.longName ?? m.homeClub.officialName ?? m.homeClub.clubName ?? '';
       }
       if (m.awayClub && m.awayClub.id) {
-        map[String(m.awayClub.id)] = m.awayClub.short_name ?? m.awayClub.shortName ?? m.awayClub.name ?? m.awayClub.originalName ?? m.awayClub.fullName ?? m.awayClub.longName ?? m.awayClub.officialName ?? m.awayClub.clubName ?? '';
+        map[String(m.awayClub.id)] = m.awayClub.name ?? m.awayClub.short_name ?? m.awayClub.shortName ?? m.awayClub.originalName ?? m.awayClub.fullName ?? m.awayClub.longName ?? m.awayClub.officialName ?? m.awayClub.clubName ?? '';
       }
     });
     if (Object.keys(map).length > 0) setClubsMap((prev) => ({ ...prev, ...map }));
@@ -783,21 +783,23 @@ export default function BaseStandings({
         effectiveMaxRound={effectiveMaxRound}
         combineGroups={combineGroups}
         setCombineGroups={setCombineGroups}
+        sportKey={sportKey}
       />
 
       {isPostseasonView ? (
         <div className="mt-6">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">POSTSEASON BRACKET</h2>
-            <div className="text-sm text-gray-500 whitespace-nowrap">Phase: {seasonPhaseDetail}</div>
+            <h2 className="text-lg font-semibold">{seasonPhase.toUpperCase()}</h2>
+            {/* <div className="text-sm text-gray-500 whitespace-nowrap">Phase: {seasonPhaseDetail}</div> */}
           </div>
           {postseasonBracketQuery.isLoading ? (
             <div className="bg-white rounded-lg shadow p-4">Loading bracket...</div>
           ) : (
             <PostseasonBracket
-              bracket={postseasonBracketQuery.data}
+              bracket={{ ...postseasonBracketQuery.data, groups: seasonGroups }}
               activePhase={seasonPhase}
               activePhaseDetail={seasonPhaseDetail}
+              sportKey={sportKey}
             />
           )}
         </div>
@@ -1025,8 +1027,9 @@ export default function BaseStandings({
               const list = Array.isArray(src) ? src.map((m: any) => {
                 const stadium = m.stadium?.name ?? m.stadiumName ?? m.stadium?.originalName ?? m.stadiumId ?? '';
                 const dateTime = m.date ?? m.dateTime ?? m.matchDate ?? m.datetime ?? '';
-                const homeName = m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.name ?? m.homeClub?.originalName ?? m.homeClubPlaceholder ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined) ?? 'TBD';
-                const awayName = m.awayClub?.short_name ?? m.awayClub?.shortName ?? m.awayClub?.name ?? m.awayClub?.originalName ?? m.awayClubPlaceholder ?? (m.awayClubId ? clubsMap[String(m.awayClubId)] : undefined) ?? (m.awayClubId ? `#${m.awayClubId}` : undefined) ?? 'TBD';
+                // const homeName = m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.name ?? m.homeClub?.originalName ?? m.homeClubPlaceholder ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined) ?? 'TBD';
+                const homeName = m.homeClub?.name ?? m.homeClub?.short_name ?? m.homeClub?.shortName ?? m.homeClub?.originalName ?? m.homeClubPlaceholder ?? (m.homeClubId ? clubsMap[String(m.homeClubId)] : undefined) ?? (m.homeClubId ? `#${m.homeClubId}` : undefined) ?? 'TBD';
+                const awayName = m.awayClub?.name ?? m.awayClub?.short_name ?? m.awayClub?.shortName ?? m.awayClub?.originalName ?? m.awayClubPlaceholder ?? (m.awayClubId ? clubsMap[String(m.awayClubId)] : undefined) ?? (m.awayClubId ? `#${m.awayClubId}` : undefined) ?? 'TBD';
                 const status = m.status ?? m.matchStatus ?? null;
                 const score = (typeof m.homeScore !== 'undefined' && typeof m.awayScore !== 'undefined') ? `${m.homeScore} - ${m.awayScore}` : (m.homeScore || m.awayScore ? `${m.homeScore ?? 0}-${m.awayScore ?? 0}` : null);
                 return {

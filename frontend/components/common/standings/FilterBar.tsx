@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { apiClient } from '@/lib/api/client';
+import { getNbaPhaseDisplayName } from './PostseasonBracket';
 
 function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
     return (
@@ -51,6 +52,7 @@ export default function FilterBar({
     setCombineGroups = () => {},
     availablePhases = [],
     availablePhaseDetails = [],
+    sportKey,
 }: any) {
     const dateInputRef = React.useRef<HTMLInputElement | null>(null);
     const [inputRoundValue, setInputRoundValue] = React.useState<string>(String(roundOrDay ?? ''));
@@ -171,7 +173,7 @@ export default function FilterBar({
                 </div>
             )}
 
-            {showSeasonPhaseControls && seasonPhase !== 'Regular' && (
+            {showSeasonPhaseControls && seasonPhase === 'Playoffs' && (
                 <div className="flex flex-col gap-1 w-full sm:w-44">
                     <label className="text-sm text-gray-600">Detail</label>
                     <select
@@ -180,7 +182,9 @@ export default function FilterBar({
                         className="px-2 py-1 border rounded w-full"
                     >
                         {phaseDetailOptions.map((detail) => (
-                            <option key={detail} value={detail}>{detail}</option>
+                            <option key={detail} value={detail}>
+                                {sportKey === 'basketball' ? getNbaPhaseDisplayName(detail) : detail}
+                            </option>
                         ))}
                     </select>
                 </div>
