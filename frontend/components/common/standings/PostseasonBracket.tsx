@@ -231,22 +231,23 @@ function SeriesCard({
 /** Placeholder card */
 function PlaceholderCard() {
   return (
-    <article className="rounded-xl border border-gray-200 bg-white p-3">
+    <article className="rounded-xl border border-gray-200 bg-white">
       <div className="space-y-2">
         {[0, 1].map((j) => (
-          <div key={j} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+        //   <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
+          <div key={j} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-2 py-2">
             <div className="min-w-0">
-              <p className="text-xs text-gray-500">Seed -</p>
-              <p className="truncate text-sm font-medium text-gray-900">TBD</p>
+              {/* <p className="text-xs text-gray-500">Seed -</p> */}
+              <p className="truncate text-sm font-medium text-gray-900 pl-2">TBD</p>
             </div>
-            <div className="text-right">
+            <div className="text-right pr-1">
               <p className="text-xs text-gray-500">Series</p>
               <p className="text-lg font-semibold text-gray-900">-</p>
             </div>
           </div>
         ))}
       </div>
-      <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+      <div className="mt-1 flex items-center justify-between text-xs text-gray-500 px-3 pb-2">
         <span>—</span>
         <span>—</span>
       </div>
@@ -395,13 +396,10 @@ function NbaBracket({
         const x2 = direction === 'ltr' ? to.left : to.right;
         const y1 = from.centerY;
         const y2 = to.centerY;
-        // const gap = Math.abs(x2 - x1);
-        const gap = 0;
-        const c1 = direction === 'ltr' ? x1 + gap * 1.00 : x1 - gap * 0.13;
-        const c2 = direction === 'ltr' ? x2 - gap * 0.15 : x2 + gap * 0.15;
+        const midX = (x1 + x2) / 2;
         nextPaths.push({
           id: `${fromKey}->${toKey}`,
-          d: `M ${x1} ${y1} C ${c1} ${y1}, ${c2} ${y2}, ${x2} ${y2}`,
+          d: `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`,
         });
       };
 
@@ -495,9 +493,11 @@ function NbaBracket({
     </div>
   );
 
+  // PLAYOFFS BRACKET
   return (
     <div className="overflow-x-auto pb-4">
-      <div className="relative rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      {/* <div className="relative rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"> */}
+      <div className="relative p-3">
         <svg className="absolute inset-0 pointer-events-none" width="100%" height="100%" style={{ overflow: 'visible', zIndex: 1 }}>
           {nbaPaths.map((path) => (
             <path
@@ -505,7 +505,7 @@ function NbaBracket({
               d={path.d}
               fill="none"
               stroke="#CBD5E1"
-              strokeWidth={2.0}
+              strokeWidth={1.5}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
@@ -562,6 +562,435 @@ function NbaBracket({
           </section>
         ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** 
+ * NBA Play-ins bracket with conference-specific two-column layout
+ * WEST: First Round → Second Round (left to right)
+ * EAST: Second Round → First Round (left to right, inverted for symmetry)
+ */
+function NbaPlayInsBracket({
+  playInsPhase,
+  seedMap,
+  groups,
+  regularSeasonStandings,
+}: {
+  playInsPhase: BracketPhase;
+  seedMap: Map<number, number>;
+  groups?: Array<{ id: number; name: string }>;
+  regularSeasonStandings?: Array<{ clubId: number; groupId?: number | null; position: number }>;
+}) {
+  // Build club to conference mapping
+  const clubToConf = new Map<number, number>();
+  (regularSeasonStandings || []).forEach((standing) => {
+    if (standing.groupId != null) clubToConf.set(Number(standing.clubId), Number(standing.groupId));
+  });
+
+  // Get conference IDs from matches
+  const matchGroupIds = new Set<number>();
+  (playInsPhase.matches || []).forEach((match) => {
+    if (match.groupId != null) matchGroupIds.add(match.groupId);
+    // Also check clubs
+    if (match.homeClubId) {
+      const conf = clubToConf.get(match.homeClubId);
+      if (conf != null) matchGroupIds.add(conf);
+    }
+    if (match.awayClubId) {
+      const conf = clubToConf.get(match.awayClubId);
+      if (conf != null) matchGroupIds.add(conf);
+    }
+  });
+
+  const conferenceIds = Array.from(matchGroupIds).sort();
+  // Determine WEST and EAST by name
+  let westConf: number | null = null;
+  let eastConf: number | null = null;
+  conferenceIds.forEach((confId) => {
+    const name = getConferenceName(confId, groups).toUpperCase();
+    if (name.includes('WEST')) westConf = confId;
+    else if (name.includes('EAST')) eastConf = confId;
+  });
+  // Fallback if names don't match
+  if (westConf == null && conferenceIds.length > 0) westConf = conferenceIds[0];
+  if (eastConf == null && conferenceIds.length > 1) eastConf = conferenceIds[1];
+
+  // Helper: get match conference
+  const getMatchConf = (match: BracketMatch): number | null => {
+    if (match.groupId != null) return match.groupId;
+    if (match.homeClubId) {
+      const conf = clubToConf.get(match.homeClubId);
+      if (conf != null) return conf;
+    }
+    if (match.awayClubId) {
+      const conf = clubToConf.get(match.awayClubId);
+      if (conf != null) return conf;
+    }
+    return null;
+  };
+
+  // Build a more robust club-to-conference mapping using all matches
+  // First pass: matches with explicit groupId help us map clubs
+  const enhancedClubToConf = new Map<number, number>(clubToConf);
+  (playInsPhase.matches || []).forEach((match) => {
+    if (match.groupId != null) {
+      if (match.homeClubId && !enhancedClubToConf.has(match.homeClubId)) {
+        enhancedClubToConf.set(match.homeClubId, match.groupId);
+      }
+      if (match.awayClubId && !enhancedClubToConf.has(match.awayClubId)) {
+        enhancedClubToConf.set(match.awayClubId, match.groupId);
+      }
+    }
+  });
+
+  // Second pass: use enhanced mapping to assign conferences to remaining matches
+  const getEnhancedMatchConf = (match: BracketMatch): number | null => {
+    if (match.groupId != null) return match.groupId;
+    if (match.homeClubId) {
+      const conf = enhancedClubToConf.get(match.homeClubId);
+      if (conf != null) return conf;
+    }
+    if (match.awayClubId) {
+      const conf = enhancedClubToConf.get(match.awayClubId);
+      if (conf != null) return conf;
+    }
+    return null;
+  };
+
+  // Helper: get all club IDs from a match
+  const getMatchClubIds = (match: BracketMatch): number[] => {
+    const ids: number[] = [];
+    if (match.homeClubId) ids.push(match.homeClubId);
+    if (match.awayClubId) ids.push(match.awayClubId);
+    return ids;
+  };
+
+  // Process matches for a conference
+  const processConferenceMatches = (confId: number | null) => {
+    if (confId == null) return { firstColumn: [], secondColumn: [], clubToFirstMatch: new Map() };
+
+    const confMatches = (playInsPhase.matches || [])
+      .filter((m) => getEnhancedMatchConf(m) === confId)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // Track which clubs have appeared
+    const clubFirstAppearance = new Map<number, BracketMatch>();
+    const clubSecondAppearance = new Map<number, BracketMatch>();
+    const clubToFirstMatch = new Map<number, number>(); // clubId -> firstColumn index
+
+    confMatches.forEach((match) => {
+      const clubIds = getMatchClubIds(match);
+      const isFirstAppearance = clubIds.every((id) => !clubFirstAppearance.has(id));
+
+      if (isFirstAppearance) {
+        // This is the first appearance for all clubs in this match
+        clubIds.forEach((id) => clubFirstAppearance.set(id, match));
+      } else {
+        // At least one club has appeared before - this is a second round match
+        clubIds.forEach((id) => {
+          if (!clubSecondAppearance.has(id)) {
+            clubSecondAppearance.set(id, match);
+          }
+        });
+      }
+    });
+
+    const firstColumn = Array.from(clubFirstAppearance.values())
+      .filter((match, index, self) => self.findIndex((m) => m.id === match.id) === index)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    const secondColumn = Array.from(clubSecondAppearance.values())
+      .filter((match, index, self) => self.findIndex((m) => m.id === match.id) === index)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    // Build mapping: clubId -> index in firstColumn
+    firstColumn.forEach((match, idx) => {
+      getMatchClubIds(match).forEach((clubId) => {
+        clubToFirstMatch.set(clubId, idx);
+      });
+    });
+
+    return { firstColumn, secondColumn, clubToFirstMatch };
+  };
+
+  const westData = processConferenceMatches(westConf);
+  const eastData = processConferenceMatches(eastConf);
+
+  // Refs for measuring positions
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const westCol1Refs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const westCol2Refs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const eastCol1Refs = React.useRef<(HTMLDivElement | null)[]>([]);
+  const eastCol2Refs = React.useRef<(HTMLDivElement | null)[]>([]);
+
+  const [connectorPaths, setConnectorPaths] = React.useState<Array<{ id: string; d: string }>>([]);
+  const [westCol2Offsets, setWestCol2Offsets] = React.useState<number[]>([]);
+  const [eastCol2Offsets, setEastCol2Offsets] = React.useState<number[]>([]);
+
+  // Calculate alignments and connectors
+  React.useEffect(() => {
+    const compute = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const cRect = container.getBoundingClientRect();
+
+      const newWestCol2Offsets: number[] = [];
+      const newEastCol2Offsets: number[] = [];
+      const newPaths: Array<{ id: string; d: string }> = [];
+
+      // WEST: Connect col1 → col2
+      westData.secondColumn.forEach((match, col2Idx) => {
+        const clubIds = getMatchClubIds(match);
+        const parentIndices = clubIds.map((id) => westData.clubToFirstMatch.get(id)).filter((idx) => idx != null) as number[];
+        
+        if (parentIndices.length === 0) return;
+
+        // Calculate average Y position of parent matches
+        const parentCenters: number[] = [];
+        parentIndices.forEach((col1Idx) => {
+          const el = westCol1Refs.current[col1Idx];
+          if (el) {
+            const r = el.getBoundingClientRect();
+            const center = r.top + r.height / 2 - cRect.top;
+            parentCenters.push(center);
+          }
+        });
+
+        if (parentCenters.length === 0) return;
+
+        const avgParentY = parentCenters.reduce((a, b) => a + b, 0) / parentCenters.length;
+        const childEl = westCol2Refs.current[col2Idx];
+        if (!childEl) return;
+
+        const childRect = childEl.getBoundingClientRect();
+        const childCenter = childRect.top + childRect.height / 2 - cRect.top;
+        const offset = avgParentY - childCenter;
+        newWestCol2Offsets[col2Idx] = offset;
+
+        // Draw connector paths
+        parentIndices.forEach((col1Idx) => {
+          const parentEl = westCol1Refs.current[col1Idx];
+          if (!parentEl) return;
+
+          const pr = parentEl.getBoundingClientRect();
+          const cr = childEl.getBoundingClientRect();
+
+          const x1 = pr.right - cRect.left;
+          const y1 = pr.top + pr.height / 2 - cRect.top;
+          const x2 = cr.left - cRect.left;
+          const y2 = cr.top + cr.height / 2 - cRect.top + offset;
+          const midX = (x1 + x2) / 2;
+          const pathD = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+          newPaths.push({ id: `west-${col1Idx}-${col2Idx}`, d: pathD });
+        });
+      });
+
+      // EAST: Connect col2 → col1 (inverted order)
+      // For EAST, col1 (first round) is on the right, col2 (second round) is on the left
+      // We move col2 items to align with the average of their parent col1 items
+      eastData.secondColumn.forEach((match, col2Idx) => {
+        const clubIds = getMatchClubIds(match);
+        const parentIndices = clubIds.map((id) => eastData.clubToFirstMatch.get(id)).filter((idx) => idx != null) as number[];
+        
+        if (parentIndices.length === 0) return;
+
+        // Calculate average Y position of parent matches in col1 (first round)
+        const parentCenters: number[] = [];
+        parentIndices.forEach((col1Idx) => {
+          const el = eastCol1Refs.current[col1Idx];
+          if (el) {
+            const r = el.getBoundingClientRect();
+            const center = r.top + r.height / 2 - cRect.top;
+            parentCenters.push(center);
+          }
+        });
+
+        if (parentCenters.length === 0) return;
+
+        const avgParentY = parentCenters.reduce((a, b) => a + b, 0) / parentCenters.length;
+        const childEl = eastCol2Refs.current[col2Idx];
+        if (!childEl) return;
+
+        const childRect = childEl.getBoundingClientRect();
+        const childCenter = childRect.top + childRect.height / 2 - cRect.top;
+        
+        // Move the second round match (col2) to align with average of first round matches (col1)
+        const offset = avgParentY - childCenter;
+        newEastCol2Offsets[col2Idx] = offset;
+
+        // Draw connector paths from col2 to col1
+        parentIndices.forEach((col1Idx) => {
+          const parentEl = eastCol1Refs.current[col1Idx];
+          if (!parentEl) return;
+
+          const pr = parentEl.getBoundingClientRect();
+          const cr = childEl.getBoundingClientRect();
+
+          const x1 = cr.right - cRect.left;
+          const y1 = cr.top + cr.height / 2 - cRect.top + offset;
+          const x2 = pr.left - cRect.left;
+          const y2 = pr.top + pr.height / 2 - cRect.top;
+          const midX = (x1 + x2) / 2;
+          const pathD = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+          newPaths.push({ id: `east-${col2Idx}-${col1Idx}`, d: pathD });
+        });
+      });
+
+      setWestCol2Offsets(newWestCol2Offsets);
+      setEastCol2Offsets(newEastCol2Offsets);
+      setConnectorPaths(newPaths);
+    };
+
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(compute);
+    });
+
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(compute) : null;
+    if (ro && containerRef.current) ro.observe(containerRef.current);
+    window.addEventListener('resize', compute);
+
+    return () => {
+      if (ro && containerRef.current) ro.unobserve(containerRef.current);
+      window.removeEventListener('resize', compute);
+      cancelAnimationFrame(raf);
+    };
+  }, [westData.secondColumn.length, eastData.secondColumn.length]);
+
+  // Render a single match card
+  const renderMatchCard = (match: BracketMatch, key: string, ref?: (el: HTMLDivElement | null) => void, offset?: number) => {
+    const homeSeed = match.homeClubId ? seedMap.get(match.homeClubId) : undefined;
+    const awaySeed = match.awayClubId ? seedMap.get(match.awayClubId) : undefined;
+    const shouldFlip = homeSeed != null && awaySeed != null && awaySeed < homeSeed;
+
+    const top = shouldFlip
+      ? { club: match.awayClub, seed: awaySeed, score: match.awayScore, fallbackId: match.awayClubId, placeholder: match.awayClubPlaceholder }
+      : { club: match.homeClub, seed: homeSeed, score: match.homeScore, fallbackId: match.homeClubId, placeholder: match.homeClubPlaceholder };
+    const bottom = shouldFlip
+      ? { club: match.homeClub, seed: homeSeed, score: match.homeScore, fallbackId: match.homeClubId, placeholder: match.homeClubPlaceholder }
+      : { club: match.awayClub, seed: awaySeed, score: match.awayScore, fallbackId: match.awayClubId, placeholder: match.awayClubPlaceholder };
+
+    const isFinished = match.status === 'Finished' || (match.homeScore != null && match.awayScore != null);
+
+    return (
+      <article 
+        key={key} 
+        ref={ref}
+        className="rounded-xl border border-gray-200 bg-white p-3"
+        style={offset != null ? { transform: `translateY(${offset}px)`, transition: 'transform 160ms ease' } : undefined}
+      >
+        <div className="space-y-2">
+          {[top, bottom].map((entry, i) => (
+            <div key={`${match.id}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+              <div className="min-w-0 flex items-center gap-2">
+                {entry.club?.imageUrl && (
+                  <img 
+                    src={entry.club.imageUrl} 
+                    alt="" 
+                    className="w-6 h-6 object-contain flex-shrink-0"
+                  />
+                )}
+                <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-semibold text-gray-900">{entry.score ?? '-'}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
+          {isFinished ? (
+            <>
+              <span>Played on</span>
+              <span>{match.date ? new Date(match.date).toLocaleDateString() : '—'}</span>
+            </>
+          ) : (
+            <>
+              <span>Next game</span>
+              <span>{match.date ? new Date(match.date).toLocaleDateString() : 'TBD'}</span>
+            </>
+          )}
+        </div>
+      </article>
+    );
+  };
+
+  const minColumnWidth = 200;
+  const MAX_COLUMN_WIDTH = 280;
+  // PLAY-INS BRACKET
+  return (
+    <div className="relative overflow-x-auto pb-4">
+      {/* SVG overlay for connector lines */}
+      <svg
+        className="absolute inset-0 pointer-events-none"
+        width="100%"
+        height="100%"
+        style={{ overflow: 'visible', zIndex: 1 }}
+      >
+        {connectorPaths.map((cp) => (
+          <path
+            key={cp.id}
+            d={cp.d}
+            fill="none"
+            stroke="#CBD5E1"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+      </svg>
+
+      <div ref={containerRef} className="relative flex gap-8 items-start justify-center" style={{ minWidth: `${4 * MAX_COLUMN_WIDTH + 3 * 16}px`, zIndex: 2 }}>
+        {/* WEST Conference: First Round → Second Round */}
+        <section className="px-2" style={{ flex: '0 0 auto', width: `${MAX_COLUMN_WIDTH}px` }}>
+            <header className="mb-4 rounded-lg px-2 py-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">{getConferenceName(westConf, groups)}</p>
+              <h3 className="text-base font-semibold text-gray-900">First Round</h3>
+            </header>
+            <div className="space-y-3">
+              {westData.firstColumn.map((match, idx) => 
+                renderMatchCard(match, `west-col1-${idx}`, (el) => { westCol1Refs.current[idx] = el; })
+              )}
+            </div>
+          </section>
+
+        <section className="px-2" style={{ flex: '0 0 auto', width: `${MAX_COLUMN_WIDTH}px` }}>
+            <header className="mb-4 rounded-lg px-2 py-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">{getConferenceName(westConf, groups)}</p>
+              <h3 className="text-base font-semibold text-gray-900">Second Round</h3>
+            </header>
+            <div className="space-y-3">
+              {westData.secondColumn.map((match, idx) => 
+                renderMatchCard(match, `west-col2-${idx}`, (el) => { westCol2Refs.current[idx] = el; }, westCol2Offsets[idx])
+              )}
+            </div>
+          </section>
+
+        {/* EAST Conference: Second Round → First Round (inverted) */}
+        <section className="px-2" style={{ flex: '0 0 auto', width: `${MAX_COLUMN_WIDTH}px` }}>
+            <header className="mb-4 rounded-lg px-2 py-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">{getConferenceName(eastConf, groups)}</p>
+              <h3 className="text-base font-semibold text-gray-900">Second Round</h3>
+            </header>
+            <div className="space-y-3">
+              {eastData.secondColumn.map((match, idx) => 
+                renderMatchCard(match, `east-col2-${idx}`, (el) => { eastCol2Refs.current[idx] = el; }, eastCol2Offsets[idx])
+              )}
+            </div>
+          </section>
+
+        <section className="px-2" style={{ flex: '0 0 auto', width: `${MAX_COLUMN_WIDTH}px` }}>
+            <header className="mb-4 rounded-lg px-2 py-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">{getConferenceName(eastConf, groups)}</p>
+              <h3 className="text-base font-semibold text-gray-900">First Round</h3>
+            </header>
+            <div className="space-y-3">
+              {eastData.firstColumn.map((match, idx) => 
+                renderMatchCard(match, `east-col1-${idx}`, (el) => { eastCol1Refs.current[idx] = el; })
+              )}
+            </div>
+          </section>
       </div>
     </div>
   );
@@ -764,7 +1193,10 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
     Array<{ id: string; d: string; srcKey: string; destKey: string }>
   >([]);
   const [funnelOffsets, setFunnelOffsets] = React.useState<Record<string, number>>({});
+  const funnelOffsetsRef = React.useRef<Record<string, number>>({});
   const [hoveredConnector, setHoveredConnector] = React.useState<string | null>(null);
+
+  React.useEffect(() => { funnelOffsetsRef.current = funnelOffsets; }, [funnelOffsets]);
 
   // ── Compute funnel offsets & connector paths after layout ──
   React.useEffect(() => {
@@ -822,13 +1254,14 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
 
           const avgParentY = parentCenters.reduce((a, b) => a + b, 0) / parentCenters.length;
 
-          // Compute child's current center
+          // Compute child's natural center (subtract existing applied transform to avoid oscillation)
           const childEl = nxtRefs[nidx];
           if (!childEl) return;
-          const childRect = childEl.getBoundingClientRect();
-          const childCenter = childRect.top + childRect.height / 2 - cRect.top;
-          const delta = avgParentY - childCenter;
           const key = `${nxt.detail}-${nidx}`;
+          const childRect = childEl.getBoundingClientRect();
+          const existingChildOffset = funnelOffsetsRef.current[key] ?? 0;
+          const childCenter = childRect.top + childRect.height / 2 - cRect.top - existingChildOffset;
+          const delta = avgParentY - childCenter;
           newOffsets[key] = delta;
 
           // Build connector paths from each parent to this child
@@ -838,12 +1271,14 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
             const pr = parentEl.getBoundingClientRect();
             const cr2 = childEl.getBoundingClientRect();
 
+            const existingParentOffset = funnelOffsetsRef.current[`${cur.detail}-${pIdx}`] ?? 0;
             const x1 = pr.right - cRect.left;
-            const y1 = pr.top + pr.height / 2 - cRect.top + (newOffsets[`${cur.detail}-${pIdx}`] ?? 0);
+            const y1 = pr.top + pr.height / 2 - cRect.top - existingParentOffset + (newOffsets[`${cur.detail}-${pIdx}`] ?? 0);
             const x2 = cr2.left - cRect.left;
-            const y2 = cr2.top + cr2.height / 2 - cRect.top + delta;
+            // childCenter is the natural center (DOM pos minus existing offset); add delta for final visual center
+            const y2 = childCenter + delta;
             const midX = (x1 + x2) / 2;
-            const pathD = `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+            const pathD = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
             newPaths.push({
               id: `${cur.detail}-${pIdx}->${nxt.detail}-${nidx}`,
               d: pathD,
@@ -916,6 +1351,21 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
     return <div className="bg-white rounded-lg shadow p-6 text-sm text-gray-600">No {activePhase.toLowerCase()} matches are available for this selection.</div>;
   }
 
+  // ── NBA / basketball: special play-ins layout ──
+  if (sportKey === 'basketball' && activePhase === 'Play-ins') {
+    const playInsPhase = filteredPhases.find((p) => p.phase === 'Play-ins');
+    if (playInsPhase) {
+      return (
+        <NbaPlayInsBracket
+          playInsPhase={playInsPhase}
+          seedMap={seedMap}
+          groups={bracket?.groups}
+          regularSeasonStandings={bracket?.regularSeasonStandings}
+        />
+      );
+    }
+  }
+
   // ── NBA / basketball: mirrored bracket layout for Playoffs only ──
   if (sportKey === 'basketball' && activePhase === 'Playoffs') {
     return (
@@ -931,6 +1381,7 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
 
   const numCols = filteredPhases.length;
   const MIN_COL_W = 200;
+  const MAX_COL_W = 280;
   const minContainerWidth = numCols * MIN_COL_W + Math.max(0, numCols - 1) * 16;
 
   return (
@@ -965,24 +1416,27 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
         })}
       </svg>
 
-      <div ref={containerRef} className="relative flex gap-4 items-start" style={{ minWidth: `${minContainerWidth}px`, zIndex: 2 }}>
-        {filteredPhases.map((phase) => {
+      <div ref={containerRef} className="relative flex gap-4 items-start justify-center" style={{ minWidth: `${minContainerWidth}px`, zIndex: 2 }}>
+        {filteredPhases.map((phase, phaseIndex) => {
           const isActive = phase.detail === activePhaseDetail;
           const seriesList = orderedPhaseSeries[phase.detail] || [];
           // Ensure refs array
           if (!seriesRefs.current[phase.detail]) seriesRefs.current[phase.detail] = [];
 
           const expected = PHASE_SLOT_COUNTS[phase.detail];
+          const isFinals = phase.detail === 'Finals';
+          
           return (
             <section
               key={phase.detail}
-              className={`flex-1 rounded-2xl border p-4 shadow-sm ${isActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}
-              style={{ minWidth: `${MIN_COL_W}px`, maxWidth: '288px' }}
+              className="px-2"
+              style={{ flex: '0 0 auto', width: `${MAX_COL_W}px` }}
             >
-              <header className="mb-4">
+              <header className={`mb-4 rounded-lg px-2 py-1 ${isActive ? 'bg-blue-50' : ''}`}>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
                   {sportKey === 'basketball' && conferenceId ? getConferenceName(conferenceId, bracket?.groups) : phase.phase}
                 </p>
+                <h3 className="text-base font-semibold text-gray-900">{phase.detail}</h3>
               </header>
 
               <div className="space-y-3">
@@ -1000,6 +1454,7 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                     : { club: rep.awayClub, seed: awaySeed, score: rep.awayScore, fallbackId: rep.awayClubId, placeholder: rep.awayClubPlaceholder, winsIdx: 1 };
 
                   const isSingleMatch = s.matches.length === 1;
+                  const isFinished = rep.status === 'Finished' || (rep.homeScore != null && rep.awayScore != null);
                   const nextGame = s.matches
                     .filter((m) => m.status !== 'Finished')
                     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0] ?? null;
@@ -1029,7 +1484,6 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                                 <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-xs text-gray-500">{isSingleMatch ? 'Score' : 'Series'}</p>
                                 <p className="text-lg font-semibold text-gray-900">
                                   {isSingleMatch
                                     ? (entry.score ?? '-')
@@ -1041,8 +1495,13 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                             </div>
                           ))}
                         </div>
-                        <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
-                          {nextGame ? (
+                        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
+                          {isSingleMatch && isFinished ? (
+                            <>
+                              <span>Played on</span>
+                              <span>{rep.date ? new Date(rep.date).toLocaleDateString() : '—'}</span>
+                            </>
+                          ) : nextGame ? (
                             <>
                               <span>Next game</span>
                               <span>{nextGame.date ? new Date(nextGame.date).toLocaleDateString() : 'TBD'}</span>
@@ -1075,17 +1534,15 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                           {[0, 1].map((j) => (
                             <div key={`empty-${i}-${j}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
                               <div className="min-w-0">
-                                {/* <p className="text-xs text-gray-500">Seed -</p> */}
                                 <p className="truncate text-sm font-medium text-gray-900">TBD</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-xs text-gray-500">Series</p>
                                 <p className="text-lg font-semibold text-gray-900">-</p>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                        <div className="mt-1 flex items-center justify-between text-xs text-gray-500 px-3 pb-2">
                           <span>—</span>
                           <span>—</span>
                         </div>
