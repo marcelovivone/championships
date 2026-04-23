@@ -198,7 +198,7 @@ export default function FilterBar({
                         <div className="flex items-center overflow-hidden rounded-md border bg-white shadow-sm">
                             <button
                                 onClick={() => adjustDate(-1)}
-                                className="flex h-10 w-10 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                                className="flex h-7 w-7 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
                                 aria-label="Previous date"
                             >
                                 <ChevronIcon direction="left" />
@@ -206,13 +206,13 @@ export default function FilterBar({
                             <input
                                 ref={dateInputRef}
                                 type="date"
-                                className="w-36 text-center px-3 py-2 bg-gray-50 border-0 focus:outline-none"
+                                className="w-36 text-center px-3 py-0 bg-gray-50 border-0 focus:outline-none"
                                 value={roundOrDay || ''}
                                 onChange={(e) => setRoundOrDay(e.target.value)}
                             />
                             <button
                                 onClick={() => adjustDate(1)}
-                                className="flex h-10 w-10 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
+                                className="flex h-7 w-7 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700"
                                 aria-label="Next date"
                             >
                                 <ChevronIcon direction="right" />
@@ -228,12 +228,12 @@ export default function FilterBar({
                                 const clamped = next > max ? max : next;
                                 setRoundOrDay(clamped);
                                 setInputRoundValue(String(clamped));
-                            }} className="flex h-10 w-10 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Previous round"><ChevronIcon direction="left" /></button>
+                            }} className="flex h-7 w-10 items-center justify-center border-r border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Previous round"><ChevronIcon direction="left" /></button>
                             <input
                                 type="number"
                                 min={1}
                                 max={getLeagueMaxRounds(selectedLeague) || undefined}
-                                className="no-spinner w-14 text-center px-2 py-2 bg-gray-50 border-0 focus:outline-none"
+                                className="no-spinner w-14 text-center px-2 py-0 bg-gray-50 border-0 focus:outline-none"
                                 value={inputRoundValue}
                                 onChange={(e) => {
                                     const v = e.target.value;
@@ -265,7 +265,7 @@ export default function FilterBar({
                                 const clamped = next < min ? min : next;
                                 setRoundOrDay(clamped);
                                 setInputRoundValue(String(clamped));
-                            }} className="flex h-10 w-10 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Next round"><ChevronIcon direction="right" /></button>
+                            }} className="flex h-7 w-10 items-center justify-center border-l border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-700" aria-label="Next round"><ChevronIcon direction="right" /></button>
                         </div>
                     )}
                 </div>

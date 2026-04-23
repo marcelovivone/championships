@@ -1507,7 +1507,7 @@ export class ApiService {
         try {
             if (!updates || typeof updates !== 'object') return { updated: false };
             // only allow a whitelist of fields to be updated
-            const allowed = ['status', 'league', 'season', 'sport', 'source_url', 'payload', 'origin'];
+            const allowed = ['status', 'league', 'season', 'flg_season_same_years', 'sport', 'source_url', 'payload', 'origin'];
             const keys = Object.keys(updates).filter((k) => allowed.includes(k));
             if (!keys.length) return { updated: false };
 

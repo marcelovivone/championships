@@ -100,6 +100,10 @@ export default function EtlPage() {
     const [accumulatedOverrides, setAccumulatedOverrides] = useState<Record<string, number>>({});
     const [pendingApplyId, setPendingApplyId] = useState<number | null>(null);
     const [footballSportId, setFootballSportId] = useState<number | null>(null);
+    const [editingSeasonRowId, setEditingSeasonRowId] = useState<number | null>(null);
+    const [editingStartYear, setEditingStartYear] = useState<string>('');
+    const [editingEndYear, setEditingEndYear] = useState<string>('');
+    const [savingSeasonRowId, setSavingSeasonRowId] = useState<number | null>(null);
     const [isSubsequentLoad, setIsSubsequentLoad] = useState(false);
     const [roundReviewSummary, setRoundReviewSummary] = useState<any[]>([]);
     const [expandedRoundDetails, setExpandedRoundDetails] = useState<Record<string, boolean>>({});
@@ -280,6 +284,28 @@ export default function EtlPage() {
     //         setLoadingRows(false);
     //     }
     // };
+
+    const saveSeasonYears = async (rowId: number) => {
+        const startY = parseInt(editingStartYear, 10);
+        const endY = parseInt(editingEndYear, 10);
+        if (isNaN(startY) || isNaN(endY) || startY < 1900 || endY < 1900) return;
+        setSavingSeasonRowId(rowId);
+        try {
+            const sameYears = startY === endY;
+            const resp = await fetch(`${API_BASE}/v1/api/transitional/${rowId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ season: startY, flg_season_same_years: sameYears }),
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            setRows(prev => prev.map(r => r.id === rowId ? { ...r, season: startY, flg_season_same_years: sameYears } : r));
+            setEditingSeasonRowId(null);
+        } catch (e) {
+            console.error('[ETL] Failed to save season years', e);
+        } finally {
+            setSavingSeasonRowId(null);
+        }
+    };
 
         const reloadRows = async () => {
         setLoadingRows(true);
@@ -941,7 +967,71 @@ export default function EtlPage() {
                                 columns={[
                                     { header: 'Origin', accessor: (r: any) => r.origin ?? 'Api-Football', sortKey: 'origin', sortable: true },
                                     { header: 'League', accessor: (r: any) => r.league ?? '-' , width: '240px', sortKey: 'league', sortable: true },
-                                    { header: 'Season', accessor: (r: any) => (r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-'), width: '140px', sortKey: 'season', sortable: true },
+                                    {
+                                        header: 'Season',
+                                        width: '200px',
+                                        sortKey: 'season',
+                                        sortable: true,
+                                        accessor: (r: any) => {
+                                            if (!r.status && editingSeasonRowId === r.id) {
+                                                return (
+                                                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                        <input
+                                                            type="number"
+                                                            className="w-16 border rounded px-1 py-0.5 text-sm"
+                                                            value={editingStartYear}
+                                                            onChange={e => setEditingStartYear(e.target.value)}
+                                                            onKeyDown={e => { if (e.key === 'Enter') saveSeasonYears(r.id); if (e.key === 'Escape') setEditingSeasonRowId(null); }}
+                                                        />
+                                                        <span className="text-gray-400">/</span>
+                                                        <input
+                                                            type="number"
+                                                            className="w-16 border rounded px-1 py-0.5 text-sm"
+                                                            value={editingEndYear}
+                                                            onChange={e => setEditingEndYear(e.target.value)}
+                                                            onKeyDown={e => { if (e.key === 'Enter') saveSeasonYears(r.id); if (e.key === 'Escape') setEditingSeasonRowId(null); }}
+                                                        />
+                                                        <button
+                                                            onClick={() => saveSeasonYears(r.id)}
+                                                            disabled={savingSeasonRowId === r.id}
+                                                            className="text-green-600 hover:text-green-800 disabled:opacity-50 text-xs font-medium px-1"
+                                                            title="Save"
+                                                        >
+                                                            {savingSeasonRowId === r.id ? '…' : '✓'}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingSeasonRowId(null)}
+                                                            className="text-gray-400 hover:text-gray-600 text-xs px-1"
+                                                            title="Cancel"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+                                            const seasonText = r?.season ? `${r.season}/${Number(r.season) + (r.flg_season_same_years ? 0 : 1)}` : '-';
+                                            if (!r.status) {
+                                                return (
+                                                    <div className="flex items-center gap-1 group">
+                                                        <span>{seasonText}</span>
+                                                        <button
+                                                            onClick={e => {
+                                                                e.stopPropagation();
+                                                                setEditingStartYear(r.season ? String(r.season) : '');
+                                                                setEditingEndYear(r.season ? String(Number(r.season) + (r.flg_season_same_years ? 0 : 1)) : '');
+                                                                setEditingSeasonRowId(r.id);
+                                                            }}
+                                                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 transition-opacity"
+                                                            title="Edit season years"
+                                                        >
+                                                            ✎
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+                                            return <span>{seasonText}</span>;
+                                        },
+                                    },
                                     { header: 'Source', accessor: (r: any) => <div className="truncate max-w-x10">{r.source_url ?? '-'}</div>, sortKey: 'source_url', sortable: true },
                                     { header: 'Fetched At', accessor: (r: any) => formatDateTimeMinute(r.fetched_at), sortKey: 'fetched_at', sortable: true },
                                     { header: 'Status', accessor: (r: any) => (r.status ? 'Loaded' : 'Not Loaded'), sortKey: 'status', sortable: true },

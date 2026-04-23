@@ -86,8 +86,7 @@ type Series = {
   homePlaceholder?: string | null;
   awayPlaceholder?: string | null;
   matches: BracketMatch[];
-  winsHome: number;
-  winsAway: number;
+  winsById?: Record<string, number>;
   groupId?: number | null;
   earliestDate: string;
 };
@@ -120,8 +119,7 @@ function buildSeries(matches: BracketMatch[]): Series[] {
         homePlaceholder: m.homeClubPlaceholder,
         awayPlaceholder: m.awayClubPlaceholder,
         matches: [m],
-        winsHome: 0,
-        winsAway: 0,
+        winsById: {},
         groupId: (m as any).groupId ?? null,
         earliestDate: m.date ?? '',
       });
@@ -132,14 +130,18 @@ function buildSeries(matches: BracketMatch[]): Series[] {
   });
 
   for (const s of seriesMap.values()) {
-    s.winsHome = 0;
-    s.winsAway = 0;
+    s.winsById = s.winsById || {};
     s.matches.forEach((mm) => {
       const hs = typeof mm.homeScore === 'number' ? mm.homeScore : null;
       const as2 = typeof mm.awayScore === 'number' ? mm.awayScore : null;
       if (hs != null && as2 != null) {
-        if (hs > as2) s.winsHome += 1;
-        else if (as2 > hs) s.winsAway += 1;
+        let winnerId: number | null = null;
+        if (hs > as2) winnerId = mm.homeClubId ?? null;
+        else if (as2 > hs) winnerId = mm.awayClubId ?? null;
+        if (winnerId != null) {
+          const k = String(winnerId);
+          s.winsById![k] = (s.winsById![k] ?? 0) + 1;
+        }
       }
     });
   }
@@ -181,6 +183,10 @@ function SeriesCard({
   const nextGame = s.matches
     .filter((m) => m.status !== 'Finished')
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0] ?? null;
+  const lastPlayed = s.matches
+    .filter((m) => m.status === 'Finished' || (m.homeScore != null && m.awayScore != null))
+    .slice()
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0] ?? null;
 
   return (
     <article className="rounded-xl border border-gray-200 bg-white p-0">
@@ -205,7 +211,7 @@ function SeriesCard({
                   ? (entry.score ?? '-')
                   : (getClubLabel(entry.club, entry.fallbackId, entry.placeholder) === 'TBD'
                       ? '-'
-                      : (entry.winsIdx === 0 ? s.winsHome : s.winsAway))}
+                      : (entry.fallbackId != null ? (s.winsById?.[String(entry.fallbackId)] ?? 0) : 0))}
               </p>
             </div>
           </div>
@@ -216,6 +222,11 @@ function SeriesCard({
           <>
             <span>Next game</span>
             <span>{nextGame.date ? new Date(nextGame.date).toLocaleDateString() : 'TBD'}</span>
+          </>
+        ) : lastPlayed ? (
+          <>
+            <span>Last game</span>
+            <span>{lastPlayed.date ? new Date(lastPlayed.date).toLocaleDateString() : '—'}</span>
           </>
         ) : (
           <>
@@ -862,7 +873,9 @@ function NbaPlayInsBracket({
   const renderMatchCard = (match: BracketMatch, key: string, ref?: (el: HTMLDivElement | null) => void, offset?: number) => {
     const homeSeed = match.homeClubId ? seedMap.get(match.homeClubId) : undefined;
     const awaySeed = match.awayClubId ? seedMap.get(match.awayClubId) : undefined;
-    const shouldFlip = homeSeed != null && awaySeed != null && awaySeed < homeSeed;
+      // Only flip ordering for basketball (NBA) where seed-based mirroring is desired.
+      // For football and other sports preserve the payload home/away orientation.
+      const shouldFlip = homeSeed != null && awaySeed != null && awaySeed < homeSeed;
 
     const top = shouldFlip
       ? { club: match.awayClub, seed: awaySeed, score: match.awayScore, fallbackId: match.awayClubId, placeholder: match.awayClubPlaceholder }
@@ -1419,11 +1432,34 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
       <div ref={containerRef} className="relative flex gap-4 items-start justify-center" style={{ minWidth: `${minContainerWidth}px`, zIndex: 2 }}>
         {filteredPhases.map((phase, phaseIndex) => {
           const isActive = phase.detail === activePhaseDetail;
-          const seriesList = orderedPhaseSeries[phase.detail] || [];
+          let seriesList = orderedPhaseSeries[phase.detail] || [];
+          // For non-NBA (non-basketball) playoffs, if the raw matches exceed the
+          // number of aggregated series, render one card per match so we display
+          // every played game (useful for leagues that play multiple legs).
+          let perMatchMode = false;
+          if (sportKey !== 'basketball' && activePhase === 'Playoffs') {
+            const allMatches = (phase.matches || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+            // If there are more raw matches than aggregated series, switch to
+            // per-match presentation — but group matches by club pair so that
+            // all legs between the same clubs are shown consecutively and
+            // each group's matches are sorted by date.
+            if (allMatches.length > seriesList.length) {
+              perMatchMode = true;
+              // Use existing buildSeries to group by club pair. Ensure each
+              // group's matches are sorted by date and order groups by
+              // earliest match date.
+              const grouped = buildSeries(allMatches);
+              grouped.forEach((g) => {
+                g.matches = (g.matches || []).slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                g.earliestDate = g.matches[0]?.date ?? g.earliestDate ?? '';
+              });
+              seriesList = grouped.slice().sort((a, b) => a.earliestDate.localeCompare(b.earliestDate));
+            }
+          }
           // Ensure refs array
           if (!seriesRefs.current[phase.detail]) seriesRefs.current[phase.detail] = [];
 
-          const expected = PHASE_SLOT_COUNTS[phase.detail];
+                  const expected = perMatchMode ? undefined : PHASE_SLOT_COUNTS[phase.detail];
           const isFinals = phase.detail === 'Finals';
           
           return (
@@ -1458,6 +1494,10 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                   const nextGame = s.matches
                     .filter((m) => m.status !== 'Finished')
                     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))[0] ?? null;
+                  const lastPlayedSeries = s.matches
+                    .filter((m) => m.status === 'Finished' || (m.homeScore != null && m.awayScore != null))
+                    .slice()
+                    .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0] ?? null;
 
                   const offsetKey = `${phase.detail}-${idx}`;
                   const offset = funnelOffsets[offsetKey] ?? 0;
@@ -1468,52 +1508,113 @@ export default function PostseasonBracket({ bracket, activePhase, activePhaseDet
                       ref={(el) => { seriesRefs.current[phase.detail][idx] = el; }}
                       style={{ transform: `translateY(${offset}px)`, transition: 'transform 160ms ease' }}
                     >
-                      <article className="rounded-xl border border-gray-200 bg-white p-3">
-                        <div className="space-y-2">
-                          {[top, bottom].map((entry, i) => (
-                            <div key={`${s.id}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
-                              <div className="min-w-0 flex items-center gap-2">
-                                {/* <p className="text-xs text-gray-500">Seed {entry.seed ?? '-'}</p> */}
-                                {entry.club?.imageUrl && (
-                                  <img 
-                                    src={entry.club.imageUrl} 
-                                    alt="" 
-                                    className="w-6 h-6 object-contain flex-shrink-0"
-                                  />
-                                )}
-                                <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-lg font-semibold text-gray-900">
-                                  {isSingleMatch
-                                    ? (entry.score ?? '-')
-                                    : (getClubLabel(entry.club, entry.fallbackId, entry.placeholder) === 'TBD'
-                                        ? '-'
-                                        : (entry.winsIdx === 0 ? s.winsHome : s.winsAway))}
-                                </p>
-                              </div>
-                            </div>
-                          ))}
+                      {/* If we're in per-match mode and this series contains multiple
+                          legs, render each match as its own card stacked vertically
+                          so matches between the same clubs appear together. */}
+                      {perMatchMode && s.matches.length > 1 ? (
+                        <div className="space-y-3">
+                          {s.matches.map((match, midx) => {
+                            const m = match;
+                            const homeSeedM = m.homeClubId ? seedMap.get(Number(m.homeClubId)) : undefined;
+                            const awaySeedM = m.awayClubId ? seedMap.get(Number(m.awayClubId)) : undefined;
+                            // Preserve original home/away for non-basketball; only flip for basketball.
+                            const shouldFlipM = sportKey === 'basketball' && homeSeedM != null && awaySeedM != null && awaySeedM < homeSeedM;
+                            const topM = shouldFlipM
+                              ? { club: m.awayClub, seed: awaySeedM, score: m.awayScore, fallbackId: m.awayClubId, placeholder: m.awayClubPlaceholder }
+                              : { club: m.homeClub, seed: homeSeedM, score: m.homeScore, fallbackId: m.homeClubId, placeholder: m.homeClubPlaceholder };
+                            const bottomM = shouldFlipM
+                              ? { club: m.homeClub, seed: homeSeedM, score: m.homeScore, fallbackId: m.homeClubId, placeholder: m.homeClubPlaceholder }
+                              : { club: m.awayClub, seed: awaySeedM, score: m.awayScore, fallbackId: m.awayClubId, placeholder: m.awayClubPlaceholder };
+
+                            const finishedM = m.status === 'Finished' || (m.homeScore != null && m.awayScore != null);
+
+                            return (
+                              <article key={`match-${m.id}`} className="rounded-xl border border-gray-200 bg-white p-3">
+                                <div className="space-y-2">
+                                  {[topM, bottomM].map((entry, i) => (
+                                    <div key={`${m.id}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                                      <div className="min-w-0 flex items-center gap-2">
+                                        {entry.club?.imageUrl && (
+                                          <img src={entry.club.imageUrl} alt="" className="w-6 h-6 object-contain flex-shrink-0" />
+                                        )}
+                                        <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-lg font-semibold text-gray-900">{entry.score ?? '-'}</p>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
+                                  {finishedM ? (
+                                    <>
+                                      <span>Played on</span>
+                                      <span>{m.date ? new Date(m.date).toLocaleDateString() : '—'}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>Next game</span>
+                                      <span>{m.date ? new Date(m.date).toLocaleDateString() : 'TBD'}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
                         </div>
-                        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
-                          {isSingleMatch && isFinished ? (
-                            <>
-                              <span>Played on</span>
-                              <span>{rep.date ? new Date(rep.date).toLocaleDateString() : '—'}</span>
-                            </>
-                          ) : nextGame ? (
-                            <>
-                              <span>Next game</span>
-                              <span>{nextGame.date ? new Date(nextGame.date).toLocaleDateString() : 'TBD'}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span>&#8212;</span>
-                              <span>&#8212;</span>
-                            </>
-                          )}
-                        </div>
-                      </article>
+                      ) : (
+                        <article className="rounded-xl border border-gray-200 bg-white p-3">
+                          <div className="space-y-2">
+                            {[top, bottom].map((entry, i) => (
+                              <div key={`${s.id}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                                <div className="min-w-0 flex items-center gap-2">
+                                  {/* <p className="text-xs text-gray-500">Seed {entry.seed ?? '-'}</p> */}
+                                  {entry.club?.imageUrl && (
+                                    <img 
+                                      src={entry.club.imageUrl} 
+                                      alt="" 
+                                      className="w-6 h-6 object-contain flex-shrink-0"
+                                    />
+                                  )}
+                                  <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="text-lg font-semibold text-gray-900">
+                                    {isSingleMatch
+                                      ? (entry.score ?? '-')
+                                      : (getClubLabel(entry.club, entry.fallbackId, entry.placeholder) === 'TBD'
+                                          ? '-'
+                                          : (entry.fallbackId != null ? (s.winsById?.[String(entry.fallbackId)] ?? 0) : 0))}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-gray-500 px-2">
+                            {isSingleMatch && isFinished ? (
+                              <>
+                                <span>Played on</span>
+                                <span>{rep.date ? new Date(rep.date).toLocaleDateString() : '—'}</span>
+                              </>
+                            ) : nextGame ? (
+                              <>
+                                <span>Next game</span>
+                                <span>{nextGame.date ? new Date(nextGame.date).toLocaleDateString() : 'TBD'}</span>
+                              </>
+                            ) : lastPlayedSeries ? (
+                              <>
+                                <span>Last game</span>
+                                <span>{lastPlayedSeries.date ? new Date(lastPlayedSeries.date).toLocaleDateString() : '—'}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>&#8212;</span>
+                                <span>&#8212;</span>
+                              </>
+                            )}
+                          </div>
+                        </article>
+                      )}
                     </div>
                   );
                 })}

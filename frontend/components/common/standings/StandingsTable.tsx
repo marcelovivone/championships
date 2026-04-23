@@ -150,6 +150,8 @@ type StandingsTableProps = {
   teamHeaderLabel?: string;
   positionColorMap?: Record<number, string>;
   sportKey?: string;
+  leagueKey?: string;
+  clubsFullMap?: Record<string, string>;
 };
 
 function Last5Chip({ c, tooltip }: { c: string; tooltip?: React.ReactNode | null }) {
@@ -182,9 +184,10 @@ function Last5Header() {
   );
 }
 
-export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel, positionColorMap, sportKey }: StandingsTableProps) {
+export default function StandingsTable({ rows, isLoading, error, onRetry, clubsMap, historicalMatches, cutoffDate, currentMatches, viewType, teamHeaderLabel, positionColorMap, sportKey, leagueKey, clubsFullMap }: StandingsTableProps) {
   const list = Array.isArray(rows) ? rows : [];
   const isBasketball = String(sportKey ?? '').toLowerCase() === 'basketball';
+  const isNba = isBasketball && String(leagueKey ?? '').toLowerCase().includes('nba');
   // (no debug logs)
   const getAny = (obj: LooseObject | null | undefined, names: string[]) => {
     if (!obj) return undefined;
@@ -206,16 +209,20 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
     return normalized.toFixed(3).replace(/^0(?=\.)/, '');
   };
 
-  const formatStandardPct = (rawPct: unknown, wins: number, played: number) => {
+  const formatStandardPct = (rawPct: unknown, wins: number, points: number, played: number) => {
     let percentage: number | null = null;
     const numericRaw = Number(rawPct);
     if (Number.isFinite(numericRaw)) {
       percentage = numericRaw <= 1 ? numericRaw * 100 : numericRaw;
-    } else if (played > 0) {
+    } else if (wins > 0) {
       percentage = (wins / played) * 100;
+    } else if (points > 0) {
+        // dividing by 3 is specific to football/soccer where a win is 3 points; this won't be accurate for sports with different point systems but is a reasonable fallback
+        // to be implemented in the case of other sports with different point systems, the API should ideally provide a raw percentage or the necessary data to calculate it directly rather than relying on points and wins
+      percentage = (points / (played * 3)) * 100;
     }
     if (percentage === null) return '0';
-    return String(Math.round(percentage));
+    return String(Math.trunc(percentage));
   };
 
   const formatBasketballRecord = (wins: number, losses: number) => `${wins}-${losses}`;
@@ -237,25 +244,37 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
   const enrichedRows: EnrichedRow[] = list.map((r, idx: number) => {
     const position = toNumber(r.position ?? r.rank ?? idx + 1, idx + 1);
     const inferredClubId = r.clubId ?? r.club_id ?? r.club?.id ?? r.teamId ?? r.team_id ?? r.team?.id;
+    // NBA → always use full club name; everything else → always use short_name
     const teamName = String(
-      clubsMap?.[String(inferredClubId ?? '')]
-      ?? r.short_name
-      ?? r.shortName
-      ?? r.teamName
-      ?? r.team?.shortName
-      ?? r.team?.name
-      ?? r.team?.fullName
-      ?? r.clubName
-      ?? r.club?.shortName
-      ?? r.club?.short_name
-      ?? r.club?.name
-      ?? r.club?.originalName
-      ?? r.club?.fullName
-      ?? r.club?.longName
-      ?? r.club?.officialName
-      ?? r.team
-      ?? r.club
-      ?? (inferredClubId ? `#${inferredClubId}` : '—')
+      isNba
+        ? (clubsFullMap?.[String(inferredClubId ?? '')]
+            ?? r.club?.name
+            ?? r.team?.name
+            ?? r.club?.fullName
+            ?? r.club?.originalName
+            ?? r.teamName
+            ?? r.clubName
+            ?? r.team?.fullName
+            ?? r.club?.short_name
+            ?? r.short_name
+            ?? r.shortName
+            ?? r.team
+            ?? r.club
+            ?? (inferredClubId ? `#${inferredClubId}` : '—'))
+        : (r.short_name
+            ?? r.shortName
+            ?? r.club?.short_name
+            ?? r.club?.shortName
+            ?? r.team?.shortName
+            ?? clubsMap?.[String(inferredClubId ?? '')]
+            ?? r.teamName
+            ?? r.clubName
+            ?? r.club?.name
+            ?? r.team?.name
+            ?? r.team?.fullName
+            ?? r.team
+            ?? r.club
+            ?? (inferredClubId ? `#${inferredClubId}` : '—'))
     );
 
     const pts = (viewType === 'home')
@@ -304,7 +323,7 @@ export default function StandingsTable({ rows, isLoading, error, onRetry, clubsM
     const rawPct = getAny(r, ['pct', 'percentage', 'winPercent', 'winningPercentage', 'win_percentage', 'winPct']);
     const pct = isBasketball
       ? formatBasketballPct(rawPct, w, pl)
-      : formatStandardPct(rawPct, w, pl);
+      : formatStandardPct(rawPct, 0, pts, pl);
     const last5History = Array.isArray((r.last5 as LooseObject | undefined)?.history)
       ? ((r.last5 as LooseObject).history as unknown[])
       : [];

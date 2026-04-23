@@ -440,6 +440,8 @@ export default function BaseStandings({
 
   // Map of clubId -> clubName (populated from matches and fetched as needed)
   const [clubsMap, setClubsMap] = React.useState<Record<string, string>>({});
+  // Map of clubId -> full club name (from clubs table / API). Used for NBA display.
+  const [clubsFullMap, setClubsFullMap] = React.useState<Record<string, string>>({});
 
   const getGroupId = React.useCallback((item: any) => String(item?.groupId ?? item?.group?.id ?? item?.group_id ?? ''), []);
   const filterItemsByGroup = React.useCallback((items: any[], groupId: string) => {
@@ -452,15 +454,19 @@ export default function BaseStandings({
     const src = matchesQuery.data !== undefined ? matchesQuery.data : games;
     if (!Array.isArray(src)) return;
     const map: Record<string, string> = {};
+    const fullMap: Record<string, string> = {};
     src.forEach((m: any) => {
       if (m.homeClub && m.homeClub.id) {
-        map[String(m.homeClub.id)] = m.homeClub.name ?? m.homeClub.short_name ?? m.homeClub.shortName ?? m.homeClub.originalName ?? m.homeClub.fullName ?? m.homeClub.longName ?? m.homeClub.officialName ?? m.homeClub.clubName ?? '';
+        map[String(m.homeClub.id)] = m.homeClub.short_name ?? m.homeClub.shortName ?? m.homeClub.name ?? m.homeClub.originalName ?? m.homeClub.fullName ?? m.homeClub.longName ?? m.homeClub.officialName ?? m.homeClub.clubName ?? '';
+        fullMap[String(m.homeClub.id)] = m.homeClub.name ?? m.homeClub.fullName ?? m.homeClub.originalName ?? m.homeClub.longName ?? m.homeClub.officialName ?? m.homeClub.short_name ?? '';
       }
       if (m.awayClub && m.awayClub.id) {
-        map[String(m.awayClub.id)] = m.awayClub.name ?? m.awayClub.short_name ?? m.awayClub.shortName ?? m.awayClub.originalName ?? m.awayClub.fullName ?? m.awayClub.longName ?? m.awayClub.officialName ?? m.awayClub.clubName ?? '';
+        map[String(m.awayClub.id)] = m.awayClub.short_name ?? m.awayClub.shortName ?? m.awayClub.name ?? m.awayClub.originalName ?? m.awayClub.fullName ?? m.awayClub.longName ?? m.awayClub.officialName ?? m.awayClub.clubName ?? '';
+        fullMap[String(m.awayClub.id)] = m.awayClub.name ?? m.awayClub.fullName ?? m.awayClub.originalName ?? m.awayClub.longName ?? m.awayClub.officialName ?? m.awayClub.short_name ?? '';
       }
     });
     if (Object.keys(map).length > 0) setClubsMap((prev) => ({ ...prev, ...map }));
+    if (Object.keys(fullMap).length > 0) setClubsFullMap((prev) => ({ ...prev, ...fullMap }));
   }, [matchesQuery.data, games]);
 
   // Ensure club names exist for standings rows by fetching missing club records
@@ -485,14 +491,22 @@ export default function BaseStandings({
       try {
         const results = await Promise.all(missing.map((id) => apiClient.get(`/v1/clubs/${id}`).then((r: any) => r.data || r).catch(() => null)));
         const newMap: Record<string, string> = {};
+        const newFullMap: Record<string, string> = {};
         results.forEach((res: any, i: number) => {
           const id = missing[i];
           if (res) {
-            const name = res.short_name ?? res.shortName ?? res.displayName ?? res.name ?? res.originalName ?? res.fullName ?? res.longName ?? res.officialName ?? res.clubName;
-            if (name) newMap[String(id)] = name;
+            // Populate short-name-first map for compact displays
+            const shortName = res.short_name ?? res.shortName ?? res.displayName ?? undefined;
+            const longName = res.name ?? res.displayName ?? res.fullName ?? res.originalName ?? res.longName ?? undefined;
+            if (shortName) newMap[String(id)] = shortName;
+            else if (longName) newMap[String(id)] = longName;
+            // Populate full-name map (prefer long name, fallback to short)
+            if (longName) newFullMap[String(id)] = longName;
+            else if (shortName) newFullMap[String(id)] = shortName;
           }
         });
         if (mounted && Object.keys(newMap).length > 0) setClubsMap((prev) => ({ ...prev, ...newMap }));
+        if (mounted && Object.keys(newFullMap).length > 0) setClubsFullMap((prev) => ({ ...prev, ...newFullMap }));
       } catch (e) {
         // ignore
       }
@@ -892,11 +906,12 @@ export default function BaseStandings({
               }
 
               const currentMatches = (matchesQuery.data !== undefined ? matchesQuery.data : games) as any[];
-              const buildTable = (rows: any[], _activeGroupId?: string, teamHeaderLabel?: string) => {
+                  const buildTable = (rows: any[], _activeGroupId?: string, teamHeaderLabel?: string) => {
                 return (
                   <StandingsTable
                     rows={rows}
                     clubsMap={clubsMap}
+                        clubsFullMap={clubsFullMap}
                     historicalMatches={historicalMatchesForTable}
                     cutoffDate={cutoffDate}
                     currentMatches={currentMatches}
@@ -904,6 +919,7 @@ export default function BaseStandings({
                     teamHeaderLabel={teamHeaderLabel}
                     positionColorMap={_activeGroupId ? groupPositionColorMap : combinedPositionColorMap}
                     sportKey={sportKey}
+                    leagueKey={selectedLeague?.secondaryName ?? selectedLeague?.originalName ?? undefined}
                   />
                 );
               };
@@ -916,12 +932,14 @@ export default function BaseStandings({
                   <StandingsTable
                     rows={filtered}
                     clubsMap={clubsMap}
+                    clubsFullMap={clubsFullMap}
                     historicalMatches={historicalMatchesForTable}
                     cutoffDate={cutoffDate}
                     currentMatches={currentMatches}
                     viewType={viewType}
                     positionColorMap={isSingleGroupView ? groupPositionColorMap : combinedPositionColorMap}
                     sportKey={sportKey}
+                    leagueKey={selectedLeague?.secondaryName ?? selectedLeague?.originalName ?? undefined}
                   />
                 );
               } else {
