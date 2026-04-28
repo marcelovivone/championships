@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.standingOrderRules = exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
+exports.standingOrderRules = exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.seasonPhaseDetailEnum = exports.seasonPhaseEnum = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
 const pg_core_1 = require("drizzle-orm/pg-core");
 exports.sports = (0, pg_core_1.pgTable)('sports', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
@@ -88,6 +88,21 @@ exports.leagues = (0, pg_core_1.pgTable)('leagues', {
     flgDefault: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
+exports.seasonPhaseEnum = (0, pg_core_1.pgEnum)('season_phase', [
+    'Regular',
+    'Play-ins',
+    'Playoffs',
+]);
+exports.seasonPhaseDetailEnum = (0, pg_core_1.pgEnum)('season_phase_detail', [
+    'Regular',
+    'Play-ins',
+    'Round of 64',
+    'Round of 32',
+    'Round of 16',
+    'Quarterfinals',
+    'Semifinals',
+    'Finals',
+]);
 exports.leagueLinks = (0, pg_core_1.pgTable)('league_links', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
     leagueId: (0, pg_core_1.integer)('league_id').references(() => exports.leagues.id).notNull(),
@@ -104,6 +119,9 @@ exports.seasons = (0, pg_core_1.pgTable)('seasons', {
     status: (0, pg_core_1.varchar)('status', { length: 20 }).default('planned').notNull(),
     flgDefault: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
     numberOfGroups: (0, pg_core_1.integer)('number_of_groups').default(0).notNull(),
+    flgHasPostseason: (0, pg_core_1.boolean)('flg_has_postseason').default(false).notNull(),
+    currentPhase: (0, exports.seasonPhaseEnum)('current_phase').default('Regular').notNull(),
+    currentPhaseDetail: (0, exports.seasonPhaseDetailEnum)('current_phase_detail').default('Regular').notNull(),
     flgEspnApiPartialScores: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
@@ -148,11 +166,15 @@ exports.matches = (0, pg_core_1.pgTable)('matches', {
     seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id).notNull(),
     roundId: (0, pg_core_1.integer)('round_id').references(() => exports.rounds.id).notNull(),
     groupId: (0, pg_core_1.integer)('group_id').references(() => exports.groups.id),
-    homeClubId: (0, pg_core_1.integer)('home_club_id').references(() => exports.clubs.id).notNull(),
-    awayClubId: (0, pg_core_1.integer)('away_club_id').references(() => exports.clubs.id).notNull(),
+    homeClubId: (0, pg_core_1.integer)('home_club_id').references(() => exports.clubs.id),
+    awayClubId: (0, pg_core_1.integer)('away_club_id').references(() => exports.clubs.id),
+    homeClubPlaceholder: (0, pg_core_1.varchar)('home_club_placeholder', { length: 120 }),
+    awayClubPlaceholder: (0, pg_core_1.varchar)('away_club_placeholder', { length: 120 }),
     stadiumId: (0, pg_core_1.integer)('stadium_id').references(() => exports.stadiums.id),
     date: (0, pg_core_1.timestamp)('date').notNull(),
     status: (0, exports.matchStatusEnum)('status').default('Scheduled').notNull(),
+    seasonPhase: (0, exports.seasonPhaseEnum)('season_phase').default('Regular').notNull(),
+    seasonPhaseDetail: (0, exports.seasonPhaseDetailEnum)('season_phase_detail').default('Regular').notNull(),
     homeScore: (0, pg_core_1.integer)('home_score'),
     awayScore: (0, pg_core_1.integer)('away_score'),
     originApiId: (0, pg_core_1.varchar)('origin_api_id', { length: 50 }),

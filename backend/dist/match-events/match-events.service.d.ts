@@ -39,10 +39,10 @@ export declare class MatchEventsService {
         createdAt: Date;
         clubId: number;
         matchId: number;
-        description: string;
         eventType: string;
         playerId: number;
         minute: number;
+        description: string;
     }>;
     update(id: number, updateEventDto: UpdateMatchEventDto): Promise<{
         id: number;
@@ -59,9 +59,9 @@ export declare class MatchEventsService {
         createdAt: Date;
         clubId: number;
         matchId: number;
-        description: string;
         eventType: string;
         playerId: number;
         minute: number;
+        description: string;
     }>;
 }

@@ -210,6 +210,13 @@ let StandingsService = class StandingsService {
             return rows;
         }
     }
+    async rankRowsForSeasonContext(rows, leagueId, seasonId, maxDate = null) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+            return [];
+        }
+        const sportId = Number(rows[0]?.sportId ?? 0);
+        return this.sortWithTiebreakers([...rows], leagueId, sportId, seasonId, maxDate);
+    }
     async findByLeagueIdAndSeasonIdAndMatchDate(leagueId, seasonId, matchDate, clubId) {
         try {
             const selectedDate = new Date(matchDate);

@@ -9,6 +9,8 @@ export declare class CreateMatchDto {
     awayClubId: number;
     stadiumId?: number;
     date: string;
+    seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+    seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
     homeScore?: number;
     awayScore?: number;
     status?: MatchStatus;
@@ -25,6 +27,8 @@ export declare class UpdateMatchDto {
     awayClubId?: number;
     stadiumId?: number;
     date?: string;
+    seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+    seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
     homeScore?: number;
     awayScore?: number;
     status?: MatchStatus;
@@ -40,6 +44,10 @@ export declare class MatchResponseDto {
     awayClubId: number;
     stadiumId?: number;
     date: Date;
+    seasonPhase?: 'Regular' | 'Play-ins' | 'Playoffs';
+    seasonPhaseDetail?: 'Regular' | 'Play-ins' | 'Round of 64' | 'Round of 32' | 'Round of 16' | 'Quarterfinals' | 'Semifinals' | 'Finals';
+    homeClubPlaceholder?: string | null;
+    awayClubPlaceholder?: string | null;
     homeScore?: number;
     awayScore?: number;
     hasOvertime?: boolean;

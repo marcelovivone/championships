@@ -66,6 +66,18 @@ __decorate([
     __metadata("design:type", String)
 ], CreateMatchDto.prototype, "date", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', description: 'Season phase', enum: ['Regular', 'Play-ins', 'Playoffs'], required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Playoffs']),
+    __metadata("design:type", String)
+], CreateMatchDto.prototype, "seasonPhase", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', description: 'Season phase detail', enum: ['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'], required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals']),
+    __metadata("design:type", String)
+], CreateMatchDto.prototype, "seasonPhaseDetail", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 2, description: 'Home score (optional)', required: false }),
     (0, class_validator_1.IsOptional)(),
     (0, class_transformer_1.Type)(() => Number),
@@ -148,6 +160,16 @@ __decorate([
 ], UpdateMatchDto.prototype, "date", void 0);
 __decorate([
     (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Playoffs']),
+    __metadata("design:type", String)
+], UpdateMatchDto.prototype, "seasonPhase", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals']),
+    __metadata("design:type", String)
+], UpdateMatchDto.prototype, "seasonPhaseDetail", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsInt)(),
     __metadata("design:type", Number)
 ], UpdateMatchDto.prototype, "homeScore", void 0);
@@ -206,6 +228,22 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: '2024-05-20T15:00:00Z' }),
     __metadata("design:type", Date)
 ], MatchResponseDto.prototype, "date", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', required: false }),
+    __metadata("design:type", String)
+], MatchResponseDto.prototype, "seasonPhase", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', required: false }),
+    __metadata("design:type", String)
+], MatchResponseDto.prototype, "seasonPhaseDetail", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'TBD', required: false }),
+    __metadata("design:type", String)
+], MatchResponseDto.prototype, "homeClubPlaceholder", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Magic/Hornets', required: false }),
+    __metadata("design:type", String)
+], MatchResponseDto.prototype, "awayClubPlaceholder", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 2, required: false }),
     __metadata("design:type", Number)

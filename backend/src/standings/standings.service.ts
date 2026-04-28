@@ -271,6 +271,20 @@ export class StandingsService {
             }
         }
 
+        async rankRowsForSeasonContext(
+            rows: any[],
+            leagueId: number,
+            seasonId: number,
+            maxDate: Date | null = null,
+        ): Promise<any[]> {
+            if (!Array.isArray(rows) || rows.length === 0) {
+                return [];
+            }
+
+            const sportId = Number(rows[0]?.sportId ?? 0);
+            return this.sortWithTiebreakers([...rows], leagueId, sportId, seasonId, maxDate);
+        }
+
         /**
          * Get standings by leagueId, seasonId, and matchDate
          */

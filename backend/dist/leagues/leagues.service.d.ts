@@ -74,11 +74,11 @@ export declare class LeaguesService {
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
+        countryId: number;
+        cityId: number;
         sportId: number;
         originalName: string;
         secondaryName: string;
-        countryId: number;
-        cityId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;
@@ -125,11 +125,11 @@ export declare class LeaguesService {
         flgDefault: boolean;
         imageUrl: string;
         createdAt: Date;
+        countryId: number;
+        cityId: number;
         sportId: number;
         originalName: string;
         secondaryName: string;
-        countryId: number;
-        cityId: number;
         numberOfRoundsMatches: number;
         minDivisionsNumber: number;
         maxDivisionsNumber: number;

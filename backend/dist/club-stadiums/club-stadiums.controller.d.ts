@@ -7,10 +7,10 @@ export declare class ClubStadiumsController {
     create(createClubStadiumDto: CreateClubStadiumDto): Promise<{
         id: number;
         createdAt: Date;
-        startDate: Date;
-        endDate: Date;
         clubId: number;
         stadiumId: number;
+        startDate: Date;
+        endDate: Date;
     }>;
     findAll(): Promise<{
         id: number;

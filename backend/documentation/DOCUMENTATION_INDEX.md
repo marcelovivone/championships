@@ -176,6 +176,10 @@ Welcome! This guide will help you navigate all the documentation for the Champio
 - Then: [PHASE2_SERVICES_COMPLETE.md](PHASE2_SERVICES_COMPLETE.md)
 - Then: [PHASE3_CONTROLLERS_COMPLETE.md](PHASE3_CONTROLLERS_COMPLETE.md)
 
+#### "...recent frontend playoff changes"
+→ Read: [Postseason Bracket Updates (2026-04-24)](POSTSEASON_BRACKET_UPDATES_2026-04-24.md)
+ - Summary of changes to `PostseasonBracket.tsx` and play-in / NBA ordering fixes
+
 #### "...use the API"
 → Read: [API_QUICK_REFERENCE.md](API_QUICK_REFERENCE.md)
 - Reference while coding

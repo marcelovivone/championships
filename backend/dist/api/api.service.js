@@ -276,7 +276,7 @@ let ApiService = ApiService_1 = class ApiService {
         }
         return { found: true, firstRow, matches };
     }
-    async fetchAndStore(league, season, sport, origin, startDate, endDate, seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, hasGroups, numberOfGroups, runInBackground, inferClubs) {
+    async fetchAndStore(league, season, sport, origin, startDate, endDate, seasonStatus, isSeasonDefault, sameYears, hasPostseason, scheduleType, isLeagueDefault, hasDivisions, hasGroups, numberOfGroups, runInBackground, inferClubs) {
         if (!process.env.DATABASE_URL)
             throw new Error('Missing DATABASE_URL environment variable');
         const pool = new pg_1.Pool({ connectionString: process.env.DATABASE_URL });
@@ -329,14 +329,17 @@ let ApiService = ApiService_1 = class ApiService {
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
                     await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
+                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
                     const placeholderRes = await pool.query(`INSERT INTO api_transitional 
                              (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
                               flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
-                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status)
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status,
+                              flg_has_postseason)
+                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
                          RETURNING id, fetched_at`, [league || null, season || null, sport || null, url.toString(), '{}', effectiveOrigin,
                         seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions,
-                        hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching']);
+                        hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching',
+                        hasPostseason ?? false]);
                     const bgId = placeholderRes.rows[0].id;
                     const bgFetchedAt = placeholderRes.rows[0].fetched_at;
                     const self = this;
@@ -418,15 +421,20 @@ let ApiService = ApiService_1 = class ApiService {
                 flg_infer_clubs BOOLEAN DEFAULT false
                 );
             `);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS fetch_status TEXT DEFAULT 'done'`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
+            await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
             const insertRes = await pool.query(`INSERT 
                         INTO api_transitional 
                              (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
                               flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
-                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs) 
-                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) 
+                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, flg_has_postseason) 
+                      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) 
                       RETURNING id, fetched_at;`, [league || null, season || null, sport || null, url.toString(), json, effectiveOrigin,
                 seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions,
-                hasGroups, numberOfGroups, runInBackground, inferClubs ?? false]);
+                hasGroups, numberOfGroups, runInBackground, inferClubs ?? false, hasPostseason ?? false]);
             return { id: insertRes.rows[0].id, fetched_at: insertRes.rows[0].fetched_at };
         }
         finally {
@@ -456,6 +464,7 @@ let ApiService = ApiService_1 = class ApiService {
                         number_of_groups,
                         flg_run_in_background,
                         flg_infer_clubs,
+                        flg_has_postseason,
                         COALESCE(fetch_status, 'done') as fetch_status
                  FROM api_transitional
                  ORDER BY fetched_at DESC LIMIT $1`, [limit]);
@@ -989,6 +998,8 @@ let ApiService = ApiService_1 = class ApiService {
                         for (const clubName of [homeName, awayName]) {
                             if (!clubName || earlySeenClubs.has(clubName))
                                 continue;
+                            if (this.isAmbiguousClubPlaceholderName(clubName))
+                                continue;
                             earlySeenClubs.add(clubName);
                             if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined)
                                 continue;
@@ -1012,7 +1023,7 @@ let ApiService = ApiService_1 = class ApiService {
                             }
                             earlyClubbsToReview.push({
                                 name: clubName,
-                                suggestions: suggestions.rows.map((s) => ({ id: s.id, name: s.name, shortName: s.short_name })),
+                                suggestions: this.rankClubSuggestionRows(suggestions.rows, clubName).map((s) => ({ id: s.id, name: s.name, shortName: s.short_name })),
                             });
                         }
                     }
@@ -1046,6 +1057,8 @@ let ApiService = ApiService_1 = class ApiService {
                 if (leagueCountryId || !inferClubs) {
                     for (const clubName of [homeName, awayName]) {
                         if (!clubName || seenClubs.has(clubName))
+                            continue;
+                        if (this.isAmbiguousClubPlaceholderName(clubName))
                             continue;
                         seenClubs.add(clubName);
                         if (existingMappings.clubs && existingMappings.clubs[clubName] !== undefined) {
@@ -1109,7 +1122,7 @@ let ApiService = ApiService_1 = class ApiService {
                             }
                             clubsToReview.push({
                                 name: clubName,
-                                suggestions: suggestions.rows.map((s) => ({
+                                suggestions: this.rankClubSuggestionRows(suggestions.rows, clubName).map((s) => ({
                                     id: s.id,
                                     name: s.name,
                                     shortName: s.short_name,
@@ -1210,7 +1223,7 @@ let ApiService = ApiService_1 = class ApiService {
         try {
             if (!updates || typeof updates !== 'object')
                 return { updated: false };
-            const allowed = ['status', 'league', 'season', 'sport', 'source_url', 'payload', 'origin'];
+            const allowed = ['status', 'league', 'season', 'flg_season_same_years', 'sport', 'source_url', 'payload', 'origin'];
             const keys = Object.keys(updates).filter((k) => allowed.includes(k));
             if (!keys.length)
                 return { updated: false };
@@ -1429,6 +1442,14 @@ let ApiService = ApiService_1 = class ApiService {
         };
         let flatRows = rows.map((r) => flatten(r));
         flatRows = this.filterApiFootballFixturesBySeasonPhase(flatRows, seasonPhase);
+        flatRows = flatRows.map((item) => {
+            const phaseInfo = this.inferApiFootballSeasonPhase(item);
+            return {
+                ...item,
+                'season.phase': phaseInfo.seasonPhase,
+                'season.phase_detail': phaseInfo.seasonPhaseDetail,
+            };
+        });
         const columns = Array.from(new Set(flatRows.flatMap(Object.keys)));
         return { found: true, columns, rows: flatRows };
     }
@@ -1440,17 +1461,87 @@ let ApiService = ApiService_1 = class ApiService {
             return 'postseason';
         return 'all';
     }
+    isAmbiguousClubPlaceholderName(clubNameRaw) {
+        const name = String(clubNameRaw ?? '').trim().toLowerCase();
+        if (!name)
+            return true;
+        return (name === 'tbd' ||
+            name === 'to be defined' ||
+            name === 'winner' ||
+            name === 'loser' ||
+            name.includes('winner of') ||
+            name.includes('loser of') ||
+            name.includes('to be determined') ||
+            name.includes('/'));
+    }
+    rankClubSuggestionRows(rows, clubNameRaw) {
+        const normalizedName = String(clubNameRaw ?? '').trim();
+        if (!normalizedName || !Array.isArray(rows) || rows.length === 0)
+            return rows;
+        const tokens = Array.from(new Set(normalizedName
+            .split('/')
+            .map((token) => normalizeLookupKey(token))
+            .filter((token) => token && token !== 'tbd' && token !== 'tobedefined')));
+        if (tokens.length === 0)
+            return rows;
+        const scored = rows
+            .map((row) => {
+            const haystack = `${normalizeLookupKey(row?.name ?? '')} ${normalizeLookupKey(row?.short_name ?? '')}`.trim();
+            const score = tokens.reduce((sum, token) => sum + (haystack.includes(token) ? 1 : 0), 0);
+            return { row, score };
+        })
+            .filter((entry) => entry.score > 0)
+            .sort((left, right) => right.score - left.score || String(left.row?.name ?? '').localeCompare(String(right.row?.name ?? '')))
+            .map((entry) => entry.row);
+        return scored.length > 0 ? scored : rows;
+    }
+    classifyEspnEventSeasonPhase(event) {
+        const candidateValues = [
+            event?.season?.slug,
+            event?.seasonType?.slug,
+            event?.seasonType?.name,
+            event?.seasonType?.abbreviation,
+            event?.seasonType?.description,
+            event?.header?.seasonType?.slug,
+            event?.header?.seasonType?.name,
+            event?.header?.seasonType?.abbreviation,
+            event?.header?.seasonType?.description,
+            event?.season?.type?.slug,
+            event?.season?.type?.name,
+            event?.season?.type?.abbreviation,
+            event?.season?.type?.description,
+            event?.status?.type?.slug,
+            event?.status?.type?.name,
+        ];
+        for (const rawValue of candidateValues) {
+            if (typeof rawValue !== 'string')
+                continue;
+            const value = rawValue.trim().toLowerCase();
+            if (!value)
+                continue;
+            if (value === 'regular-season' || value.includes('regular season')) {
+                return 'regular-season';
+            }
+            if (value === 'postseason' ||
+                value.includes('post season') ||
+                value.includes('postseason') ||
+                value.includes('playoff') ||
+                value.includes('play-off') ||
+                value.includes('knockout')) {
+                return 'postseason';
+            }
+        }
+        return null;
+    }
     filterEspnEventsBySeasonPhase(events, seasonPhase) {
         const normalized = this.normalizeSeasonPhaseFilter(seasonPhase);
         if (normalized === 'all')
             return events;
         return events.filter((event) => {
-            const slug = String(event?.season?.slug ?? '').trim().toLowerCase();
-            if (!slug)
+            const phase = this.classifyEspnEventSeasonPhase(event);
+            if (!phase)
                 return true;
-            if (normalized === 'regular-season')
-                return slug === 'regular-season';
-            return slug !== 'regular-season';
+            return normalized === phase;
         });
     }
     filterApiFootballFixturesBySeasonPhase(fixtures, seasonPhase) {
@@ -1464,6 +1555,82 @@ let ApiService = ApiService_1 = class ApiService {
                 return isRegularSeason;
             return !isRegularSeason;
         });
+    }
+    inferSeasonPhaseDetailFromText(phaseTextRaw, detailTextRaw) {
+        const phaseText = String(phaseTextRaw ?? '').trim().toLowerCase();
+        const detailText = String(detailTextRaw ?? '').trim().toLowerCase();
+        const haystack = `${phaseText} ${detailText}`.trim();
+        const playoffsDetail = () => {
+            if (/(rd\s*64|round\s*of\s*64)/.test(haystack))
+                return 'Round of 64';
+            if (/(rd\s*32|round\s*of\s*32)/.test(haystack))
+                return 'Round of 32';
+            if (/(rd\s*16|round\s*of\s*16|eighth[-\s]?final)/.test(haystack))
+                return 'Round of 16';
+            if (/(qtr|quarter[-\s]?final)/.test(haystack))
+                return 'Quarterfinals';
+            if (/(semi|semi[-\s]?final)/.test(haystack))
+                return 'Semifinals';
+            if (/(final|finals)/.test(haystack))
+                return 'Finals';
+            return 'Quarterfinals';
+        };
+        if (!haystack || haystack.includes('regular season') || haystack === 'regular') {
+            return { seasonPhase: 'Regular', seasonPhaseDetail: 'Regular' };
+        }
+        if (haystack.includes('play-in')) {
+            return { seasonPhase: 'Play-ins', seasonPhaseDetail: 'Play-ins' };
+        }
+        if (haystack.includes('post season') ||
+            haystack.includes('post-season') ||
+            haystack.includes('postseason') ||
+            haystack.includes('playoff') ||
+            haystack.includes('play-off') ||
+            haystack.includes('knockout') ||
+            haystack.includes('semifinal') ||
+            haystack.includes('quarterfinal') ||
+            haystack.includes('final') ||
+            /rd\s*(16|32|64)/.test(haystack)) {
+            return { seasonPhase: 'Playoffs', seasonPhaseDetail: playoffsDetail() };
+        }
+        return { seasonPhase: 'Regular', seasonPhaseDetail: 'Regular' };
+    }
+    inferEspnSeasonPhase(event) {
+        const slug = event?.season?.slug
+            ?? event?.season?.type?.slug
+            ?? event?.seasonType?.slug
+            ?? event?.header?.seasonType?.slug
+            ?? null;
+        const abbreviation = event?.competitions?.[0]?.type?.abbreviation ?? null;
+        return this.inferSeasonPhaseDetailFromText(slug, abbreviation);
+    }
+    inferApiFootballSeasonPhase(row) {
+        const roundValue = row?.league?.round ?? row?.['league.round'] ?? null;
+        return this.inferSeasonPhaseDetailFromText(roundValue);
+    }
+    isRawEspnEventFinished(event) {
+        const status = event?.competitions?.[0]?.status?.type ?? event?.status?.type ?? {};
+        return status?.completed === true || status?.state === 'post' || String(status?.shortDetail ?? '').trim().toUpperCase() === 'FT';
+    }
+    isRawApiFootballFixtureFinished(fixture) {
+        const short = String(fixture?.fixture?.status?.short ?? '').trim().toUpperCase();
+        return short === 'FT';
+    }
+    detectCurrentSeasonPhase(row) {
+        const payload = row?.payload ?? row;
+        const origin = row?.origin ?? 'Api-Football';
+        if (origin === 'Api-Espn') {
+            const events = Array.isArray(payload?.events) ? payload.events : [];
+            const latestFinished = events
+                .filter((event) => this.isRawEspnEventFinished(event))
+                .sort((a, b) => new Date(b?.date ?? 0).getTime() - new Date(a?.date ?? 0).getTime())[0];
+            return latestFinished ? this.inferEspnSeasonPhase(latestFinished) : null;
+        }
+        const fixtures = Array.isArray(payload?.response) ? payload.response : [];
+        const latestFinished = fixtures
+            .filter((fixture) => this.isRawApiFootballFixtureFinished(fixture))
+            .sort((a, b) => Number(b?.fixture?.timestamp ?? 0) - Number(a?.fixture?.timestamp ?? 0))[0];
+        return latestFinished ? this.inferApiFootballSeasonPhase(latestFinished) : null;
     }
     parseTransitionalEspn(row, roundOverrides, seasonPhase, fallbackCountry) {
         const payload = row.payload ?? row;
@@ -2393,21 +2560,32 @@ let ApiService = ApiService_1 = class ApiService {
         return `${yyyy}${mm}${dd}`;
     }
     getEspnSeasonStartYear(payload, seasonInfo) {
-        const candidateDates = [
-            payload?.leagues?.[0]?.season?.startDate,
-            payload?.leagues?.[0]?.calendarStartDate,
-            seasonInfo?.startDate,
-        ];
-        for (const rawDate of candidateDates) {
-            if (!rawDate)
-                continue;
-            const parsed = new Date(String(rawDate));
-            if (!Number.isNaN(parsed.getTime())) {
-                return parsed.getUTCFullYear();
+        const eventSeasonYear = Number(seasonInfo?.year);
+        const hasEvent = Number.isFinite(eventSeasonYear) && eventSeasonYear > 1900;
+        const sdYearCandidate = (() => {
+            const candidateDates = [
+                payload?.leagues?.[0]?.season?.startDate,
+                payload?.leagues?.[0]?.calendarStartDate,
+                seasonInfo?.startDate,
+            ];
+            for (const rawDate of candidateDates) {
+                if (!rawDate)
+                    continue;
+                const parsed = new Date(String(rawDate));
+                if (!Number.isNaN(parsed.getTime())) {
+                    return parsed.getUTCFullYear();
+                }
             }
-        }
-        const fallbackYear = Number(seasonInfo?.year);
-        return Number.isFinite(fallbackYear) ? fallbackYear : null;
+            return null;
+        })();
+        const hasSd = sdYearCandidate !== null;
+        if (hasEvent && hasSd)
+            return Math.min(eventSeasonYear, sdYearCandidate);
+        if (hasEvent)
+            return eventSeasonYear;
+        if (hasSd)
+            return sdYearCandidate;
+        return null;
     }
     async fetchEspnScoreboardByDate(sport, league, date) {
         const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/scoreboard?dates=${date}`;
@@ -2570,7 +2748,7 @@ let ApiService = ApiService_1 = class ApiService {
             try {
                 const tRes = await client.query(`SELECT season_status, flg_season_default, flg_season_same_years, league_schedule_type, 
                             flg_league_default, flg_has_divisions, flg_has_groups, number_of_groups, 
-                            flg_infer_clubs, flg_run_in_background 
+                                                        flg_infer_clubs, flg_run_in_background, flg_has_postseason 
                        FROM api_transitional 
                       WHERE id = $1 LIMIT 1`, [id]);
                 const defaults = {
@@ -2584,6 +2762,7 @@ let ApiService = ApiService_1 = class ApiService {
                     number_of_groups: 0,
                     flg_infer_clubs: true,
                     flg_run_in_background: true,
+                    flg_has_postseason: false,
                 };
                 const row = tRes && tRes.rows && tRes.rows.length ? tRes.rows[0] : {};
                 transitionalDbRow = { ...defaults, ...row };
@@ -2602,6 +2781,7 @@ let ApiService = ApiService_1 = class ApiService {
                     number_of_groups: 0,
                     flg_infer_clubs: true,
                     flg_run_in_background: true,
+                    flg_has_postseason: false,
                     sameYears: false,
                 };
             }
@@ -2635,9 +2815,9 @@ let ApiService = ApiService_1 = class ApiService {
             const sportId = options.sportId ?? 36;
             const clubNameSet = new Set();
             for (const row of rows) {
-                if (row['teams.home.name'])
+                if (row['teams.home.name'] && !this.isAmbiguousClubPlaceholderName(row['teams.home.name']))
                     clubNameSet.add(String(row['teams.home.name']).trim());
-                if (row['teams.away.name'])
+                if (row['teams.away.name'] && !this.isAmbiguousClubPlaceholderName(row['teams.away.name']))
                     clubNameSet.add(String(row['teams.away.name']).trim());
             }
             for (const clubNameRaw of clubNameSet) {
@@ -2832,6 +3012,9 @@ let ApiService = ApiService_1 = class ApiService {
             }
             let seasonId = null;
             let seasonWasCreated = false;
+            const detectedSeasonPhase = transitionalDbRow.flg_has_postseason && options.seasonPhase !== 'regular-season'
+                ? this.detectCurrentSeasonPhase(await this.getTransitional(id))
+                : null;
             if (leagueSeason && leagueId) {
                 const sportId = options.sportId ?? 36;
                 const sRes = await client.query(`SELECT id FROM seasons WHERE sport_id = $1 AND league_id = $2 AND start_year = $3 LIMIT 1`, [sportId, leagueId, leagueSeason]);
@@ -2843,10 +3026,24 @@ let ApiService = ApiService_1 = class ApiService {
                     const startYearNum = tRes2.rows?.[0]?.season ?? null;
                     const startYear = Number.isFinite(startYearNum) ? Math.trunc(startYearNum) : leagueSeason;
                     const endYear = transitionalDbRow.sameYears ? startYear : Number.isFinite(startYearNum) ? startYearNum + 1 : startYear;
-                    const ins = await client.query(`INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [sportId, leagueId, transitionalDbRow.season_status, transitionalDbRow.flg_season_default, 0, startYear, endYear]);
+                    const ins = await client.query(`INSERT INTO seasons (sport_id, league_id, status, flg_default, number_of_groups, start_year, end_year, flg_has_postseason, current_phase, current_phase_detail) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, [
+                        sportId,
+                        leagueId,
+                        transitionalDbRow.season_status,
+                        transitionalDbRow.flg_season_default,
+                        0,
+                        startYear,
+                        endYear,
+                        transitionalDbRow.flg_has_postseason || false,
+                        detectedSeasonPhase?.seasonPhase ?? 'Regular',
+                        detectedSeasonPhase?.seasonPhaseDetail ?? 'Regular',
+                    ]);
                     seasonId = ins.rows[0].id;
                     seasonWasCreated = true;
                 }
+            }
+            if (seasonId && transitionalDbRow.flg_has_postseason && options.seasonPhase !== 'regular-season' && detectedSeasonPhase) {
+                await client.query(`UPDATE seasons SET current_phase = $1, current_phase_detail = $2 WHERE id = $3`, [detectedSeasonPhase.seasonPhase, detectedSeasonPhase.seasonPhaseDetail, seasonId]);
             }
             if (seasonWasCreated && transitionalDbRow.flg_has_groups && leagueId && seasonId) {
                 const sportId = options.sportId ?? 36;
@@ -3052,6 +3249,9 @@ let ApiService = ApiService_1 = class ApiService {
                 'fixture.timestamp': event?.date ? new Date(event.date).getTime() / 1000 : null,
                 'origin_api_id': event?.id != null ? String(event.id) : null,
             };
+            const phaseInfo = this.inferEspnSeasonPhase(event);
+            mapped['season.phase'] = phaseInfo.seasonPhase;
+            mapped['season.phase_detail'] = phaseInfo.seasonPhaseDetail;
             const homeLinescores = (homeTeam?.linescores ?? []).map((ls) => {
                 const v = ls?.value ?? ls?.displayValue;
                 return v != null ? Math.max(0, Math.trunc(Number(v))) : 0;
@@ -3466,6 +3666,26 @@ let ApiService = ApiService_1 = class ApiService {
             let createdMatches = 0;
             let createdStadiums = 0;
             const stadiumsCreated = [];
+            const PHASE_ORDER = { 'Regular': 0, 'Play-ins': 1, 'Playoffs': 2 };
+            const PHASE_DETAIL_ORDER = {
+                'Regular': 0, 'Play-ins': 1,
+                'Round of 64': 2, 'Round of 32': 3, 'Round of 16': 4,
+                'Quarterfinals': 5, 'Semifinals': 6, 'Finals': 7,
+            };
+            const postseasonDetailTracker = new Map();
+            const trackPostseasonPhase = (phaseStr, detailStr, matchStatus) => {
+                if ((PHASE_ORDER[phaseStr] ?? 0) <= 0)
+                    return;
+                const detailOrder = PHASE_DETAIL_ORDER[detailStr] ?? 0;
+                const isScheduled = matchStatus !== 'Finished';
+                const existing = postseasonDetailTracker.get(detailStr);
+                if (!existing) {
+                    postseasonDetailTracker.set(detailStr, { phase: phaseStr, detail: detailStr, hasScheduled: isScheduled, detailOrder });
+                }
+                else if (isScheduled && !existing.hasScheduled) {
+                    existing.hasScheduled = true;
+                }
+            };
             const sortedRows = [...rows].sort((a, b) => {
                 const ra = a['league.round'] != null ? Number(a['league.round']) : Infinity;
                 const rb = b['league.round'] != null ? Number(b['league.round']) : Infinity;
@@ -3473,13 +3693,22 @@ let ApiService = ApiService_1 = class ApiService {
                     return ra - rb;
                 return 0;
             });
-            const matchColsRes = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name = $1`, ['matches']);
+            const matchColsRes = await client.query(`SELECT column_name, is_nullable FROM information_schema.columns WHERE table_name = $1`, ['matches']);
             const matchCols = matchColsRes.rows.map((c) => c.column_name);
             const hasOriginApiIdCol = matchCols.includes('origin_api_id');
+            const hasSeasonPhaseCol = matchCols.includes('season_phase');
+            const hasSeasonPhaseDetailCol = matchCols.includes('season_phase_detail');
+            const hasHomeClubPlaceholderCol = matchCols.includes('home_club_placeholder');
+            const hasAwayClubPlaceholderCol = matchCols.includes('away_club_placeholder');
+            const homeClubIdColumn = matchColsRes.rows.find((c) => c.column_name === 'home_club_id');
+            const awayClubIdColumn = matchColsRes.rows.find((c) => c.column_name === 'away_club_id');
+            const supportsNullableHomeClub = String(homeClubIdColumn?.is_nullable ?? 'NO').toUpperCase() === 'YES';
+            const supportsNullableAwayClub = String(awayClubIdColumn?.is_nullable ?? 'NO').toUpperCase() === 'YES';
             let skippedUnchanged = 0;
             let updatedMatches = 0;
             for (const r of sortedRows) {
                 try {
+                    let shouldFallbackToFullUpsert = false;
                     const roundNumber = r['league.round'] ?? r['round'] ?? null;
                     if (roundNumber === 'Relegation Round')
                         continue;
@@ -3494,122 +3723,153 @@ let ApiService = ApiService_1 = class ApiService {
                         }
                         const _existingRes = await client.query(`SELECT id, status, round_id, home_club_id, away_club_id FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`, [_originApiId, leagueId, seasonId]);
                         if (!_existingRes.rows.length) {
-                            applied += 1;
-                            continue;
+                            const _rowPhase = String(transitionalOrigin === 'Api-Espn'
+                                ? (r['season.phase'] ?? 'Regular')
+                                : this.inferApiFootballSeasonPhase(r).seasonPhase).trim();
+                            if (_rowPhase === 'Regular') {
+                                applied += 1;
+                                continue;
+                            }
+                            shouldFallbackToFullUpsert = true;
                         }
-                        const _existing = _existingRes.rows[0];
-                        if (_existing.status === 'Finished') {
-                            skippedUnchanged += 1;
-                            applied += 1;
-                            continue;
+                        if (shouldFallbackToFullUpsert) {
                         }
-                        const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
-                        const _dateVal = formatTimestampForDb(_dateRaw);
-                        const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
-                        const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
-                        const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
-                        if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
-                            skippedUnchanged += 1;
-                            applied += 1;
-                            continue;
-                        }
-                        const _matchId = _existing.id;
-                        const _roundId = _existing.round_id ?? null;
-                        const _homeClubId = _existing.home_club_id;
-                        const _awayClubId = _existing.away_club_id;
-                        await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), updated_at = now() WHERE id = $5`, [_status, _homeScore, _awayScore, _dateVal, _matchId]);
-                        updatedMatches += 1;
-                        await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [_matchId]);
-                        const _divRes = await this.createMatchDivisions(client, sportId, _matchId, r, flgHasDivisions);
-                        if (_divRes && _divRes.created)
-                            createdDivisions += Number(_divRes.created) || 0;
-                        if (!_divRes.hasLinescores && !flgHasDivisions && transitionalOrigin === 'Api-Espn' && _originApiId) {
-                            await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [_matchId]);
-                            matchesForEnrichment.push({ matchId: _matchId, originApiId: _originApiId });
-                        }
-                        const _existingStdRes = await client.query(`SELECT COUNT(*)::int as cnt FROM standings WHERE match_id = $1`, [_matchId]);
-                        if (Number(_existingStdRes.rows[0]?.cnt ?? 0) > 0) {
-                            applied += 1;
-                            continue;
-                        }
-                        const _mapRow = (row) => row ? {
-                            points: row.points ?? 0,
-                            played: row.played ?? row.games_played ?? 0,
-                            wins: row.wins ?? 0,
-                            draws: row.draws ?? 0,
-                            losses: row.losses ?? 0,
-                            goalsFor: row.goals_for ?? row.goalsFor ?? 0,
-                            goalsAgainst: row.goals_against ?? row.goalsAgainst ?? 0,
-                            homeGamesPlayed: row.home_games_played ?? row.homeGamesPlayed ?? 0,
-                            awayGamesPlayed: row.away_games_played ?? row.awayGamesPlayed ?? 0,
-                            homePoints: row.home_points ?? row.homePoints ?? 0,
-                            awayPoints: row.away_points ?? row.awayPoints ?? 0,
-                            homeWins: row.home_wins ?? row.homeWins ?? 0,
-                            homeLosses: row.home_losses ?? row.homeLosses ?? 0,
-                            homeDraws: row.home_draws ?? row.homeDraws ?? 0,
-                            homeGoalsFor: row.home_goals_for ?? row.homeGoalsFor ?? 0,
-                            homeGoalsAgainst: row.home_goals_against ?? row.homeGoalsAgainst ?? 0,
-                            awayWins: row.away_wins ?? row.awayWins ?? 0,
-                            awayLosses: row.away_losses ?? row.awayLosses ?? 0,
-                            awayDraws: row.away_draws ?? row.awayDraws ?? 0,
-                            awayGoalsFor: row.away_goals_for ?? row.awayGoalsFor ?? 0,
-                            awayGoalsAgainst: row.away_goals_against ?? row.awayGoalsAgainst ?? 0,
-                            overtimeWins: row.overtime_wins ?? row.overtimeWins ?? 0,
-                            overtimeLosses: row.overtime_losses ?? row.overtimeLosses ?? 0,
-                            penaltyWins: row.penalty_wins ?? row.penaltyWins ?? 0,
-                            penaltyLosses: row.penalty_losses ?? row.penaltyLosses ?? 0,
-                            setsWon: row.sets_won ?? row.setsWon ?? 0,
-                            setsLost: row.sets_lost ?? row.setsLost ?? 0,
-                        } : null;
-                        const _prevHomeRes = _roundId
-                            ? await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
+                        else {
+                            const _existing = _existingRes.rows[0];
+                            if (_existing.home_club_id == null || _existing.away_club_id == null) {
+                                shouldFallbackToFullUpsert = true;
+                            }
+                            if (shouldFallbackToFullUpsert) {
+                            }
+                            else {
+                                if (_existing.status === 'Finished') {
+                                    skippedUnchanged += 1;
+                                    applied += 1;
+                                    continue;
+                                }
+                                const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
+                                const _dateVal = formatTimestampForDb(_dateRaw);
+                                const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                                const _phaseInfo = transitionalOrigin === 'Api-Espn'
+                                    ? {
+                                        seasonPhase: String(r['season.phase'] ?? 'Regular'),
+                                        seasonPhaseDetail: String(r['season.phase_detail'] ?? 'Regular'),
+                                    }
+                                    : this.inferApiFootballSeasonPhase(r);
+                                trackPostseasonPhase(_phaseInfo.seasonPhase, _phaseInfo.seasonPhaseDetail, _status);
+                                const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+                                const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+                                if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
+                                    skippedUnchanged += 1;
+                                    applied += 1;
+                                    continue;
+                                }
+                                const _matchId = _existing.id;
+                                const _roundId = _existing.round_id ?? null;
+                                const _homeClubId = _existing.home_club_id;
+                                const _awayClubId = _existing.away_club_id;
+                                if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                    await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), season_phase = $5, season_phase_detail = $6, updated_at = now() WHERE id = $7`, [_status, _homeScore, _awayScore, _dateVal, _phaseInfo.seasonPhase, _phaseInfo.seasonPhaseDetail, _matchId]);
+                                }
+                                else {
+                                    await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, date = COALESCE($4, date), updated_at = now() WHERE id = $5`, [_status, _homeScore, _awayScore, _dateVal, _matchId]);
+                                }
+                                updatedMatches += 1;
+                                await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [_matchId]);
+                                const _divRes = await this.createMatchDivisions(client, sportId, _matchId, r, flgHasDivisions);
+                                if (_divRes && _divRes.created)
+                                    createdDivisions += Number(_divRes.created) || 0;
+                                if (!_divRes.hasLinescores && !flgHasDivisions && transitionalOrigin === 'Api-Espn' && _originApiId) {
+                                    await client.query(`UPDATE match_divisions SET home_score = 0, away_score = 0 WHERE match_id = $1`, [_matchId]);
+                                    matchesForEnrichment.push({ matchId: _matchId, originApiId: _originApiId });
+                                }
+                                if (_phaseInfo.seasonPhase !== 'Regular') {
+                                    applied += 1;
+                                    continue;
+                                }
+                                const _existingStdRes = await client.query(`SELECT COUNT(*)::int as cnt FROM standings WHERE match_id = $1`, [_matchId]);
+                                if (Number(_existingStdRes.rows[0]?.cnt ?? 0) > 0) {
+                                    applied += 1;
+                                    continue;
+                                }
+                                const _mapRow = (row) => row ? {
+                                    points: row.points ?? 0,
+                                    played: row.played ?? row.games_played ?? 0,
+                                    wins: row.wins ?? 0,
+                                    draws: row.draws ?? 0,
+                                    losses: row.losses ?? 0,
+                                    goalsFor: row.goals_for ?? row.goalsFor ?? 0,
+                                    goalsAgainst: row.goals_against ?? row.goalsAgainst ?? 0,
+                                    homeGamesPlayed: row.home_games_played ?? row.homeGamesPlayed ?? 0,
+                                    awayGamesPlayed: row.away_games_played ?? row.awayGamesPlayed ?? 0,
+                                    homePoints: row.home_points ?? row.homePoints ?? 0,
+                                    awayPoints: row.away_points ?? row.awayPoints ?? 0,
+                                    homeWins: row.home_wins ?? row.homeWins ?? 0,
+                                    homeLosses: row.home_losses ?? row.homeLosses ?? 0,
+                                    homeDraws: row.home_draws ?? row.homeDraws ?? 0,
+                                    homeGoalsFor: row.home_goals_for ?? row.homeGoalsFor ?? 0,
+                                    homeGoalsAgainst: row.home_goals_against ?? row.homeGoalsAgainst ?? 0,
+                                    awayWins: row.away_wins ?? row.awayWins ?? 0,
+                                    awayLosses: row.away_losses ?? row.awayLosses ?? 0,
+                                    awayDraws: row.away_draws ?? row.awayDraws ?? 0,
+                                    awayGoalsFor: row.away_goals_for ?? row.awayGoalsFor ?? 0,
+                                    awayGoalsAgainst: row.away_goals_against ?? row.awayGoalsAgainst ?? 0,
+                                    overtimeWins: row.overtime_wins ?? row.overtimeWins ?? 0,
+                                    overtimeLosses: row.overtime_losses ?? row.overtimeLosses ?? 0,
+                                    penaltyWins: row.penalty_wins ?? row.penaltyWins ?? 0,
+                                    penaltyLosses: row.penalty_losses ?? row.penaltyLosses ?? 0,
+                                    setsWon: row.sets_won ?? row.setsWon ?? 0,
+                                    setsLost: row.sets_lost ?? row.setsLost ?? 0,
+                                } : null;
+                                const _prevHomeRes = _roundId
+                                    ? await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
                                   WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
                                     AND r.round_number < (SELECT round_number FROM rounds WHERE id = $4)
                                   ORDER BY r.round_number DESC LIMIT 1`, [_homeClubId, leagueId, seasonId, _roundId])
-                            : await client.query(`SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`, [_homeClubId, leagueId, seasonId]);
-                        const _prevAwayRes = _roundId
-                            ? await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
+                                    : await client.query(`SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`, [_homeClubId, leagueId, seasonId]);
+                                const _prevAwayRes = _roundId
+                                    ? await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
                                   WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
                                     AND r.round_number < (SELECT round_number FROM rounds WHERE id = $4)
                                   ORDER BY r.round_number DESC LIMIT 1`, [_awayClubId, leagueId, seasonId, _roundId])
-                            : await client.query(`SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`, [_awayClubId, leagueId, seasonId]);
-                        const _spn = await client.query(`SELECT name FROM sports WHERE id = $1 LIMIT 1`, [sportId]);
-                        const _sportName = _spn.rows[0]?.name ?? 'default';
-                        const _mdRows = await client.query(`SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`, [_matchId]);
-                        const _matchDivisions = _mdRows.rows.map((d) => ({
-                            id: d.id, divisionNumber: d.division_number, divisionType: d.division_type,
-                            homeScore: d.home_score, awayScore: d.away_score,
-                        }));
-                        const _matchData = {
-                            sportId, leagueId, seasonId, roundId: _roundId, matchDate: _dateVal, groupId: null,
-                            homeClubId: _homeClubId, awayClubId: _awayClubId,
-                            homeScore: _homeScore, awayScore: _awayScore,
-                            matchId: _matchId, matchDivisions: _matchDivisions,
-                        };
-                        const { home: _homeStats, away: _awayStats } = standingsCalculator.calculate(_sportName, _matchData, _mapRow(_prevHomeRes.rows[0] ?? null), _mapRow(_prevAwayRes.rows[0] ?? null));
-                        const _homeStandingGroupId = flgHasGroups ? (seasonClubGroupMap[String(_homeClubId)] ?? null) : null;
-                        const _awayStandingGroupId = flgHasGroups ? (seasonClubGroupMap[String(_awayClubId)] ?? null) : null;
-                        const _stdSql = `INSERT INTO standings (sport_id, league_id, season_id, round_id, match_date, group_id, club_id, match_id, points, played, wins, draws, losses, goals_for, goals_against, sets_won, sets_lost, home_games_played, away_games_played, home_points, away_points, home_wins, home_draws, home_losses, home_goals_for, home_goals_against, away_wins, away_draws, away_losses, away_goals_for, away_goals_against, overtime_wins, overtime_losses, penalty_wins, penalty_losses) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`;
-                        const _buildStdParams = (clubId, stats, groupId) => [
-                            sportId, leagueId, seasonId, _roundId ?? null, _dateVal, groupId, clubId, _matchId,
-                            stats.points, stats.played, stats.wins, stats.draws, stats.losses,
-                            stats.goalsFor, stats.goalsAgainst, stats.setsWon, stats.setsLost,
-                            stats.homeGamesPlayed, stats.awayGamesPlayed, stats.homePoints, stats.awayPoints,
-                            stats.homeWins, stats.homeDraws, stats.homeLosses, stats.homeGoalsFor, stats.homeGoalsAgainst,
-                            stats.awayWins, stats.awayDraws, stats.awayLosses, stats.awayGoalsFor, stats.awayGoalsAgainst,
-                            stats.overtimeWins, stats.overtimeLosses, stats.penaltyWins, stats.penaltyLosses,
-                        ];
-                        await client.query(_stdSql, _buildStdParams(_homeClubId, _homeStats, _homeStandingGroupId));
-                        await client.query(_stdSql, _buildStdParams(_awayClubId, _awayStats, _awayStandingGroupId));
-                        createdStandings += 2;
-                        const _cascadeClub = async (clubId) => {
-                            if (!_roundId)
-                                return;
-                            const curRndRes = await client.query(`SELECT round_number FROM rounds WHERE id = $1 LIMIT 1`, [_roundId]);
-                            const currentRoundNumber = curRndRes.rows[0]?.round_number;
-                            if (currentRoundNumber == null)
-                                return;
-                            const futureRes = await client.query(`SELECT s.id AS standings_id, s.match_id, s.round_id, r.round_number,
+                                    : await client.query(`SELECT * FROM standings WHERE club_id = $1 AND league_id = $2 AND season_id = $3 ORDER BY id DESC LIMIT 1`, [_awayClubId, leagueId, seasonId]);
+                                const _spn = await client.query(`SELECT name FROM sports WHERE id = $1 LIMIT 1`, [sportId]);
+                                const _sportName = _spn.rows[0]?.name ?? 'default';
+                                const _mdRows = await client.query(`SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`, [_matchId]);
+                                const _matchDivisions = _mdRows.rows.map((d) => ({
+                                    id: d.id, divisionNumber: d.division_number, divisionType: d.division_type,
+                                    homeScore: d.home_score, awayScore: d.away_score,
+                                }));
+                                const _matchData = {
+                                    sportId, leagueId, seasonId, roundId: _roundId, matchDate: _dateVal, groupId: null,
+                                    homeClubId: _homeClubId, awayClubId: _awayClubId,
+                                    homeScore: _homeScore, awayScore: _awayScore,
+                                    matchId: _matchId, matchDivisions: _matchDivisions,
+                                };
+                                const { home: _homeStats, away: _awayStats } = standingsCalculator.calculate(_sportName, _matchData, _mapRow(_prevHomeRes.rows[0] ?? null), _mapRow(_prevAwayRes.rows[0] ?? null));
+                                const _homeStandingGroupId = flgHasGroups ? (seasonClubGroupMap[String(_homeClubId)] ?? null) : null;
+                                const _awayStandingGroupId = flgHasGroups ? (seasonClubGroupMap[String(_awayClubId)] ?? null) : null;
+                                const _stdSql = `INSERT INTO standings (sport_id, league_id, season_id, round_id, match_date, group_id, club_id, match_id, points, played, wins, draws, losses, goals_for, goals_against, sets_won, sets_lost, home_games_played, away_games_played, home_points, away_points, home_wins, home_draws, home_losses, home_goals_for, home_goals_against, away_wins, away_draws, away_losses, away_goals_for, away_goals_against, overtime_wins, overtime_losses, penalty_wins, penalty_losses) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)`;
+                                const _buildStdParams = (clubId, stats, groupId) => [
+                                    sportId, leagueId, seasonId, _roundId ?? null, _dateVal, groupId, clubId, _matchId,
+                                    stats.points, stats.played, stats.wins, stats.draws, stats.losses,
+                                    stats.goalsFor, stats.goalsAgainst, stats.setsWon, stats.setsLost,
+                                    stats.homeGamesPlayed, stats.awayGamesPlayed, stats.homePoints, stats.awayPoints,
+                                    stats.homeWins, stats.homeDraws, stats.homeLosses, stats.homeGoalsFor, stats.homeGoalsAgainst,
+                                    stats.awayWins, stats.awayDraws, stats.awayLosses, stats.awayGoalsFor, stats.awayGoalsAgainst,
+                                    stats.overtimeWins, stats.overtimeLosses, stats.penaltyWins, stats.penaltyLosses,
+                                ];
+                                await client.query(_stdSql, _buildStdParams(_homeClubId, _homeStats, _homeStandingGroupId));
+                                await client.query(_stdSql, _buildStdParams(_awayClubId, _awayStats, _awayStandingGroupId));
+                                createdStandings += 2;
+                                const _cascadeClub = async (clubId) => {
+                                    if (!_roundId)
+                                        return;
+                                    const curRndRes = await client.query(`SELECT round_number FROM rounds WHERE id = $1 LIMIT 1`, [_roundId]);
+                                    const currentRoundNumber = curRndRes.rows[0]?.round_number;
+                                    if (currentRoundNumber == null)
+                                        return;
+                                    const futureRes = await client.query(`SELECT s.id AS standings_id, s.match_id, s.round_id, r.round_number,
                                         m.home_club_id, m.away_club_id, m.home_score, m.away_score, m.date
                                    FROM standings s
                                    JOIN rounds r ON r.id = s.round_id
@@ -3617,32 +3877,32 @@ let ApiService = ApiService_1 = class ApiService {
                                   WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
                                     AND r.round_number > $4
                                   ORDER BY r.round_number ASC`, [clubId, leagueId, seasonId, currentRoundNumber]);
-                            if (futureRes.rows.length === 0)
-                                return;
-                            for (const futureRow of futureRes.rows) {
-                                const prevRes = await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
+                                    if (futureRes.rows.length === 0)
+                                        return;
+                                    for (const futureRow of futureRes.rows) {
+                                        const prevRes = await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
                                       WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
                                         AND r.round_number < $4
                                       ORDER BY r.round_number DESC LIMIT 1`, [clubId, leagueId, seasonId, futureRow.round_number]);
-                                const prevStanding = _mapRow(prevRes.rows[0] ?? null);
-                                const isHome = futureRow.home_club_id === clubId;
-                                const opponentId = isHome ? futureRow.away_club_id : futureRow.home_club_id;
-                                const opPrevRes = await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
+                                        const prevStanding = _mapRow(prevRes.rows[0] ?? null);
+                                        const isHome = futureRow.home_club_id === clubId;
+                                        const opponentId = isHome ? futureRow.away_club_id : futureRow.home_club_id;
+                                        const opPrevRes = await client.query(`SELECT s.* FROM standings s JOIN rounds r ON r.id = s.round_id
                                       WHERE s.club_id = $1 AND s.league_id = $2 AND s.season_id = $3
                                         AND r.round_number < $4
                                       ORDER BY r.round_number DESC LIMIT 1`, [opponentId, leagueId, seasonId, futureRow.round_number]);
-                                const opPrevStanding = _mapRow(opPrevRes.rows[0] ?? null);
-                                const fmd = await client.query(`SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`, [futureRow.match_id]);
-                                const fMatchData = {
-                                    sportId, leagueId, seasonId, roundId: futureRow.round_id, matchDate: futureRow.date,
-                                    groupId: null, homeClubId: futureRow.home_club_id, awayClubId: futureRow.away_club_id,
-                                    homeScore: Number(futureRow.home_score ?? 0), awayScore: Number(futureRow.away_score ?? 0),
-                                    matchId: futureRow.match_id,
-                                    matchDivisions: fmd.rows.map((d) => ({ id: d.id, divisionNumber: d.division_number, divisionType: d.division_type, homeScore: d.home_score, awayScore: d.away_score })),
-                                };
-                                const { home: fHomeStats, away: fAwayStats } = standingsCalculator.calculate(_sportName, fMatchData, isHome ? prevStanding : opPrevStanding, isHome ? opPrevStanding : prevStanding);
-                                const clubStats = isHome ? fHomeStats : fAwayStats;
-                                await client.query(`UPDATE standings SET
+                                        const opPrevStanding = _mapRow(opPrevRes.rows[0] ?? null);
+                                        const fmd = await client.query(`SELECT id, division_number, division_type, home_score, away_score FROM match_divisions WHERE match_id = $1 ORDER BY division_number ASC`, [futureRow.match_id]);
+                                        const fMatchData = {
+                                            sportId, leagueId, seasonId, roundId: futureRow.round_id, matchDate: futureRow.date,
+                                            groupId: null, homeClubId: futureRow.home_club_id, awayClubId: futureRow.away_club_id,
+                                            homeScore: Number(futureRow.home_score ?? 0), awayScore: Number(futureRow.away_score ?? 0),
+                                            matchId: futureRow.match_id,
+                                            matchDivisions: fmd.rows.map((d) => ({ id: d.id, divisionNumber: d.division_number, divisionType: d.division_type, homeScore: d.home_score, awayScore: d.away_score })),
+                                        };
+                                        const { home: fHomeStats, away: fAwayStats } = standingsCalculator.calculate(_sportName, fMatchData, isHome ? prevStanding : opPrevStanding, isHome ? opPrevStanding : prevStanding);
+                                        const clubStats = isHome ? fHomeStats : fAwayStats;
+                                        await client.query(`UPDATE standings SET
                                        points=$1, played=$2, wins=$3, draws=$4, losses=$5,
                                        goals_for=$6, goals_against=$7, sets_won=$8, sets_lost=$9,
                                        home_games_played=$10, away_games_played=$11,
@@ -3655,24 +3915,26 @@ let ApiService = ApiService_1 = class ApiService {
                                        penalty_wins=$26, penalty_losses=$27,
                                        updated_at=now()
                                      WHERE id=$28`, [
-                                    clubStats.points, clubStats.played, clubStats.wins, clubStats.draws, clubStats.losses,
-                                    clubStats.goalsFor, clubStats.goalsAgainst, clubStats.setsWon, clubStats.setsLost,
-                                    clubStats.homeGamesPlayed, clubStats.awayGamesPlayed,
-                                    clubStats.homePoints, clubStats.awayPoints,
-                                    clubStats.homeWins, clubStats.homeDraws, clubStats.homeLosses,
-                                    clubStats.homeGoalsFor, clubStats.homeGoalsAgainst,
-                                    clubStats.awayWins, clubStats.awayDraws, clubStats.awayLosses,
-                                    clubStats.awayGoalsFor, clubStats.awayGoalsAgainst,
-                                    clubStats.overtimeWins, clubStats.overtimeLosses,
-                                    clubStats.penaltyWins, clubStats.penaltyLosses,
-                                    futureRow.standings_id,
-                                ]);
+                                            clubStats.points, clubStats.played, clubStats.wins, clubStats.draws, clubStats.losses,
+                                            clubStats.goalsFor, clubStats.goalsAgainst, clubStats.setsWon, clubStats.setsLost,
+                                            clubStats.homeGamesPlayed, clubStats.awayGamesPlayed,
+                                            clubStats.homePoints, clubStats.awayPoints,
+                                            clubStats.homeWins, clubStats.homeDraws, clubStats.homeLosses,
+                                            clubStats.homeGoalsFor, clubStats.homeGoalsAgainst,
+                                            clubStats.awayWins, clubStats.awayDraws, clubStats.awayLosses,
+                                            clubStats.awayGoalsFor, clubStats.awayGoalsAgainst,
+                                            clubStats.overtimeWins, clubStats.overtimeLosses,
+                                            clubStats.penaltyWins, clubStats.penaltyLosses,
+                                            futureRow.standings_id,
+                                        ]);
+                                    }
+                                };
+                                await _cascadeClub(_homeClubId);
+                                await _cascadeClub(_awayClubId);
+                                applied += 1;
+                                continue;
                             }
-                        };
-                        await _cascadeClub(_homeClubId);
-                        await _cascadeClub(_awayClubId);
-                        applied += 1;
-                        continue;
+                        }
                     }
                     try {
                     }
@@ -3714,6 +3976,9 @@ let ApiService = ApiService_1 = class ApiService {
                         const clubName = String(clubNameRaw).trim();
                         if (!clubName)
                             return null;
+                        if (this.isAmbiguousClubPlaceholderName(clubName)) {
+                            throw new common_1.BadRequestException(`Club review required before loading ambiguous club name: ${clubName}`);
+                        }
                         if (clubResultCache[clubName])
                             return clubResultCache[clubName];
                         if (Object.prototype.hasOwnProperty.call(clubMappings, clubName)) {
@@ -3815,6 +4080,8 @@ let ApiService = ApiService_1 = class ApiService {
                     };
                     const homeName = r['teams.home.name'] ?? r['home_team'] ?? null;
                     const awayName = r['teams.away.name'] ?? r['away_team'] ?? null;
+                    const homeParticipantPlaceholder = homeName && this.isAmbiguousClubPlaceholderName(homeName) ? String(homeName).trim() : null;
+                    const awayParticipantPlaceholder = awayName && this.isAmbiguousClubPlaceholderName(awayName) ? String(awayName).trim() : null;
                     const homeLogo = r['teams.home.logo'] ?? null;
                     const awayLogo = r['teams.away.logo'] ?? null;
                     const venueCity = r['fixture.venue.city'] ?? null;
@@ -3836,18 +4103,25 @@ let ApiService = ApiService_1 = class ApiService {
                     if (homeIsIgnored || awayIsIgnored) {
                         continue;
                     }
-                    const homeClubResult = await findOrCreateClub(homeName, homeLogo);
-                    const awayClubResult = await findOrCreateClub(awayName, awayLogo);
+                    const homeClubResult = homeParticipantPlaceholder ? null : await findOrCreateClub(homeName, homeLogo);
+                    const awayClubResult = awayParticipantPlaceholder ? null : await findOrCreateClub(awayName, awayLogo);
                     const homeClubId = homeClubResult?.id ?? null;
                     const awayClubId = awayClubResult?.id ?? null;
-                    const homeClubShortName = homeClubResult?.shortName ?? homeName;
-                    const awayClubShortName = awayClubResult?.shortName ?? awayName;
+                    const homeClubShortName = homeClubResult?.shortName ?? homeParticipantPlaceholder ?? homeName;
+                    const awayClubShortName = awayClubResult?.shortName ?? awayParticipantPlaceholder ?? awayName;
+                    if ((homeParticipantPlaceholder || awayParticipantPlaceholder) &&
+                        (!hasHomeClubPlaceholderCol ||
+                            !hasAwayClubPlaceholderCol ||
+                            !supportsNullableHomeClub ||
+                            !supportsNullableAwayClub)) {
+                        throw new common_1.BadRequestException('This payload contains unresolved postseason participants such as TBD or Magic/Hornets, but the matches table is not ready to store them yet. Apply migration 0023_allow_placeholder_participants_on_matches before loading this postseason payload.');
+                    }
                     await ensureSportClub(homeClubId, homeClubShortName);
                     await ensureSportClub(awayClubId, awayClubShortName);
                     await ensureSeasonClub(homeClubId, homeName ?? homeClubShortName);
                     await ensureSeasonClub(awayClubId, awayName ?? awayClubShortName);
                     let stadiumId = null;
-                    if (!isSubsequentLoad) {
+                    if (!isSubsequentLoad || shouldFallbackToFullUpsert) {
                         const cityId = await ensureCity(venueCity);
                         const stadiumResult = await ensureStadium(venueName, cityId);
                         stadiumId = stadiumResult ? stadiumResult.id : null;
@@ -3862,6 +4136,13 @@ let ApiService = ApiService_1 = class ApiService {
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                     const dateVal = formatTimestampForDb(dateRaw);
                     const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                    const phaseInfo = transitionalOrigin === 'Api-Espn'
+                        ? {
+                            seasonPhase: String(r['season.phase'] ?? 'Regular'),
+                            seasonPhaseDetail: String(r['season.phase_detail'] ?? 'Regular'),
+                        }
+                        : this.inferApiFootballSeasonPhase(r);
+                    trackPostseasonPhase(phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, status);
                     const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
                     const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
                     const originApiIdRaw = r['origin_api_id'] ?? r['espn_event_id'] ?? r['fixture.id'] ?? null;
@@ -3871,22 +4152,49 @@ let ApiService = ApiService_1 = class ApiService {
                     let matchId;
                     let isExistingMatch = false;
                     if (hasOriginApiIdCol && originApiId) {
-                        const existingRes = await client.query(`SELECT id, status, home_score, away_score, round_id FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`, [originApiId, leagueId, seasonId]);
+                        const existingMatchColumns = [
+                            'id',
+                            'status',
+                            'home_score',
+                            'away_score',
+                            'round_id',
+                            'home_club_id',
+                            'away_club_id',
+                            ...(hasHomeClubPlaceholderCol ? ['home_club_placeholder'] : []),
+                            ...(hasAwayClubPlaceholderCol ? ['away_club_placeholder'] : []),
+                        ];
+                        const existingRes = await client.query(`SELECT ${existingMatchColumns.join(', ')} FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`, [originApiId, leagueId, seasonId]);
                         if (existingRes.rows.length > 0) {
                             const existing = existingRes.rows[0];
+                            const participantsChanged = Number(existing.home_club_id ?? 0) !== Number(homeClubId ?? 0) ||
+                                Number(existing.away_club_id ?? 0) !== Number(awayClubId ?? 0) ||
+                                String(existing.home_club_placeholder ?? '') !== String(homeParticipantPlaceholder ?? '') ||
+                                String(existing.away_club_placeholder ?? '') !== String(awayParticipantPlaceholder ?? '');
                             if (roundId == null && existing.round_id != null) {
                                 roundId = existing.round_id;
                             }
-                            if (existing.status === 'Finished') {
+                            if (existing.status === 'Finished' && !participantsChanged) {
                                 skippedUnchanged += 1;
                                 applied += 1;
                                 continue;
                             }
-                            if (status === 'Finished' && homeScore != null && awayScore != null) {
-                                await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), updated_at = now() WHERE id = $6`, [status, homeScore, awayScore, roundId, dateVal, existing.id]);
+                            if (participantsChanged || (status === 'Finished' && homeScore != null && awayScore != null)) {
+                                if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                    await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), season_phase = $6, season_phase_detail = $7, home_club_id = $8, away_club_id = $9, home_club_placeholder = $10, away_club_placeholder = $11, updated_at = now() WHERE id = $12`, [status, homeScore, awayScore, roundId, dateVal, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, existing.id]);
+                                }
+                                else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                    await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), season_phase = $6, season_phase_detail = $7, home_club_id = $8, away_club_id = $9, updated_at = now() WHERE id = $10`, [status, homeScore, awayScore, roundId, dateVal, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeClubId, awayClubId, existing.id]);
+                                }
+                                else {
+                                    await client.query(`UPDATE matches SET status = $1, home_score = $2, away_score = $3, round_id = COALESCE($4, round_id), date = COALESCE($5, date), home_club_id = $6, away_club_id = $7, updated_at = now() WHERE id = $8`, [status, homeScore, awayScore, roundId, dateVal, homeClubId, awayClubId, existing.id]);
+                                }
                                 matchId = existing.id;
                                 isExistingMatch = true;
                                 updatedMatches += 1;
+                                if (status !== 'Finished' || homeScore == null || awayScore == null) {
+                                    applied += 1;
+                                    continue;
+                                }
                                 await client.query(`DELETE FROM match_divisions WHERE match_id = $1`, [matchId]);
                                 try {
                                     const divRes = await this.createMatchDivisions(client, sportId, matchId, r, flgHasDivisions);
@@ -3911,10 +4219,26 @@ let ApiService = ApiService_1 = class ApiService {
                     if (!isExistingMatch) {
                         let matchRes;
                         if (hasOriginApiIdCol) {
-                            matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, originApiId]);
+                            if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, home_club_placeholder, away_club_placeholder, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore, originApiId]);
+                            }
+                            else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore, originApiId]);
+                            }
+                            else {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score, origin_api_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore, originApiId]);
+                            }
                         }
                         else {
-                            matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore]);
+                            if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol && hasHomeClubPlaceholderCol && hasAwayClubPlaceholderCol) {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, home_club_placeholder, away_club_placeholder, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, homeParticipantPlaceholder, awayParticipantPlaceholder, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore]);
+                            }
+                            else if (hasSeasonPhaseCol && hasSeasonPhaseDetailCol) {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, season_phase, season_phase_detail, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, homeScore, awayScore]);
+                            }
+                            else {
+                                matchRes = await client.query(`INSERT INTO matches (sport_id, league_id, season_id, round_id, group_id, home_club_id, away_club_id, stadium_id, date, status, home_score, away_score) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`, [sportId, leagueId, seasonId, roundId, null, homeClubId, awayClubId, stadiumId, dateVal, status, homeScore, awayScore]);
+                            }
                         }
                         matchId = matchRes.rows[0].id;
                         createdMatches++;
@@ -3937,6 +4261,10 @@ let ApiService = ApiService_1 = class ApiService {
                     }
                     try {
                         if (status !== 'Finished') {
+                            applied += 1;
+                            continue;
+                        }
+                        if (phaseInfo.seasonPhase !== 'Regular') {
                             applied += 1;
                             continue;
                         }
@@ -4269,6 +4597,19 @@ let ApiService = ApiService_1 = class ApiService {
                         details,
                     ]);
                     return { applied: 0, error: String(e), rolledBack: true, details: includeDebug ? details : undefined };
+                }
+            }
+            if (!options.dryRun && seasonId && postseasonDetailTracker.size > 0) {
+                try {
+                    const _allEntries = [...postseasonDetailTracker.values()].sort((a, b) => a.detailOrder - b.detailOrder);
+                    const _currentEntry = _allEntries.find(e => e.hasScheduled)
+                        ?? [..._allEntries].sort((a, b) => b.detailOrder - a.detailOrder)[0];
+                    if (_currentEntry) {
+                        await client.query(`UPDATE seasons SET flg_has_postseason = true, current_phase = $1, current_phase_detail = $2 WHERE id = $3`, [_currentEntry.phase, _currentEntry.detail, seasonId]);
+                    }
+                }
+                catch (e) {
+                    this.logger.error('Failed to update season postseason flags', e);
                 }
             }
             try {

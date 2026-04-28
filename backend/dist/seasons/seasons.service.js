@@ -63,6 +63,9 @@ let SeasonsService = class SeasonsService {
                 status: schema_1.seasons.status,
                 flgDefault: schema_1.seasons.flgDefault,
                 numberOfGroups: schema_1.seasons.numberOfGroups,
+                flgHasPostseason: schema_1.seasons.flgHasPostseason,
+                currentPhase: schema_1.seasons.currentPhase,
+                currentPhaseDetail: schema_1.seasons.currentPhaseDetail,
                 createdAt: schema_1.seasons.createdAt,
                 sport: {
                     id: schema_1.sports.id,
@@ -102,6 +105,9 @@ let SeasonsService = class SeasonsService {
             status: schema_1.seasons.status,
             flgDefault: schema_1.seasons.flgDefault,
             numberOfGroups: schema_1.seasons.numberOfGroups,
+            flgHasPostseason: schema_1.seasons.flgHasPostseason,
+            currentPhase: schema_1.seasons.currentPhase,
+            currentPhaseDetail: schema_1.seasons.currentPhaseDetail,
             createdAt: schema_1.seasons.createdAt,
             sport: {
                 id: schema_1.sports.id,
@@ -134,6 +140,9 @@ let SeasonsService = class SeasonsService {
                 status: schema.seasons.status,
                 flgDefault: schema.seasons.flgDefault,
                 numberOfGroups: schema.seasons.numberOfGroups,
+                flgHasPostseason: schema.seasons.flgHasPostseason,
+                currentPhase: schema.seasons.currentPhase,
+                currentPhaseDetail: schema.seasons.currentPhaseDetail,
                 sport: schema.sports,
                 league: schema.leagues,
                 createdAt: schema.seasons.createdAt,
@@ -195,6 +204,9 @@ let SeasonsService = class SeasonsService {
                 status: createSeasonDto.status || 'planned',
                 flgDefault: createSeasonDto.flgDefault || false,
                 numberOfGroups: createSeasonDto.numberOfGroups || 0,
+                flgHasPostseason: createSeasonDto.flgHasPostseason || false,
+                currentPhase: createSeasonDto.currentPhase || 'Regular',
+                currentPhaseDetail: createSeasonDto.currentPhaseDetail || 'Regular',
             })
                 .returning();
             return result[0];

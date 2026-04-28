@@ -24,13 +24,13 @@ let MatchesController = class MatchesController {
     async create(createMatchDto) {
         return this.matchesService.create(createMatchDto);
     }
-    async findAll(groupId, roundId, sportId, leagueId, seasonId, date, page, limit, sortBy, sortOrder) {
+    async findAll(groupId, roundId, sportId, leagueId, seasonId, date, seasonPhase, seasonPhaseDetail, page, limit, sortBy, sortOrder) {
         if (date && seasonId) {
             const seasonIdNum = parseInt(seasonId, 10);
             if (isNaN(seasonIdNum) || seasonIdNum <= 0) {
                 throw new common_1.BadRequestException('Invalid seasonId format. Must be a positive integer.');
             }
-            return this.matchesService.findBySeasonAndDate(seasonIdNum, date);
+            return this.matchesService.findBySeasonAndDate(seasonIdNum, date, seasonPhase, seasonPhaseDetail);
         }
         if (roundId && seasonId) {
             const seasonIdNum = parseInt(seasonId, 10);
@@ -41,7 +41,7 @@ let MatchesController = class MatchesController {
             if (isNaN(roundIdNum) || roundIdNum <= 0) {
                 throw new common_1.BadRequestException('Invalid roundId format. Must be a positive integer.');
             }
-            return this.matchesService.findBySeasonAndRound(seasonIdNum, roundIdNum);
+            return this.matchesService.findBySeasonAndRound(seasonIdNum, roundIdNum, seasonPhase, seasonPhaseDetail);
         }
         if (sportId && leagueId && seasonId) {
             try {
@@ -57,7 +57,7 @@ let MatchesController = class MatchesController {
                 if (groupId && (isNaN(groupIdValue) || groupIdValue <= 0)) {
                     throw new common_1.BadRequestException('groupId must be a positive integer if provided.');
                 }
-                return this.matchesService.findBySportLeagueSeasonAndGroup(sportIdNum, leagueIdNum, seasonIdNum, groupIdValue);
+                return this.matchesService.findBySportLeagueSeasonAndGroup(sportIdNum, leagueIdNum, seasonIdNum, groupIdValue, seasonPhase, seasonPhaseDetail);
             }
             catch (error) {
                 throw new common_1.BadRequestException('Invalid filter parameters');
@@ -69,7 +69,7 @@ let MatchesController = class MatchesController {
             if (isNaN(leagueIdNum) || leagueIdNum <= 0 || isNaN(seasonIdNum) || seasonIdNum <= 0) {
                 throw new common_1.BadRequestException('leagueId and seasonId must be positive integers.');
             }
-            return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum);
+            return this.matchesService.findByLeagueAndSeason(leagueIdNum, seasonIdNum, seasonPhase, seasonPhaseDetail);
         }
         if (groupId) {
             const groupIdNum = parseInt(groupId, 10);
@@ -108,6 +108,18 @@ let MatchesController = class MatchesController {
         }
         const result = await this.matchesService.findAllPaginated(pageNum, limitNum, sort, order);
         return result.data;
+    }
+    async getPostseasonBracket(leagueId, seasonId, groupId) {
+        const leagueIdNum = parseInt(String(leagueId ?? ''), 10);
+        const seasonIdNum = parseInt(String(seasonId ?? ''), 10);
+        const groupIdNum = groupId ? parseInt(groupId, 10) : null;
+        if (!Number.isFinite(leagueIdNum) || leagueIdNum <= 0 || !Number.isFinite(seasonIdNum) || seasonIdNum <= 0) {
+            throw new common_1.BadRequestException('leagueId and seasonId must be positive integers.');
+        }
+        if (groupId && (!Number.isFinite(groupIdNum) || Number(groupIdNum) <= 0)) {
+            throw new common_1.BadRequestException('groupId must be a positive integer if provided.');
+        }
+        return this.matchesService.getPostseasonBracket(leagueIdNum, seasonIdNum, groupIdNum);
     }
     async findOne(id) {
         if (!id || id <= 0) {
@@ -152,14 +164,26 @@ __decorate([
     __param(3, (0, common_1.Query)('leagueId')),
     __param(4, (0, common_1.Query)('seasonId')),
     __param(5, (0, common_1.Query)('date')),
-    __param(6, (0, common_1.Query)('page')),
-    __param(7, (0, common_1.Query)('limit')),
-    __param(8, (0, common_1.Query)('sortBy')),
-    __param(9, (0, common_1.Query)('sortOrder')),
+    __param(6, (0, common_1.Query)('seasonPhase')),
+    __param(7, (0, common_1.Query)('seasonPhaseDetail')),
+    __param(8, (0, common_1.Query)('page')),
+    __param(9, (0, common_1.Query)('limit')),
+    __param(10, (0, common_1.Query)('sortBy')),
+    __param(11, (0, common_1.Query)('sortOrder')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, String, String, String, String, String, String, String, String, String]),
     __metadata("design:returntype", Promise)
 ], MatchesController.prototype, "findAll", null);
+__decorate([
+    (0, swagger_1.ApiOperation)({ summary: 'Retrieve postseason bracket data for a season' }),
+    (0, common_1.Get)('postseason-bracket'),
+    __param(0, (0, common_1.Query)('leagueId')),
+    __param(1, (0, common_1.Query)('seasonId')),
+    __param(2, (0, common_1.Query)('groupId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], MatchesController.prototype, "getPostseasonBracket", null);
 __decorate([
     (0, swagger_1.ApiOperation)({ summary: 'Retrieve a specific match' }),
     (0, swagger_1.ApiParam)({ name: 'id', description: 'Match ID' }),

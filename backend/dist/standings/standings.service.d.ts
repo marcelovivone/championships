@@ -15,6 +15,7 @@ export declare class StandingsService {
     private buildZeroMatchDateRow;
     private compareStandingRows;
     private sortWithTiebreakers;
+    rankRowsForSeasonContext(rows: any[], leagueId: number, seasonId: number, maxDate?: Date | null): Promise<any[]>;
     findByLeagueIdAndSeasonIdAndMatchDate(leagueId: number, seasonId: number, matchDate: string, clubId?: number): Promise<any[]>;
     constructor(db: NodePgDatabase<typeof schema>, calculator: StandingsCalculatorService, tiebreakerEngine: TiebreakerEngine, standingOrderRulesService: StandingOrderRulesService);
     findAll(): Promise<{
@@ -319,14 +320,14 @@ export declare class StandingsService {
         id: number;
         createdAt: Date;
         sportId: number;
+        clubId: number;
         leagueId: number;
         seasonId: number;
-        roundId: number;
-        matchDate: Date;
         groupId: number;
-        clubId: number;
+        roundId: number;
         updatedAt: Date;
         matchId: number;
+        matchDate: Date;
         points: number;
         played: number;
         wins: number;
@@ -362,14 +363,14 @@ export declare class StandingsService {
         id: number;
         createdAt: Date;
         sportId: number;
+        clubId: number;
         leagueId: number;
         seasonId: number;
-        roundId: number;
-        matchDate: Date;
         groupId: number;
-        clubId: number;
+        roundId: number;
         updatedAt: Date;
         matchId: number;
+        matchDate: Date;
         points: number;
         played: number;
         wins: number;

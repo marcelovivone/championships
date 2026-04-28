@@ -26,6 +26,16 @@ let MatchesService = class MatchesService {
         this.standingsService = standingsService;
         this.standingsCalculator = standingsCalculator;
     }
+    buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail) {
+        const conditions = [];
+        if (seasonPhase) {
+            conditions.push((0, drizzle_orm_1.eq)(schema_1.matches.seasonPhase, seasonPhase));
+        }
+        if (seasonPhaseDetail) {
+            conditions.push((0, drizzle_orm_1.eq)(schema_1.matches.seasonPhaseDetail, seasonPhaseDetail));
+        }
+        return conditions;
+    }
     async findAll() {
         try {
             const matchesData = await this.db
@@ -38,8 +48,12 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 stadiumId: schema_1.matches.stadiumId,
@@ -146,9 +160,13 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -261,9 +279,13 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -395,9 +417,13 @@ let MatchesService = class MatchesService {
                 groupId: createMatchDto.groupId || null,
                 homeClubId: createMatchDto.homeClubId,
                 awayClubId: createMatchDto.awayClubId,
+                homeClubPlaceholder: null,
+                awayClubPlaceholder: null,
                 stadiumId: createMatchDto.stadiumId || null,
                 date: new Date(createMatchDto.date),
                 status: createMatchDto.status || 'Scheduled',
+                seasonPhase: createMatchDto.seasonPhase || 'Regular',
+                seasonPhaseDetail: createMatchDto.seasonPhaseDetail || 'Regular',
                 homeScore: createMatchDto.homeScore === null || typeof createMatchDto.homeScore === 'undefined' ? null : createMatchDto.homeScore,
                 awayScore: createMatchDto.awayScore === null || typeof createMatchDto.awayScore === 'undefined' ? null : createMatchDto.awayScore,
             })
@@ -491,6 +517,8 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
@@ -555,16 +583,17 @@ let MatchesService = class MatchesService {
             throw new common_1.BadRequestException('Failed to fetch matches by group');
         }
     }
-    async findBySportLeagueSeasonAndGroup(sportId, leagueId, seasonId, groupId) {
+    async findBySportLeagueSeasonAndGroup(sportId, leagueId, seasonId, groupId, seasonPhase, seasonPhaseDetail) {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
             const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
             let whereCondition;
             if (groupId) {
-                whereCondition = (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.sportId, sportId), (0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.groupId, groupId));
+                whereCondition = (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.sportId, sportId), (0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.groupId, groupId), ...phaseConditions);
             }
             else {
-                whereCondition = (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.sportId, sportId), (0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId));
+                whereCondition = (0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.sportId, sportId), (0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), ...phaseConditions);
             }
             const results = await this.db
                 .select({
@@ -576,9 +605,13 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -638,10 +671,11 @@ let MatchesService = class MatchesService {
             throw new common_1.BadRequestException('Failed to fetch matches by sport, league, season and group');
         }
     }
-    async findByLeagueAndSeason(leagueId, seasonId) {
+    async findByLeagueAndSeason(leagueId, seasonId, seasonPhase, seasonPhaseDetail) {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
             const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
             const results = await this.db
                 .select({
                 id: schema_1.matches.id,
@@ -652,9 +686,13 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -677,7 +715,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId)))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), ...phaseConditions))
                 .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             return results.map(match => ({ ...match, status: match.status }));
         }
@@ -685,10 +723,11 @@ let MatchesService = class MatchesService {
             throw new common_1.BadRequestException('Failed to fetch matches by league and season');
         }
     }
-    async findBySeasonAndRound(seasonId, roundId) {
+    async findBySeasonAndRound(seasonId, roundId, seasonPhase, seasonPhaseDetail) {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
             const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
             const matchesData = await this.db
                 .select({
                 id: schema_1.matches.id,
@@ -699,9 +738,13 @@ let MatchesService = class MatchesService {
                 groupId: schema_1.matches.groupId,
                 homeClubId: schema_1.matches.homeClubId,
                 awayClubId: schema_1.matches.awayClubId,
+                homeClubPlaceholder: schema_1.matches.homeClubPlaceholder,
+                awayClubPlaceholder: schema_1.matches.awayClubPlaceholder,
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -753,7 +796,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.roundId, roundId)))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.roundId, roundId), ...phaseConditions))
                 .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await this.attachAvailableStadiums(matchesData);
             return matchesWithStadiums;
@@ -762,10 +805,11 @@ let MatchesService = class MatchesService {
             throw new common_1.BadRequestException('Failed to fetch matches by season and round');
         }
     }
-    async findBySeasonAndDate(seasonId, date) {
+    async findBySeasonAndDate(seasonId, date, seasonPhase, seasonPhaseDetail) {
         try {
             const homeClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'home_club');
             const awayClubAlias = (0, drizzle_orm_1.aliasedTable)(schema_1.clubs, 'away_club');
+            const phaseConditions = this.buildSeasonPhaseConditions(seasonPhase, seasonPhaseDetail);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
                 throw new common_1.BadRequestException('Invalid date format. Expected YYYY-MM-DD.');
             }
@@ -782,6 +826,8 @@ let MatchesService = class MatchesService {
                 stadiumId: schema_1.matches.stadiumId,
                 date: schema_1.matches.date,
                 status: schema_1.matches.status,
+                seasonPhase: schema_1.matches.seasonPhase,
+                seasonPhaseDetail: schema_1.matches.seasonPhaseDetail,
                 homeScore: schema_1.matches.homeScore,
                 awayScore: schema_1.matches.awayScore,
                 createdAt: schema_1.matches.createdAt,
@@ -833,7 +879,7 @@ let MatchesService = class MatchesService {
                 .leftJoin(awayClubAlias, (0, drizzle_orm_1.eq)(schema_1.matches.awayClubId, awayClubAlias.id))
                 .leftJoin(schema_1.stadiums, (0, drizzle_orm_1.eq)(schema_1.matches.stadiumId, schema_1.stadiums.id))
                 .leftJoin(schema_1.groups, (0, drizzle_orm_1.eq)(schema_1.matches.groupId, schema_1.groups.id))
-                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.sql) `DATE(${schema_1.matches.date}) = CAST(${date} AS DATE)`))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.sql) `DATE(${schema_1.matches.date}) = CAST(${date} AS DATE)`, ...phaseConditions))
                 .orderBy((0, drizzle_orm_1.asc)(schema_1.matches.date), (0, drizzle_orm_1.asc)(schema_1.matches.id));
             const matchesWithStadiums = await this.attachAvailableStadiums(matchesData);
             const matchesWithDivisions = await this.attachMatchDivisions(matchesWithStadiums);
@@ -841,6 +887,105 @@ let MatchesService = class MatchesService {
         }
         catch (error) {
             throw new common_1.BadRequestException('Failed to fetch matches by season and date');
+        }
+    }
+    async getPostseasonBracket(leagueId, seasonId, groupId) {
+        try {
+            const [seasonRow] = await this.db
+                .select({
+                id: schema_1.seasons.id,
+                sportId: schema_1.seasons.sportId,
+                leagueId: schema_1.seasons.leagueId,
+                flgHasPostseason: schema_1.seasons.flgHasPostseason,
+                currentPhase: schema_1.seasons.currentPhase,
+                currentPhaseDetail: schema_1.seasons.currentPhaseDetail,
+            })
+                .from(schema_1.seasons)
+                .where((0, drizzle_orm_1.eq)(schema_1.seasons.id, seasonId))
+                .limit(1);
+            if (!seasonRow) {
+                throw new common_1.NotFoundException(`Season with ID ${seasonId} not found`);
+            }
+            const allSeasonMatches = await this.findByLeagueAndSeason(leagueId, seasonId);
+            const postseasonMatches = allSeasonMatches.filter((match) => {
+                const isPostseason = String(match.seasonPhase ?? 'Regular') !== 'Regular';
+                if (!isPostseason)
+                    return false;
+                if (groupId == null)
+                    return true;
+                return Number(match.groupId ?? 0) === Number(groupId);
+            });
+            const phasesOrder = ['Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'];
+            const phases = phasesOrder
+                .map((detail) => ({
+                phase: detail === 'Play-ins' ? 'Play-ins' : 'Playoffs',
+                detail,
+                matches: postseasonMatches.filter((match) => String(match.seasonPhaseDetail ?? 'Regular') === detail),
+            }))
+                .filter((entry) => entry.matches.length > 0);
+            const latestRegularRound = await this.db
+                .select({
+                roundId: schema_1.rounds.id,
+                roundNumber: schema_1.rounds.roundNumber,
+            })
+                .from(schema_1.matches)
+                .innerJoin(schema_1.rounds, (0, drizzle_orm_1.eq)(schema_1.matches.roundId, schema_1.rounds.id))
+                .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonPhase, 'Regular'), groupId != null ? (0, drizzle_orm_1.eq)(schema_1.matches.groupId, groupId) : undefined))
+                .orderBy((0, drizzle_orm_1.desc)(schema_1.rounds.roundNumber), (0, drizzle_orm_1.desc)(schema_1.matches.date), (0, drizzle_orm_1.desc)(schema_1.matches.id))
+                .limit(1);
+            const latestRegularDate = latestRegularRound.length === 0
+                ? await this.db
+                    .select({ date: schema_1.matches.date })
+                    .from(schema_1.matches)
+                    .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.matches.leagueId, leagueId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonId, seasonId), (0, drizzle_orm_1.eq)(schema_1.matches.seasonPhase, 'Regular'), groupId != null ? (0, drizzle_orm_1.eq)(schema_1.matches.groupId, groupId) : undefined))
+                    .orderBy((0, drizzle_orm_1.desc)(schema_1.matches.date), (0, drizzle_orm_1.desc)(schema_1.matches.id))
+                    .limit(1)
+                : [];
+            let regularSeasonStandings = [];
+            if (latestRegularRound.length > 0) {
+                regularSeasonStandings = await this.standingsService.findByLeagueIdAndSeasonIdAndRoundId(leagueId, seasonId, latestRegularRound[0].roundId);
+            }
+            else if (latestRegularDate.length > 0) {
+                regularSeasonStandings = await this.standingsService.findByLeagueIdAndSeasonIdAndMatchDate(leagueId, seasonId, new Date(latestRegularDate[0].date).toISOString().slice(0, 10));
+            }
+            const filteredRegularStandings = groupId == null
+                ? regularSeasonStandings
+                : regularSeasonStandings.filter((standing) => Number(standing.groupId ?? 0) === Number(groupId));
+            const groupedRegularStandings = new Map();
+            filteredRegularStandings.forEach((standing) => {
+                const groupKey = standing.groupId ?? null;
+                const existing = groupedRegularStandings.get(groupKey);
+                if (existing) {
+                    existing.push(standing);
+                }
+                else {
+                    groupedRegularStandings.set(groupKey, [standing]);
+                }
+            });
+            const rankedRegularStandings = (await Promise.all(Array.from(groupedRegularStandings.entries())
+                .sort((a, b) => Number(a[0] ?? 0) - Number(b[0] ?? 0))
+                .map(async ([, rows]) => {
+                const rankedRows = await this.standingsService.rankRowsForSeasonContext(rows, leagueId, seasonId);
+                return rankedRows.map((standing, index) => ({
+                    ...standing,
+                    position: index + 1,
+                }));
+            }))).flat();
+            return {
+                season: seasonRow,
+                regularSeasonStandings: rankedRegularStandings.map((standing) => ({
+                    clubId: standing.clubId,
+                    groupId: standing.groupId ?? null,
+                    position: standing.position,
+                    points: standing.points,
+                })),
+                phases,
+            };
+        }
+        catch (error) {
+            if (error instanceof common_1.NotFoundException)
+                throw error;
+            throw new common_1.BadRequestException('Failed to fetch postseason bracket');
         }
     }
     async updateScore(id, updateScoreDto) {

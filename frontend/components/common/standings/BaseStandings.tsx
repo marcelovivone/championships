@@ -22,6 +22,28 @@ type Props = {
   sportKey?: string;
 };
 
+function getSeasonViewSelection(seasonData: any): {
+  phase: string;
+  detail: string;
+} {
+  if (!seasonData?.flgHasPostseason) {
+    return {
+      phase: 'Regular',
+      detail: 'Regular',
+    };
+  }
+
+  const phase = String(seasonData.currentPhase ?? 'Regular');
+  const detail = String(
+    seasonData.currentPhaseDetail ?? (phase === 'Play-ins' ? 'Play-ins' : 'Regular')
+  );
+
+  return {
+    phase,
+    detail,
+  };
+}
+
 export default function BaseStandings({
   title = 'Standings',
   hasGroups = false,
@@ -82,20 +104,10 @@ export default function BaseStandings({
       return;
     }
 
-    if (!selectedSeasonData.flgHasPostseason) {
-      setSeasonPhase('Regular');
-      setSeasonPhaseDetail('Regular');
-      return;
-    }
-
-    const isFinishedSeason = isSeasonFinished(selectedSeasonData);
-    const nextPhase = isFinishedSeason ? 'Regular' : String(selectedSeasonData.currentPhase ?? 'Regular');
-    const nextDetail = isFinishedSeason
-      ? 'Regular'
-      : String(selectedSeasonData.currentPhaseDetail ?? (nextPhase === 'Play-ins' ? 'Play-ins' : 'Regular'));
-    setSeasonPhase(nextPhase);
-    setSeasonPhaseDetail(nextDetail);
-  }, [season]);
+    const nextSelection = getSeasonViewSelection(selectedSeasonData);
+    setSeasonPhase(nextSelection.phase);
+    setSeasonPhaseDetail(nextSelection.detail);
+  }, [selectedSeasonData]);
 
   React.useEffect(() => {
     if (seasonPhase === 'Regular') {
@@ -538,6 +550,27 @@ export default function BaseStandings({
     }
   }, [league, seasons]);
 
+  // When the user selects a season explicitly, set the season state and
+  // also update the current view to the season's current phase/detail when
+  // available. This ensures manual season selection jumps the page to the
+  // appropriate phase (e.g. Play-ins / Round of 16) rather than leaving the
+  // previously selected phase active.
+  const onSeasonSelect = React.useCallback((newSeason: string) => {
+    setSeason(String(newSeason));
+
+    const currentSeasons = seasonsRef.current && Array.isArray(seasonsRef.current) ? seasonsRef.current : seasons;
+    const seasonObj = Array.isArray(currentSeasons) ? currentSeasons.find((s: any) => String(s.id) === String(newSeason)) : null;
+    if (!seasonObj) {
+      setSeasonPhase('Regular');
+      setSeasonPhaseDetail('Regular');
+      return;
+    }
+
+    const nextSelection = getSeasonViewSelection(seasonObj);
+    setSeasonPhase(nextSelection.phase);
+    setSeasonPhaseDetail(nextSelection.detail);
+  }, [seasons, setSeasonPhase, setSeasonPhaseDetail]);
+
   // Helper: determine if a season is finished.
   const isSeasonFinished = (s: any) => {
     if (!s) return false;
@@ -765,7 +798,7 @@ export default function BaseStandings({
 
       <FilterBar
         season={season}
-        setSeason={setSeason}
+        setSeason={onSeasonSelect}
         league={league}
         setLeague={(v: any) => {
           // Reset the auto-season ref so the new league's default season is auto-selected.
@@ -826,7 +859,7 @@ export default function BaseStandings({
               <div className="flex-1 ml-3">
                 <FilterBar
                   season={season}
-                  setSeason={setSeason}
+                  setSeason={onSeasonSelect}
                   league={league}
                   setLeague={(v: any) => {
                     autoSeasonLeagueRef.current = '';

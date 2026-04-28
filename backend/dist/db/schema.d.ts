@@ -1305,6 +1305,8 @@ export declare const leagues: import("drizzle-orm/pg-core").PgTableWithColumns<{
     };
     dialect: "pg";
 }>;
+export declare const seasonPhaseEnum: import("drizzle-orm/pg-core").PgEnum<["Regular", "Play-ins", "Playoffs"]>;
+export declare const seasonPhaseDetailEnum: import("drizzle-orm/pg-core").PgEnum<["Regular", "Play-ins", "Round of 64", "Round of 32", "Round of 16", "Quarterfinals", "Semifinals", "Finals"]>;
 export declare const leagueLinks: import("drizzle-orm/pg-core").PgTableWithColumns<{
     name: "league_links";
     schema: undefined;
@@ -1537,6 +1539,57 @@ export declare const seasons: import("drizzle-orm/pg-core").PgTableWithColumns<{
             isAutoincrement: false;
             hasRuntimeDefault: false;
             enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        flgHasPostseason: import("drizzle-orm/pg-core").PgColumn<{
+            name: "flg_has_postseason";
+            tableName: "seasons";
+            dataType: "boolean";
+            columnType: "PgBoolean";
+            data: boolean;
+            driverParam: boolean;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: undefined;
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        currentPhase: import("drizzle-orm/pg-core").PgColumn<{
+            name: "current_phase";
+            tableName: "seasons";
+            dataType: "string";
+            columnType: "PgEnumColumn";
+            data: "Regular" | "Play-ins" | "Playoffs";
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: ["Regular", "Play-ins", "Playoffs"];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        currentPhaseDetail: import("drizzle-orm/pg-core").PgColumn<{
+            name: "current_phase_detail";
+            tableName: "seasons";
+            dataType: "string";
+            columnType: "PgEnumColumn";
+            data: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: ["Regular", "Play-ins", "Round of 64", "Round of 32", "Round of 16", "Quarterfinals", "Semifinals", "Finals"];
             baseColumn: never;
             identity: undefined;
             generated: undefined;
@@ -2073,7 +2126,7 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             columnType: "PgInteger";
             data: number;
             driverParam: string | number;
-            notNull: true;
+            notNull: false;
             hasDefault: false;
             isPrimaryKey: false;
             isAutoincrement: false;
@@ -2090,7 +2143,7 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             columnType: "PgInteger";
             data: number;
             driverParam: string | number;
-            notNull: true;
+            notNull: false;
             hasDefault: false;
             isPrimaryKey: false;
             isAutoincrement: false;
@@ -2100,6 +2153,44 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             identity: undefined;
             generated: undefined;
         }, {}, {}>;
+        homeClubPlaceholder: import("drizzle-orm/pg-core").PgColumn<{
+            name: "home_club_placeholder";
+            tableName: "matches";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 120;
+        }>;
+        awayClubPlaceholder: import("drizzle-orm/pg-core").PgColumn<{
+            name: "away_club_placeholder";
+            tableName: "matches";
+            dataType: "string";
+            columnType: "PgVarchar";
+            data: string;
+            driverParam: string;
+            notNull: false;
+            hasDefault: false;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: [string, ...string[]];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {
+            length: 120;
+        }>;
         stadiumId: import("drizzle-orm/pg-core").PgColumn<{
             name: "stadium_id";
             tableName: "matches";
@@ -2147,6 +2238,40 @@ export declare const matches: import("drizzle-orm/pg-core").PgTableWithColumns<{
             isAutoincrement: false;
             hasRuntimeDefault: false;
             enumValues: ["Scheduled", "Finished", "Postponed", "Cancelled"];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        seasonPhase: import("drizzle-orm/pg-core").PgColumn<{
+            name: "season_phase";
+            tableName: "matches";
+            dataType: "string";
+            columnType: "PgEnumColumn";
+            data: "Regular" | "Play-ins" | "Playoffs";
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: ["Regular", "Play-ins", "Playoffs"];
+            baseColumn: never;
+            identity: undefined;
+            generated: undefined;
+        }, {}, {}>;
+        seasonPhaseDetail: import("drizzle-orm/pg-core").PgColumn<{
+            name: "season_phase_detail";
+            tableName: "matches";
+            dataType: "string";
+            columnType: "PgEnumColumn";
+            data: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
+            driverParam: string;
+            notNull: true;
+            hasDefault: true;
+            isPrimaryKey: false;
+            isAutoincrement: false;
+            hasRuntimeDefault: false;
+            enumValues: ["Regular", "Play-ins", "Round of 64", "Round of 32", "Round of 16", "Quarterfinals", "Semifinals", "Finals"];
             baseColumn: never;
             identity: undefined;
             generated: undefined;

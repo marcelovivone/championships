@@ -65,6 +65,24 @@ __decorate([
     (0, class_validator_1.Min)(0),
     __metadata("design:type", Number)
 ], CreateSeasonDto.prototype, "numberOfGroups", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: false, description: 'Whether the season has postseason', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsBoolean)(),
+    __metadata("design:type", Boolean)
+], CreateSeasonDto.prototype, "flgHasPostseason", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', description: 'Current season phase', enum: ['Regular', 'Play-ins', 'Playoffs'], required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Playoffs']),
+    __metadata("design:type", String)
+], CreateSeasonDto.prototype, "currentPhase", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'Regular', description: 'Current season phase detail', enum: ['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals'], required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['Regular', 'Play-ins', 'Round of 64', 'Round of 32', 'Round of 16', 'Quarterfinals', 'Semifinals', 'Finals']),
+    __metadata("design:type", String)
+], CreateSeasonDto.prototype, "currentPhaseDetail", void 0);
 class UpdateSeasonDto extends (0, mapped_types_1.PartialType)(CreateSeasonDto) {
 }
 exports.UpdateSeasonDto = UpdateSeasonDto;

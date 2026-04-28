@@ -1,5 +1,4 @@
 "use client";
-
 import React from 'react';
 import { apiClient } from '@/lib/api/client';
 
@@ -77,6 +76,19 @@ const PHASE_SLOT_COUNTS: Record<string, number | undefined> = {
 
 function getClubLabel(club?: { shortName?: string | null; name?: string | null } | null, fallback?: number | null, placeholder?: string | null) {
   return club?.shortName || club?.name || placeholder || (fallback ? `Club ${fallback}` : 'TBD');
+}
+
+function getClubDisplayWithSeed(
+  club?: { shortName?: string | null; name?: string | null } | null,
+  fallback?: number | null,
+  placeholder?: string | null,
+  seed?: number | undefined,
+) {
+  const label = getClubLabel(club, fallback, placeholder);
+  // If this is a placeholder (e.g., 'TBD'), show only the placeholder without a seed prefix.
+  if (typeof label === 'string' && label.trim().toUpperCase() === 'TBD') return 'TBD';
+  if (typeof placeholder === 'string' && placeholder.trim().toUpperCase() === 'TBD') return 'TBD';
+  return seed != null ? `${seed} ${label}` : label;
 }
 
 type Series = {
@@ -202,7 +214,7 @@ function SeriesCard({
                   className="w-6 h-6 object-contain flex-shrink-0"
                 />
               )}
-              <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
+              <p className="truncate text-sm font-medium text-gray-900">{getClubDisplayWithSeed(entry.club, entry.fallbackId, entry.placeholder, entry.seed)}</p>
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">{single ? 'Score' : 'Series'}</p>
@@ -282,6 +294,14 @@ function NbaBracket({
   regularSeasonStandings?: Array<{ clubId: number; groupId?: number | null; position: number }>;
   groups?: Array<{ id: number; name: string }>;
 }) {
+  const FIRST_ROUND_SLOT_TOP_SEEDS = [1, 4, 3, 2] as const;
+  const FIRST_ROUND_SLOT_SEED_PAIRS: Array<[number, number]> = [
+    [1, 8],
+    [4, 5],
+    [3, 6],
+    [2, 7],
+  ];
+
   const finalsPhase = displayPhases.find((p) => p.detail === 'Finals');
   const bracketPhases = displayPhases.filter((p) => p.detail !== 'Finals');
 
@@ -289,6 +309,39 @@ function NbaBracket({
   (regularSeasonStandings || []).forEach((standing) => {
     if (standing.groupId != null) clubToConf.set(Number(standing.clubId), Number(standing.groupId));
   });
+
+  // Build conference-specific seed maps: confId -> (clubId -> conferenceRank)
+  const confSeedMaps = new Map<number, Map<number, number>>();
+  // Group standings by groupId then sort by the provided position and map to 1..n
+  const byGroup: Record<number, Array<{ clubId: number; position: number }>> = {};
+  (regularSeasonStandings || []).forEach((st) => {
+    if (st.groupId == null) return;
+    const gid = Number(st.groupId);
+    if (!byGroup[gid]) byGroup[gid] = [];
+    byGroup[gid].push({ clubId: Number(st.clubId), position: Number(st.position ?? 9999) });
+  });
+  Object.entries(byGroup).forEach(([gidStr, arr]) => {
+    const gid = Number(gidStr);
+    arr.sort((a, b) => a.position - b.position);
+    const m = new Map<number, number>();
+    arr.forEach((item, idx) => m.set(item.clubId, idx + 1));
+    confSeedMaps.set(gid, m);
+  });
+
+  const getRawSeedForClub = (clubId?: number | null, preferredConfId?: number | null): number | undefined => {
+    if (clubId == null) return undefined;
+    const preferredMap = preferredConfId != null ? confSeedMaps.get(preferredConfId) : undefined;
+    const preferredValue = preferredMap?.get(clubId);
+    if (preferredValue != null) return preferredValue;
+
+    const conf = clubToConf.get(clubId);
+    if (conf != null) {
+      const cm = confSeedMaps.get(conf);
+      const v = cm?.get(clubId);
+      if (v != null) return v;
+    }
+    return seedMap.get(clubId);
+  };
 
   const getSeriesConf = (series: Series): number | null => {
     if (series.groupId != null) return series.groupId;
@@ -308,50 +361,477 @@ function NbaBracket({
   });
   const standingGroupIds = new Set<number>(clubToConf.values());
   const rawGroupIds = matchGroupIds.size >= 2 ? Array.from(matchGroupIds) : Array.from(standingGroupIds);
-  const [leftConf, rightConf] = rawGroupIds.slice(0, 2).length >= 2
-    ? [rawGroupIds[0], rawGroupIds[1]]
-    : [null, null];
 
-  const buildConferenceSlots = (phase: BracketPhase, confId: number | null, side: 'left' | 'right') => {
-    const allSeries = buildSeries(phase.matches || []);
-    const filteredSeries = confId == null
-      ? allSeries
-      : allSeries.filter((series) => getSeriesConf(series) === confId);
-    const orderedSeries = filteredSeries.slice().sort((a, b) => a.earliestDate.localeCompare(b.earliestDate));
-    const totalExpected = PHASE_SLOT_COUNTS[phase.detail];
-    const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : orderedSeries.length;
-    const slots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }> = orderedSeries.map((series, index) => ({
-      key: `${side}-${phase.detail}-${index}`,
-      series,
-      isPlaceholder: false,
-    }));
-
-    for (let index = orderedSeries.length; index < expectedPerSide; index++) {
-      slots.push({
-        key: `${side}-${phase.detail}-${index}`,
-        series: null,
-        isPlaceholder: true,
+  // If we couldn't build `confSeedMaps` from `regularSeasonStandings` groupId
+  // values (common when standings omit group info), try deriving a conference
+  // -> club position map by observing which clubs appear in matches for each
+  // `groupId` and mapping those clubs to their regular-season positions.
+  if (confSeedMaps.size === 0 && rawGroupIds.length > 0) {
+    const clubObservedGroup = new Map<number, number>();
+    bracketPhases.forEach((phase) => {
+      (phase.matches || []).forEach((match) => {
+        const gid = match.groupId;
+        if (gid == null) return;
+        if (match.homeClubId) clubObservedGroup.set(Number(match.homeClubId), gid);
+        if (match.awayClubId) clubObservedGroup.set(Number(match.awayClubId), gid);
       });
+    });
+
+    // Build maps per rawGroupIds from regularSeasonStandings positions for clubs
+    (rawGroupIds || []).forEach((gid) => {
+      const items = (regularSeasonStandings || []).filter((st) => Number(clubObservedGroup.get(Number(st.clubId))) === Number(gid));
+      if (!items || items.length === 0) return;
+      items.sort((a, b) => (Number(a.position ?? 9999) - Number(b.position ?? 9999)));
+      const m = new Map<number, number>();
+      items.forEach((it, idx) => m.set(Number(it.clubId), idx + 1));
+      confSeedMaps.set(Number(gid), m);
+      // Also populate clubToConf so downstream helpers can use it
+      items.forEach((it) => clubToConf.set(Number(it.clubId), Number(gid)));
+    });
+  }
+
+  // Ensure NBA always shows WEST on the left and EAST on the right when possible.
+  // Strategy: prefer explicit conference names first (WEST/EAST), otherwise
+  // prefer the conference that contains the regular-season #1 seed on the left.
+  let leftConf: number | null = null;
+  let rightConf: number | null = null;
+  if (rawGroupIds.length >= 2) {
+    // Detect WEST/EAST by name across all rawGroupIds
+    let westId: number | null = null;
+    let eastId: number | null = null;
+    for (const gid of rawGroupIds) {
+      const name = getConferenceName(gid, groups).toUpperCase();
+      if (name.includes('WEST')) westId = gid;
+      else if (name.includes('EAST')) eastId = gid;
     }
 
-    return slots;
+    if (westId != null && eastId != null) {
+      leftConf = westId;
+      rightConf = eastId;
+    } else {
+      // Fallback: if we have seed maps, place the conference containing seed #1 on the left
+      if (confSeedMaps.size > 0) {
+        let gidWithSeed1: number | null = null;
+        for (const [gid, m] of confSeedMaps.entries()) {
+          for (const pos of m.values()) {
+            if (pos === 1) {
+              gidWithSeed1 = gid;
+              break;
+            }
+          }
+          if (gidWithSeed1 != null) break;
+        }
+        if (gidWithSeed1 != null) {
+          leftConf = gidWithSeed1;
+          rightConf = rawGroupIds.find((id) => id !== gidWithSeed1) ?? null;
+        } else {
+          leftConf = rawGroupIds[0] ?? null;
+          rightConf = rawGroupIds[1] ?? null;
+        }
+      } else {
+        leftConf = rawGroupIds[0] ?? null;
+        rightConf = rawGroupIds[1] ?? null;
+      }
+    }
+  }
+
+  /**
+   * Build slots for all phases of one conference side, ordered by bracket structure.
+   *
+   * Strategy:
+   * 1. Find the highest phase that actually has series data (the "anchor").
+   * 2. Sort the anchor phase's series by earliestDate (stable initial order).
+   * 3. Phases ABOVE the anchor (no data yet) → fill with placeholders.
+   * 4. Phases BELOW the anchor → derive order by looking up which parent
+   *    series each team in the anchor/child series came from (club-id matching).
+   *
+   * This handles both finished seasons (anchor = Conf Finals) and in-progress
+   * seasons (anchor = Round of 16, where higher phases have no data yet).
+   */
+  const buildBracketOrderedSlots = (
+    phases: BracketPhase[],
+    confId: number | null,
+    side: 'left' | 'right'
+  ): Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> => {
+    // Build series per phase, filtered by conference
+    const seriesByPhase: Record<string, Series[]> = {};
+    phases.forEach((phase) => {
+      const all = buildSeries(phase.matches || []);
+      seriesByPhase[phase.detail] = confId == null
+        ? all
+        : all.filter((s) => getSeriesConf(s) === confId);
+    });
+
+    const findSeedForClub = (clubId: number, preferredConfId?: number | null): number | undefined => {
+      return getRawSeedForClub(clubId, preferredConfId);
+    };
+
+    const topSeedForSeries = (series: Series): number | undefined => {
+      const numericSeeds = seriesClubIds(series)
+        .map((id) => findSeedForClub(id, confId))
+        .filter((seed): seed is number => typeof seed === 'number');
+
+      if (numericSeeds.length === 0) return undefined;
+
+      const topFourSeed = numericSeeds.find((seed) => seed >= 1 && seed <= 4);
+      return topFourSeed ?? Math.min(...numericSeeds);
+    };
+
+    // phases is in PHASE_ORDER (lowest → highest); reverse gives highest → lowest
+    const highToLow = [...phases].reverse();
+
+    if (highToLow.length === 0) return {};
+
+    const orderedByPhase: Record<string, (Series | null)[]> = {};
+
+    // Find the highest phase index (in highToLow) that has actual series data
+    let topDataIdx = -1;
+    for (let i = 0; i < highToLow.length; i++) {
+      if (seriesByPhase[highToLow[i].detail].length > 0) {
+        topDataIdx = i;
+        break;
+      }
+    }
+
+    // If no phase has data at all, fall back to all placeholders
+    if (topDataIdx === -1) {
+      const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
+      phases.forEach((phase) => {
+        const totalExpected = PHASE_SLOT_COUNTS[phase.detail];
+        const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : 0;
+        result[phase.detail] = Array.from({ length: expectedPerSide }, (_, i) => ({
+          key: `${side}-${phase.detail}-${i}`,
+          series: null,
+          isPlaceholder: true,
+        }));
+      });
+      return result;
+    }
+
+    // Phases ABOVE the anchor (higher round, no data yet) → placeholders
+    for (let i = 0; i < topDataIdx; i++) {
+      const detail = highToLow[i].detail;
+      const totalExpected = PHASE_SLOT_COUNTS[detail];
+      const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : 0;
+      orderedByPhase[detail] = Array(expectedPerSide).fill(null);
+    }
+
+    // Anchor phase: determine ordering.
+    const anchorDetail = highToLow[topDataIdx].detail;
+    // If the anchor is the NBA First Round (Round of 16), order series by
+    // the best (lowest) seed present so the series containing seed 1 is top.
+    if (anchorDetail === 'Round of 16') {
+        // NBA canonical first-round ordering by seed pairs (accounting for play-ins)
+        // Desired visual order per conference:
+        // 0: 1 vs (7-10)
+        // 1: 4 vs 5
+        // 2: 3 vs 6
+        // 3: 2 vs (7-10)
+
+        // Build a conference-specific seed map (position within conference).
+        // The data in `regularSeasonStandings` may not include `groupId` for
+        // some seasons; prefer using the already-built `confSeedMaps` which
+        // maps groupId -> (clubId -> position). If a direct map for `confId`
+        // is unavailable, fall back to searching across `confSeedMaps` for
+        // seed positions for the clubs in a series.
+        const pairIndexForSeries = (s: Series) => {
+          const seeds = seriesClubIds(s).map((id) => findSeedForClub(id, confId));
+          const has = (v: number) => seeds.some((s) => typeof s === 'number' && s === v);
+          const hasAny = (arr: number[]) => arr.some((v) => has(v));
+
+          // 1 vs play-in (7..10)
+          if (has(1) && hasAny([7,8,9,10])) return 0;
+          // 4 vs 5
+          if (has(4) && has(5)) return 1;
+          // 3 vs 6
+          if (has(3) && has(6)) return 2;
+          // 2 vs play-in (7..10)
+          if (has(2) && hasAny([7,8,9,10])) return 3;
+
+          // Fallbacks: prefer series that include top seeds in order 1,4,3,2
+          const seedOrder = [1,4,3,2];
+          for (let i = 0; i < seedOrder.length; i++) {
+            if (has(seedOrder[i])) return i;
+          }
+          // Last resort: use minimum seed numeric (ignore unknowns)
+          const numericSeeds = seeds.filter((x): x is number => typeof x === 'number');
+          if (numericSeeds.length === 0) return 1000;
+          const minSeed = Math.min(...numericSeeds);
+          return 100 + minSeed;
+        };
+
+      orderedByPhase[anchorDetail] = seriesByPhase[anchorDetail]
+        .slice()
+        .sort((a, b) => {
+          const ai = pairIndexForSeries(a);
+          const bi = pairIndexForSeries(b);
+          if (ai !== bi) return ai - bi;
+          return a.earliestDate.localeCompare(b.earliestDate);
+        });
+    } else {
+      orderedByPhase[anchorDetail] = seriesByPhase[anchorDetail]
+        .slice()
+        .sort((a, b) => a.earliestDate.localeCompare(b.earliestDate));
+    }
+
+    // Phases BELOW the anchor: derive order via club-id matching
+    for (let i = topDataIdx + 1; i < highToLow.length; i++) {
+      const childDetail = highToLow[i - 1].detail;  // higher round (fewer matchups)
+      const parentDetail = highToLow[i].detail;      // lower round (more matchups)
+
+      const childOrder = orderedByPhase[childDetail] || [];
+      const parentPool = [...(seriesByPhase[parentDetail] || [])];
+      const usedIds = new Set<string>();
+      const ordered: (Series | null)[] = [];
+
+      for (const child of childOrder) {
+        if (!child) {
+          // Placeholder child → 2 placeholder parent slots
+          ordered.push(null, null);
+          continue;
+        }
+
+        // Sort clubs by seed (lower seed number = better seeded = top = first)
+        const clubs = seriesClubIds(child);
+        const sortedClubs = clubs.slice().sort((a, b) => {
+          const sa = seedMap.get(a) ?? 9999;
+          const sb = seedMap.get(b) ?? 9999;
+          return sa - sb;
+        });
+
+        // For each team in the child series, find which parent series they came from
+        for (let ci = 0; ci < 2; ci++) {
+          const clubId = sortedClubs[ci];
+          if (clubId == null) {
+            ordered.push(null);
+            continue;
+          }
+          const idx = parentPool.findIndex(
+            (s) => !usedIds.has(s.id) && seriesClubIds(s).includes(clubId)
+          );
+          if (idx >= 0) {
+            usedIds.add(parentPool[idx].id);
+            ordered.push(parentPool[idx]);
+          } else {
+            ordered.push(null);
+          }
+        }
+      }
+
+      // Fill remaining expected slots with placeholders
+      const totalExpected = PHASE_SLOT_COUNTS[parentDetail];
+      const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : ordered.length;
+      while (ordered.length < expectedPerSide) ordered.push(null);
+
+      orderedByPhase[parentDetail] = ordered;
+    }
+
+    // Propagate decided winners only one phase forward (immediate next phase).
+    // Mapping strategy: each pair of child slots feeds one parent slot at index floor(childIndex/2).
+    for (let p = 0; p < phases.length - 1; p++) {
+      const curDetail = phases[p].detail;
+      const nextDetail = phases[p + 1].detail;
+      const curArr = orderedByPhase[curDetail] || [];
+      const nextArr = orderedByPhase[nextDetail] || [];
+
+      for (let ci = 0; ci < curArr.length; ci++) {
+        const child = curArr[ci];
+        if (!child) continue;
+        // Ignore synthetic series we just created to avoid cascading propagation
+        if (child.id && String(child.id).startsWith('prop:')) continue;
+        const wb = child.winsById || {};
+        const winnerEntry = Object.entries(wb).find(([, v]) => (v || 0) >= 4);
+        if (!winnerEntry) continue;
+        const winnerId = Number(winnerEntry[0]);
+
+        const parentIndex = Math.floor(ci / 2);
+        while (nextArr.length <= parentIndex) nextArr.push(null);
+
+        if (nextArr[parentIndex] == null) {
+          // Determine both children that feed this parent so connectors link
+          // to both rectangles. Use the first club id observed for each child
+          // where available.
+          const leftChild = curArr[parentIndex * 2] ?? null;
+          const rightChild = curArr[parentIndex * 2 + 1] ?? null;
+          const leftClub = leftChild ? seriesClubIds(leftChild)[0] : undefined;
+          const rightClub = rightChild ? seriesClubIds(rightChild)[0] : undefined;
+
+          // Representative match: prefer the child that contains the winner
+          const repSource = (leftChild && seriesClubIds(leftChild).includes(winnerId)) ? leftChild : ((rightChild && seriesClubIds(rightChild).includes(winnerId)) ? rightChild : child);
+          const rep = repSource?.matches.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))?.at(-1) ?? null;
+
+          const syntheticMatch: BracketMatch = {
+            id: -(parentIndex + 1),
+            homeClubId: leftClub ?? (rep && rep.homeClubId) ?? undefined,
+            awayClubId: rightClub ?? (rep && rep.awayClubId) ?? undefined,
+            homeClub: (rep && rep.homeClubId === leftClub) ? rep.homeClub : undefined,
+            awayClub: (rep && rep.awayClubId === rightClub) ? rep.awayClub : undefined,
+            // Use placeholder for the non-winner side so it renders as TBD
+            homeClubPlaceholder: (leftClub && leftClub !== winnerId) ? 'TBD' : undefined,
+            awayClubPlaceholder: (rightClub && rightClub !== winnerId) ? 'TBD' : undefined,
+            date: rep?.date,
+            status: 'Finished',
+          };
+
+          const syntheticSeries: Series = {
+            id: `prop:${nextDetail}:${parentIndex}`,
+            homeClubId: syntheticMatch.homeClubId,
+            awayClubId: syntheticMatch.awayClubId,
+            homePlaceholder: syntheticMatch.homeClubPlaceholder ?? null,
+            awayPlaceholder: syntheticMatch.awayClubPlaceholder ?? null,
+            matches: [syntheticMatch],
+            winsById: { [String(winnerId)]: wb[String(winnerId)] ?? 4 },
+            groupId: child.groupId ?? null,
+            earliestDate: child.earliestDate,
+          };
+
+          nextArr[parentIndex] = syntheticSeries;
+        }
+      }
+
+      orderedByPhase[nextDetail] = nextArr;
+    }
+
+    
+
+    // Convert to slot format
+    const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
+    phases.forEach((phase) => {
+      const totalExpected = PHASE_SLOT_COUNTS[phase.detail];
+      const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : 0;
+      const slots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }> = [];
+
+      // Special deterministic ordering for Round of 16 (First Round)
+      if (phase.detail === 'Round of 16') {
+        const pool = (orderedByPhase[phase.detail] || []).slice();
+        const used = new Set<string>();
+
+        const preferredSlotByTopSeed = new Map<number, number>([
+          [1, 0],
+          [4, 1],
+          [3, 2],
+          [2, 3],
+        ]);
+
+        const poolSorted = pool
+          .slice()
+          .filter(Boolean)
+          .sort((A, B) => {
+            const topA = topSeedForSeries(A!);
+            const topB = topSeedForSeries(B!);
+            const slotA = preferredSlotByTopSeed.get(topA ?? -1) ?? 999;
+            const slotB = preferredSlotByTopSeed.get(topB ?? -1) ?? 999;
+            if (slotA !== slotB) return slotA - slotB;
+            const minA = topA ?? 9999;
+            const minB = topB ?? 9999;
+            if (minA !== minB) return minA - minB;
+            return A!.earliestDate.localeCompare(B!.earliestDate);
+          });
+
+        for (let slotIdx = 0; slotIdx < expectedPerSide; slotIdx++) {
+          let found: Series | null = null;
+          const desiredTopSeed = FIRST_ROUND_SLOT_TOP_SEEDS[slotIdx];
+
+          const idxByTopSeed = pool.findIndex((s) => {
+            if (!s || used.has(s.id)) return false;
+            return topSeedForSeries(s) === desiredTopSeed;
+          });
+          if (idxByTopSeed >= 0) {
+            const candidate = pool[idxByTopSeed]!;
+            found = candidate;
+            used.add(candidate.id);
+          }
+
+          // fallback: take next unused series from the seed-sorted pool
+          if (!found) {
+            const idx = poolSorted.findIndex((s) => s && !used.has(s.id));
+            if (idx >= 0) {
+              const candidate = poolSorted[idx]!;
+              found = candidate;
+              used.add(candidate.id);
+            }
+          }
+
+          slots.push({ key: `${side}-${phase.detail}-${slotIdx}`, series: found, isPlaceholder: found == null });
+        }
+
+        result[phase.detail] = slots;
+        return;
+      }
+
+      // Default conversion for other phases
+      let ordered = orderedByPhase[phase.detail] || [];
+      const maxCount = expectedPerSide || ordered.length;
+      for (let i = 0; i < Math.max(ordered.length, maxCount); i++) {
+        const series = ordered[i] ?? null;
+        slots.push({ key: `${side}-${phase.detail}-${i}`, series, isPlaceholder: series == null });
+      }
+      result[phase.detail] = slots;
+    });
+
+    return result;
   };
 
-  const leftSlotsByPhase = React.useMemo(() => {
-    const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
-    bracketPhases.forEach((phase) => {
-      result[phase.detail] = buildConferenceSlots(phase, leftConf, 'left');
-    });
-    return result;
-  }, [displayPhases, leftConf]);
+  const leftSlotsByPhase = React.useMemo(
+    () => buildBracketOrderedSlots(bracketPhases, leftConf, 'left'),
+    [displayPhases, leftConf]
+  );
 
-  const rightSlotsByPhase = React.useMemo(() => {
-    const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
-    bracketPhases.forEach((phase) => {
-      result[phase.detail] = buildConferenceSlots(phase, rightConf, 'right');
-    });
-    return result;
-  }, [displayPhases, rightConf]);
+  const rightSlotsByPhase = React.useMemo(
+    () => buildBracketOrderedSlots(bracketPhases, rightConf, 'right'),
+    [displayPhases, rightConf]
+  );
+
+  const inferredPostseasonSeedMaps = React.useMemo(() => {
+    const byConference = new Map<number, Map<number, number>>();
+
+    const assignSeedsForConference = (
+      confId: number | null,
+      slots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }>,
+    ) => {
+      if (confId == null || !slots || slots.length === 0) return;
+
+      const confMap = new Map<number, number>();
+
+      slots.forEach((slot, index) => {
+        const pair = FIRST_ROUND_SLOT_SEED_PAIRS[index];
+        if (!pair || !slot?.series) return;
+
+        const clubs = seriesClubIds(slot.series)
+          .map((clubId) => ({
+            clubId,
+            rawSeed: getRawSeedForClub(clubId, confId) ?? 9999,
+          }))
+          .sort((a, b) => a.rawSeed - b.rawSeed || a.clubId - b.clubId);
+
+        if (clubs[0]) confMap.set(clubs[0].clubId, pair[0]);
+        if (clubs[1]) confMap.set(clubs[1].clubId, pair[1]);
+      });
+
+      byConference.set(confId, confMap);
+    };
+
+    assignSeedsForConference(leftConf, leftSlotsByPhase['Round of 16'] || []);
+    assignSeedsForConference(rightConf, rightSlotsByPhase['Round of 16'] || []);
+
+    return byConference;
+  }, [leftConf, rightConf, leftSlotsByPhase, rightSlotsByPhase]);
+
+  const getDisplaySeedForClub = (clubId?: number | null, preferredConfId?: number | null): number | undefined => {
+    if (clubId == null) return undefined;
+
+    if (preferredConfId != null) {
+      const preferredValue = inferredPostseasonSeedMaps.get(preferredConfId)?.get(clubId);
+      if (preferredValue != null) return preferredValue;
+    }
+
+    for (const seedMapForConf of inferredPostseasonSeedMaps.values()) {
+      const inferred = seedMapForConf.get(clubId);
+      if (inferred != null) return inferred;
+    }
+
+    return getRawSeedForClub(clubId, preferredConfId);
+  };
 
   const finalsSeries = finalsPhase ? buildSeries(finalsPhase.matches || []) : [];
   const finalSlot = finalsSeries[0]
@@ -426,8 +906,24 @@ function NbaBracket({
 
         const leftParents = leftSlotsByPhase[parentDetail] || [];
         const leftChildren = leftSlotsByPhase[childDetail] || [];
-        leftChildren.forEach((childSlot, childIndex) => {
-          const parentSlots = [leftParents[childIndex * 2], leftParents[childIndex * 2 + 1]].filter(Boolean);
+        leftChildren.forEach((childSlot) => {
+          if (!childSlot) return;
+          let parentSlots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }> = [];
+
+          // If the child has a series, prefer to match parents by club-id
+          if (childSlot.series) {
+            const childClubs = seriesClubIds(childSlot.series);
+            parentSlots = leftParents.filter((ps) => ps && ps.series && seriesClubIds(ps.series).some((id) => childClubs.includes(id)));
+          }
+
+          // If no parents found by club-id (or child is a placeholder), fall back to index pairing
+          if (parentSlots.length === 0) {
+            const childIndex = leftChildren.indexOf(childSlot);
+            parentSlots = [leftParents[childIndex * 2], leftParents[childIndex * 2 + 1]].filter(Boolean) as Array<{
+              key: string; series: Series | null; isPlaceholder: boolean
+            }>;
+          }
+
           const parentCenters = parentSlots
             .map((slot) => getMetrics(slot.key)?.centerY)
             .filter((value): value is number => value != null);
@@ -440,8 +936,22 @@ function NbaBracket({
 
         const rightParents = rightSlotsByPhase[parentDetail] || [];
         const rightChildren = rightSlotsByPhase[childDetail] || [];
-        rightChildren.forEach((childSlot, childIndex) => {
-          const parentSlots = [rightParents[childIndex * 2], rightParents[childIndex * 2 + 1]].filter(Boolean);
+        rightChildren.forEach((childSlot) => {
+          if (!childSlot) return;
+          let parentSlots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }> = [];
+
+          if (childSlot.series) {
+            const childClubs = seriesClubIds(childSlot.series);
+            parentSlots = rightParents.filter((ps) => ps && ps.series && seriesClubIds(ps.series).some((id) => childClubs.includes(id)));
+          }
+
+          if (parentSlots.length === 0) {
+            const childIndex = rightChildren.indexOf(childSlot);
+            parentSlots = [rightParents[childIndex * 2], rightParents[childIndex * 2 + 1]].filter(Boolean) as Array<{
+              key: string; series: Series | null; isPlaceholder: boolean
+            }>;
+          }
+
           const parentCenters = parentSlots
             .map((slot) => getMetrics(slot.key)?.centerY)
             .filter((value): value is number => value != null);
@@ -500,7 +1010,20 @@ function NbaBracket({
       ref={(element) => { cardRefs.current[slot.key] = element; }}
       style={{ transform: `translateY(${nbaOffsets[slot.key] ?? 0}px)`, transition: 'transform 160ms ease' }}
     >
-      {slot.isPlaceholder || !slot.series ? <PlaceholderCard /> : <SeriesCard s={slot.series} seedMap={seedMap} />}
+      {slot.isPlaceholder || !slot.series ? <PlaceholderCard /> : (() => {
+        // Build a local seed map that prefers conference-specific seeds for the series' clubs
+        const localSeedMap = new Map<number, number>();
+        const slotConfId = getSeriesConf(slot.series!);
+        seriesClubIds(slot.series!).forEach((cid) => {
+          const s = getDisplaySeedForClub(cid, slotConfId);
+          if (s != null) localSeedMap.set(cid, s);
+          else {
+            const g = seedMap.get(cid);
+            if (g != null) localSeedMap.set(cid, g);
+          }
+        });
+        return <SeriesCard s={slot.series!} seedMap={localSeedMap} />;
+      })()}
     </div>
   );
 
@@ -654,6 +1177,23 @@ function NbaPlayInsBracket({
         enhancedClubToConf.set(match.awayClubId, match.groupId);
       }
     }
+  });
+
+  // Build conference-specific seed maps for play-ins using regularSeasonStandings
+  const confSeedMaps = new Map<number, Map<number, number>>();
+  const byGroupPlayins: Record<number, Array<{ clubId: number; position: number }>> = {};
+  (regularSeasonStandings || []).forEach((st) => {
+    if (st.groupId == null) return;
+    const gid = Number(st.groupId);
+    if (!byGroupPlayins[gid]) byGroupPlayins[gid] = [];
+    byGroupPlayins[gid].push({ clubId: Number(st.clubId), position: Number(st.position ?? 9999) });
+  });
+  Object.entries(byGroupPlayins).forEach(([gidStr, arr]) => {
+    const gid = Number(gidStr);
+    arr.sort((a, b) => a.position - b.position);
+    const m = new Map<number, number>();
+    arr.forEach((item, idx) => m.set(item.clubId, idx + 1));
+    confSeedMaps.set(gid, m);
   });
 
   // Second pass: use enhanced mapping to assign conferences to remaining matches
@@ -871,8 +1411,13 @@ function NbaPlayInsBracket({
 
   // Render a single match card
   const renderMatchCard = (match: BracketMatch, key: string, ref?: (el: HTMLDivElement | null) => void, offset?: number) => {
-    const homeSeed = match.homeClubId ? seedMap.get(match.homeClubId) : undefined;
-    const awaySeed = match.awayClubId ? seedMap.get(match.awayClubId) : undefined;
+    const matchConf = getEnhancedMatchConf(match);
+    const homeSeed = match.homeClubId
+      ? (matchConf != null ? (confSeedMaps.get(matchConf)?.get(match.homeClubId) ?? seedMap.get(match.homeClubId)) : seedMap.get(match.homeClubId))
+      : undefined;
+    const awaySeed = match.awayClubId
+      ? (matchConf != null ? (confSeedMaps.get(matchConf)?.get(match.awayClubId) ?? seedMap.get(match.awayClubId)) : seedMap.get(match.awayClubId))
+      : undefined;
       // Only flip ordering for basketball (NBA) where seed-based mirroring is desired.
       // For football and other sports preserve the payload home/away orientation.
       const shouldFlip = homeSeed != null && awaySeed != null && awaySeed < homeSeed;
@@ -904,7 +1449,7 @@ function NbaPlayInsBracket({
                     className="w-6 h-6 object-contain flex-shrink-0"
                   />
                 )}
-                <p className="truncate text-sm font-medium text-gray-900">{getClubLabel(entry.club, entry.fallbackId, entry.placeholder)}</p>
+                <p className="truncate text-sm font-medium text-gray-900">{getClubDisplayWithSeed(entry.club, entry.fallbackId, entry.placeholder, entry.seed)}</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-semibold text-gray-900">{entry.score ?? '-'}</p>

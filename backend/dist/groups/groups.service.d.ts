@@ -21,6 +21,9 @@ export declare class GroupsService {
             status: string;
             flgDefault: boolean;
             numberOfGroups: number;
+            flgHasPostseason: boolean;
+            currentPhase: "Regular" | "Play-ins" | "Playoffs";
+            currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
             flgEspnApiPartialScores: boolean;
             createdAt: Date;
         };

@@ -27,7 +27,7 @@ let ApiController = class ApiController {
         return { created: Array.isArray(created) ? created.length : 0, items: created };
     }
     async fetchAndStore(body) {
-        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate, body.seasonStatus, body.isSeasonDefault, body.sameYears, body.scheduleType, body.isLeagueDefault, body.hasDivisions, body.hasGroups, body.numberOfGroups, body.runInBackground, body.inferClubs);
+        const result = await this.apiService.fetchAndStore(body.league, body.season, body.sport, body.origin, body.startDate, body.endDate, body.seasonStatus, body.isSeasonDefault, body.sameYears, body.hasPostseason, body.scheduleType, body.isLeagueDefault, body.hasDivisions, body.hasGroups, body.numberOfGroups, body.runInBackground, body.inferClubs);
         return { stored: result };
     }
     async listTransitional(limit) {

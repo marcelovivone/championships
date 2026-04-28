@@ -1121,12 +1121,37 @@ async findOne(id: number) {
                 ? regularSeasonStandings
                 : regularSeasonStandings.filter((standing: any) => Number(standing.groupId ?? 0) === Number(groupId));
 
+            const groupedRegularStandings = new Map<number | null, any[]>();
+            filteredRegularStandings.forEach((standing: any) => {
+                const groupKey = standing.groupId ?? null;
+                const existing = groupedRegularStandings.get(groupKey);
+                if (existing) {
+                    existing.push(standing);
+                } else {
+                    groupedRegularStandings.set(groupKey, [standing]);
+                }
+            });
+
+            const rankedRegularStandings = (
+                await Promise.all(
+                    Array.from(groupedRegularStandings.entries())
+                        .sort((a, b) => Number(a[0] ?? 0) - Number(b[0] ?? 0))
+                        .map(async ([, rows]) => {
+                            const rankedRows = await this.standingsService.rankRowsForSeasonContext(rows, leagueId, seasonId);
+                            return rankedRows.map((standing: any, index: number) => ({
+                                ...standing,
+                                position: index + 1,
+                            }));
+                        }),
+                )
+            ).flat();
+
             return {
                 season: seasonRow,
-                regularSeasonStandings: filteredRegularStandings.map((standing: any, index: number) => ({
+                regularSeasonStandings: rankedRegularStandings.map((standing: any) => ({
                     clubId: standing.clubId,
                     groupId: standing.groupId ?? null,
-                    position: index + 1,
+                    position: standing.position,
                     points: standing.points,
                 })),
                 phases,

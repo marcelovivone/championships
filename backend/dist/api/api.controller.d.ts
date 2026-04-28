@@ -22,6 +22,7 @@ export declare class ApiController {
         seasonStatus?: string;
         isSeasonDefault?: boolean;
         sameYears?: boolean;
+        hasPostseason?: boolean;
         scheduleType?: string;
         isLeagueDefault?: boolean;
         hasDivisions?: boolean;

@@ -14,6 +14,9 @@ export declare class SeasonsService {
             status: string;
             flgDefault: boolean;
             numberOfGroups: number;
+            flgHasPostseason: boolean;
+            currentPhase: "Regular" | "Play-ins" | "Playoffs";
+            currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
             createdAt: Date;
             sport: {
                 id: number;
@@ -37,6 +40,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         createdAt: Date;
         sport: {
             id: number;
@@ -56,6 +62,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
@@ -68,6 +77,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         sport: {
             id: number;
             name: string;
@@ -122,6 +134,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }[]>;
@@ -134,6 +149,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
@@ -148,6 +166,9 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
     }>;
     update(id: number, updateSeasonDto: UpdateSeasonDto): Promise<{
         id: number;
@@ -158,6 +179,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
@@ -170,6 +194,9 @@ export declare class SeasonsService {
         status: string;
         flgDefault: boolean;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }>;
@@ -184,5 +211,8 @@ export declare class SeasonsService {
         endYear: number;
         status: string;
         numberOfGroups: number;
+        flgHasPostseason: boolean;
+        currentPhase: "Regular" | "Play-ins" | "Playoffs";
+        currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
     }>;
 }

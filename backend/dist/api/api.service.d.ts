@@ -13,7 +13,7 @@ export declare class ApiService {
         firstRow: Record<string, any>;
         matches: Record<string, any>[];
     }>;
-    fetchAndStore(league: string, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string, seasonStatus?: boolean | string, isSeasonDefault?: boolean, sameYears?: boolean, scheduleType?: string, isLeagueDefault?: boolean, hasDivisions?: boolean, hasGroups?: boolean, numberOfGroups?: number, runInBackground?: boolean, inferClubs?: boolean): Promise<{
+    fetchAndStore(league: string, season: number, sport?: number, origin?: string, startDate?: string, endDate?: string, seasonStatus?: boolean | string, isSeasonDefault?: boolean, sameYears?: boolean, hasPostseason?: boolean, scheduleType?: string, isLeagueDefault?: boolean, hasDivisions?: boolean, hasGroups?: boolean, numberOfGroups?: number, runInBackground?: boolean, inferClubs?: boolean): Promise<{
         id: number;
         fetched_at: any;
         background: boolean;
@@ -264,8 +264,17 @@ export declare class ApiService {
         error?: undefined;
     }>;
     private normalizeSeasonPhaseFilter;
+    private isAmbiguousClubPlaceholderName;
+    private rankClubSuggestionRows;
+    private classifyEspnEventSeasonPhase;
     private filterEspnEventsBySeasonPhase;
     private filterApiFootballFixturesBySeasonPhase;
+    private inferSeasonPhaseDetailFromText;
+    private inferEspnSeasonPhase;
+    private inferApiFootballSeasonPhase;
+    private isRawEspnEventFinished;
+    private isRawApiFootballFixtureFinished;
+    private detectCurrentSeasonPhase;
     private parseTransitionalEspn;
     applyTransitional(id: number, options?: {
         dryRun?: boolean;
