@@ -108,12 +108,28 @@ export type Standing = {
   club?: ClubRef | null;
 };
 
+export type StandingZone = {
+  id: number;
+  sportId: number;
+  leagueId: number;
+  seasonId?: number | null;
+  startPosition: number;
+  endPosition: number;
+  name: string;
+  typeOfStanding?: string | null;
+  start_year?: number | null;
+  end_year?: number | null;
+  flg_priority?: boolean;
+  colorHex: string;
+};
+
 export type Match = {
   id: number;
   sportId: number;
   leagueId: number;
   seasonId: number;
   roundId?: number | null;
+  groupId?: number | null;
   homeClubId?: number | null;
   awayClubId?: number | null;
   homeClubPlaceholder?: string | null;
@@ -135,6 +151,32 @@ export type SeasonClub = {
   groupId?: number | null;
   club?: ClubRef | null;
   group?: GroupRef | null;
+};
+
+export type PostseasonStandingSeed = {
+  clubId: number;
+  groupId?: number | null;
+  position: number;
+  points?: number | null;
+};
+
+export type PostseasonPhase = {
+  phase: string;
+  detail: string;
+  matches: Match[];
+};
+
+export type PostseasonBracket = {
+  season?: {
+    id: number;
+    sportId?: number;
+    leagueId?: number;
+    flgHasPostseason?: boolean;
+    currentPhase?: string | null;
+    currentPhaseDetail?: string | null;
+  };
+  regularSeasonStandings?: PostseasonStandingSeed[];
+  phases?: PostseasonPhase[];
 };
 
 function getConfigExtra(): Record<string, unknown> | undefined {
@@ -329,4 +371,38 @@ export async function fetchMatchesSlice(params: {
 
   const response = await apiClient.get(`/v1/matches?${searchParams.toString()}`);
   return toArray<Match>(response.data);
+}
+
+export async function fetchStandingZones(params: { sportId: number; leagueId: number; seasonId?: number | null }): Promise<StandingZone[]> {
+  const searchParams = new URLSearchParams({
+    sportId: String(params.sportId),
+    leagueId: String(params.leagueId),
+  });
+
+  if (params.seasonId) {
+    searchParams.set('seasonId', String(params.seasonId));
+  }
+
+  const response = await apiClient.get(`/v1/standing-zones?${searchParams.toString()}`);
+  return toArray<StandingZone>(response.data);
+}
+
+export async function fetchPostseasonBracket(params: {
+  leagueId: number;
+  seasonId: number;
+  groupId?: number | null;
+}): Promise<PostseasonBracket> {
+  const searchParams = new URLSearchParams({
+    leagueId: String(params.leagueId),
+    seasonId: String(params.seasonId),
+  });
+
+  if (params.groupId) {
+    searchParams.set('groupId', String(params.groupId));
+  }
+
+  const response = await apiClient.get(`/v1/matches/postseason-bracket?${searchParams.toString()}`);
+  return response.data && typeof response.data === 'object'
+    ? (response.data as PostseasonBracket)
+    : { regularSeasonStandings: [], phases: [] };
 }

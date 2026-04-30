@@ -13,21 +13,26 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchLeagues,
   fetchMatchesSlice,
+  fetchPostseasonBracket,
   fetchRounds,
   fetchSeasonClubs,
   fetchSeasonMatches,
   fetchSeasons,
   fetchSports,
+  fetchStandingZones,
   fetchStandings,
   getApiBaseUrl,
   type League,
   type Match,
+  type PostseasonPhase,
   type Round,
   type Season,
   type SeasonClub,
   type Sport,
   type Standing,
+  type StandingZone,
 } from './api';
+import PostseasonBracket, { buildDisplayPhases } from './PostseasonBracket';
 
 type SelectorOption = {
   key: string;
@@ -39,6 +44,8 @@ type StandingGroupSection = {
   title: string;
   standings: Standing[];
 };
+
+// --- Helper types and functions for standing zones (mobile presentation) ---
 
 function normalizeText(value: string | null | undefined): string {
   return String(value || '').trim().toLowerCase();
@@ -260,6 +267,68 @@ function getMatchTeamLabel(
   );
 }
 
+function hexToLuminance(hex: string): number {
+  try {
+    const h = hex.replace('#', '').trim();
+    const r = parseInt(h.substring(0, 2), 16) / 255;
+    const g = parseInt(h.substring(2, 4), 16) / 255;
+    const b = parseInt(h.substring(4, 6), 16) / 255;
+    // relative luminance
+    const a = [r, g, b].map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+    return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+  } catch (e) {
+    return 1;
+  }
+}
+
+function getContrastingTextColor(hex: string): string {
+  const lum = hexToLuminance(hex || '#ffffff');
+  return lum > 0.6 ? '#111111' : '#ffffff';
+}
+
+function getSeasonViewSelection(season?: Season | null): { phase: string; detail: string } {
+  if (!season?.flgHasPostseason) {
+    return { phase: 'Regular', detail: 'Regular' };
+  }
+
+  const rawPhase = String(season.currentPhase ?? 'Regular');
+  const normalizedPhase = normalizeText(rawPhase);
+  const detail = String(
+    season.currentPhaseDetail ?? (normalizedPhase === 'play-ins' ? 'Play-ins' : 'Regular'),
+  );
+
+  if (normalizedPhase === 'play-ins') {
+    return { phase: 'Play-ins', detail: 'Play-ins' };
+  }
+
+  if (normalizedPhase === 'playoffs') {
+    return {
+      phase: 'Playoffs',
+      detail: detail !== 'Regular' && detail !== 'Play-ins' ? detail : 'Round of 64',
+    };
+  }
+
+  return { phase: 'Regular', detail: 'Regular' };
+}
+
+function getPhaseDisplayLabel(sport?: Sport | null, phaseDetail?: string | null): string {
+  const detail = String(phaseDetail || '');
+  const isBasketball = normalizeText(sport?.name).includes('basketball');
+
+  if (!isBasketball) {
+    return detail;
+  }
+
+  const mapping: Record<string, string> = {
+    'Round of 16': 'First Round',
+    Quarterfinals: 'Conf. Semifinals',
+    Semifinals: 'Conf. Finals',
+    Finals: 'Finals',
+  };
+
+  return mapping[detail] || detail;
+}
+
 function formatMatchDate(value?: string | null): string {
   if (!value) {
     return 'No date';
@@ -364,6 +433,8 @@ export default function RegularSeasonScreen() {
   const [seasonId, setSeasonId] = React.useState<number | null>(null);
   const [roundId, setRoundId] = React.useState<number | null>(null);
   const [matchDate, setMatchDate] = React.useState<string | null>(null);
+  const [seasonPhase, setSeasonPhase] = React.useState<string>('Regular');
+  const [seasonPhaseDetail, setSeasonPhaseDetail] = React.useState<string>('Regular');
 
   const sportsQuery = useQuery({
     queryKey: ['mobile', 'sports'],
@@ -446,6 +517,18 @@ export default function RegularSeasonScreen() {
     () => seasons.find((season) => season.id === seasonId) || null,
     [seasons, seasonId],
   );
+  const selectedSeasonHasPostseason = Boolean(selectedSeason?.flgHasPostseason);
+
+  React.useEffect(() => {
+    const next = getSeasonViewSelection(selectedSeason);
+    setSeasonPhase(next.phase);
+    setSeasonPhaseDetail(next.detail);
+  }, [
+    selectedSeason?.id,
+    selectedSeason?.currentPhase,
+    selectedSeason?.currentPhaseDetail,
+    selectedSeason?.flgHasPostseason,
+  ]);
 
   const scheduleIsDateBased = isDateBased(selectedLeague);
 
@@ -511,6 +594,95 @@ export default function RegularSeasonScreen() {
   const clubMap = React.useMemo(() => getClubNameMap(seasonClubsQuery.data ?? []), [seasonClubsQuery.data]);
   const seasonGroupData = React.useMemo(() => getSeasonGroupData(seasonClubsQuery.data ?? []), [seasonClubsQuery.data]);
 
+  const postseasonBracketQuery = useQuery({
+    queryKey: ['mobile', 'postseason-bracket', leagueId, seasonId],
+    queryFn: () => fetchPostseasonBracket({ leagueId: leagueId as number, seasonId: seasonId as number }),
+    enabled: leagueId !== null && seasonId !== null && selectedSeasonHasPostseason,
+  });
+
+  const postseasonPhases = React.useMemo(
+    () => buildDisplayPhases(postseasonBracketQuery.data),
+    [postseasonBracketQuery.data],
+  );
+  const playInsPhase = React.useMemo(
+    () => postseasonPhases.find((phase) => phase.detail === 'Play-ins') || null,
+    [postseasonPhases],
+  );
+  const playoffPhases = React.useMemo<PostseasonPhase[]>(
+    () => postseasonPhases.filter((phase) => phase.detail !== 'Play-ins'),
+    [postseasonPhases],
+  );
+  const hasPlayIns =
+    Boolean(playInsPhase && (playInsPhase.matches?.length ?? 0) > 0) ||
+    normalizeText(selectedSeason?.currentPhase) === 'play-ins' ||
+    normalizeText(selectedSeason?.currentPhaseDetail) === 'play-ins';
+  const hasPlayoffs =
+    playoffPhases.some((phase) => (phase.matches?.length ?? 0) > 0) ||
+    (selectedSeasonHasPostseason && normalizeText(selectedSeason?.currentPhase) === 'playoffs');
+  const isPostseasonView = selectedSeasonHasPostseason && seasonPhase !== 'Regular';
+
+  const seasonPhaseOptions = React.useMemo<SelectorOption[]>(() => {
+    const options: SelectorOption[] = [{ key: 'Regular', label: 'Regular' }];
+
+    if (selectedSeasonHasPostseason && hasPlayIns) {
+      options.push({ key: 'Play-ins', label: 'Play-ins' });
+    }
+
+    if (selectedSeasonHasPostseason && hasPlayoffs) {
+      options.push({ key: 'Playoffs', label: 'Playoffs' });
+    }
+
+    return options;
+  }, [selectedSeasonHasPostseason, hasPlayIns, hasPlayoffs]);
+
+  const playoffDetailOptions = React.useMemo<SelectorOption[]>(() => {
+    return playoffPhases.map((phase) => ({
+      key: phase.detail,
+      label: getPhaseDisplayLabel(selectedSport, phase.detail),
+    }));
+  }, [playoffPhases, selectedSport]);
+
+  React.useEffect(() => {
+    if (!selectedSeasonHasPostseason) {
+      setSeasonPhase('Regular');
+      setSeasonPhaseDetail('Regular');
+      return;
+    }
+
+    if (seasonPhase === 'Regular') {
+      if (seasonPhaseDetail !== 'Regular') {
+        setSeasonPhaseDetail('Regular');
+      }
+      return;
+    }
+
+    if (seasonPhase === 'Play-ins') {
+      if (!hasPlayIns) {
+        setSeasonPhase(hasPlayoffs ? 'Playoffs' : 'Regular');
+      } else if (seasonPhaseDetail !== 'Play-ins') {
+        setSeasonPhaseDetail('Play-ins');
+      }
+      return;
+    }
+
+    if (!hasPlayoffs) {
+      setSeasonPhase(hasPlayIns ? 'Play-ins' : 'Regular');
+      return;
+    }
+
+    if (!playoffPhases.some((phase) => phase.detail === seasonPhaseDetail)) {
+      setSeasonPhaseDetail(playoffPhases[0]?.detail || String(selectedSeason?.currentPhaseDetail || 'Round of 64'));
+    }
+  }, [
+    hasPlayIns,
+    hasPlayoffs,
+    playoffPhases,
+    seasonPhase,
+    seasonPhaseDetail,
+    selectedSeason?.currentPhaseDetail,
+    selectedSeasonHasPostseason,
+  ]);
+
   const standingsQuery = useQuery({
     queryKey: ['mobile', 'standings', leagueId, seasonId, roundId, matchDate],
     queryFn: () =>
@@ -521,6 +693,7 @@ export default function RegularSeasonScreen() {
         matchDate,
       }),
     enabled:
+      !isPostseasonView &&
       leagueId !== null &&
       seasonId !== null &&
       ((scheduleIsDateBased && Boolean(matchDate)) || (!scheduleIsDateBased && roundId !== null)),
@@ -537,6 +710,7 @@ export default function RegularSeasonScreen() {
         matchDate,
       }),
     enabled:
+      !isPostseasonView &&
       sportId !== null &&
       leagueId !== null &&
       seasonId !== null &&
@@ -551,12 +725,30 @@ export default function RegularSeasonScreen() {
     });
   }, [standingsQuery.data]);
 
+  const standingZonesQuery = useQuery({
+    queryKey: ['mobile', 'standing-zones', sportId, leagueId, seasonId],
+    queryFn: () => fetchStandingZones({ sportId: sportId as number, leagueId: leagueId as number, seasonId }),
+    enabled: sportId !== null && leagueId !== null && seasonId !== null,
+  });
+
+  const standingZones = standingZonesQuery.data ?? [];
+
+  function getZoneForPosition(position: number): StandingZone | null {
+    if (!standingZones.length) return null;
+    const matching = standingZones.filter((z) => position >= Number(z.startPosition) && position <= Number(z.endPosition));
+    if (!matching.length) return null;
+    // prefer flg_priority === true
+    const priority = matching.find((z) => Boolean(z.flg_priority));
+    return priority || matching[0] || null;
+  }
+
   const currentRound = React.useMemo(
     () => rounds.find((round) => round.id === roundId) || null,
     [rounds, roundId],
   );
 
   const isBasketball = normalizeText(selectedSport?.name).includes('basketball');
+  const sportKey = isBasketball ? 'basketball' : undefined;
   const groupedStandings = React.useMemo<StandingGroupSection[]>(() => {
     if (!isBasketball || standings.length === 0) {
       return [];
@@ -598,13 +790,19 @@ export default function RegularSeasonScreen() {
       seasonMatchesQuery.isRefetching ||
       seasonClubsQuery.isRefetching ||
       standingsQuery.isRefetching ||
-      matchesQuery.isRefetching,
+        matchesQuery.isRefetching ||
+        postseasonBracketQuery.isRefetching,
   );
 
   const headerContext = [
     selectedSport ? getSportLabel(selectedSport) : null,
     selectedLeague ? getLeagueLabel(selectedLeague) : null,
     selectedSeason ? getSeasonLabel(selectedSeason) : null,
+    isPostseasonView
+      ? seasonPhase === 'Playoffs'
+        ? getPhaseDisplayLabel(selectedSport, seasonPhaseDetail)
+        : seasonPhase
+      : null,
   ]
     .filter(Boolean)
     .join('  •  ');
@@ -623,26 +821,70 @@ export default function RegularSeasonScreen() {
     return rows.map((standing, index) => {
       const position = getStandingPosition(standing, index);
       const teamLabel = getStandingTeamLabel(standing, clubMap);
+      const zone = getZoneForPosition(position);
+      const zoneColor = zone?.colorHex || null;
+      const positionTextColor = zoneColor ? getContrastingTextColor(zoneColor) : styles.positionBadgeText.color;
 
       return (
-        <View key={`${standing.id}-${standing.clubId}-${standing.groupId ?? 'all'}`} style={styles.standingRow}>
-          <View style={styles.positionBadge}>
-            <Text style={styles.positionBadgeText}>{position}</Text>
-          </View>
-          <View style={styles.standingMainColumn}>
-            <Text style={styles.teamName}>{teamLabel}</Text>
-            <Text style={styles.teamMeta}>Record {formatRecord(standing)} • Played {standing.played}</Text>
-          </View>
-          <View style={styles.metricPillGroup}>
-            {isBasketball ? (
+        <View key={`${standing.id}-${standing.clubId}-${standing.groupId ?? 'all'}`} style={styles.standingRowWrap}>
+          <View style={[styles.standingAccent, { backgroundColor: zoneColor || 'transparent' }]} />
+          <View style={styles.standingRow}>
+            <View style={[styles.positionBadge, zoneColor ? { backgroundColor: zoneColor } : null]}>
+              <Text style={[styles.positionBadgeText, { color: positionTextColor }]}>{position}</Text>
+            </View>
+            <View style={styles.standingMainColumn}>
+              <Text style={styles.teamName}>{teamLabel}</Text>
+              <Text style={styles.teamMeta}>Record {formatRecord(standing)} • Played {standing.played}</Text>
+            </View>
+            <View style={styles.metricPillGroup}>
+              {isBasketball ? (
+                <View style={styles.metricPill}>
+                  <Text style={styles.metricPillLabel}>PCT</Text>
+                  <Text style={styles.metricPillValue}>{formatBasketballPct(standing)}</Text>
+                </View>
+              ) : null}
               <View style={styles.metricPill}>
-                <Text style={styles.metricPillLabel}>PCT</Text>
-                <Text style={styles.metricPillValue}>{formatBasketballPct(standing)}</Text>
+                <Text style={styles.metricPillLabel}>PTS</Text>
+                <Text style={styles.metricPillValue}>{standing.points}</Text>
               </View>
-            ) : null}
-            <View style={styles.metricPill}>
-              <Text style={styles.metricPillLabel}>PTS</Text>
-              <Text style={styles.metricPillValue}>{standing.points}</Text>
+            </View>
+          </View>
+        </View>
+      );
+    });
+  };
+
+  const renderMatchCards = (rows: Match[], withSeeds = false) => {
+    return rows.map((match) => {
+      const homeBaseLabel = getMatchTeamLabel(match, 'home', clubMap);
+      const awayBaseLabel = getMatchTeamLabel(match, 'away', clubMap);
+      const homeSeed = match.homeClubId
+        ? postseasonBracketQuery.data?.regularSeasonStandings?.find((standing) => standing.clubId === match.homeClubId)?.position
+        : undefined;
+      const awaySeed = match.awayClubId
+        ? postseasonBracketQuery.data?.regularSeasonStandings?.find((standing) => standing.clubId === match.awayClubId)?.position
+        : undefined;
+      const homeLabel = withSeeds && homeSeed ? `${homeSeed} ${homeBaseLabel}` : homeBaseLabel;
+      const awayLabel = withSeeds && awaySeed ? `${awaySeed} ${awayBaseLabel}` : awayBaseLabel;
+      const hasScore = typeof match.homeScore === 'number' && typeof match.awayScore === 'number';
+
+      return (
+        <View key={match.id} style={styles.matchCard}>
+          <View style={styles.matchHeader}>
+            <Text style={styles.matchStatus}>{match.status || 'Scheduled'}</Text>
+            <Text style={styles.matchDate}>{formatMatchDate(match.date)}</Text>
+          </View>
+          <View style={styles.matchTeamsRow}>
+            <View style={styles.matchTeamColumn}>
+              <Text style={styles.matchTeamLabel}>{homeLabel}</Text>
+              <Text style={styles.matchTeamSubLabel}>Home</Text>
+            </View>
+            <View style={styles.matchScoreBlock}>
+              <Text style={styles.matchScoreText}>{hasScore ? `${match.homeScore} - ${match.awayScore}` : 'vs'}</Text>
+            </View>
+            <View style={[styles.matchTeamColumn, styles.matchTeamColumnRight]}>
+              <Text style={styles.matchTeamLabel}>{awayLabel}</Text>
+              <Text style={styles.matchTeamSubLabel}>Away</Text>
             </View>
           </View>
         </View>
@@ -668,9 +910,13 @@ export default function RegularSeasonScreen() {
           <View style={styles.heroAccentPrimary} />
           <View style={styles.heroAccentSecondary} />
           <Text style={styles.eyebrow}>Mobile Prototype</Text>
-          <Text style={styles.heroTitle}>Regular season first.</Text>
+          <Text style={styles.heroTitle}>
+            {selectedSeasonHasPostseason ? 'Season view, phase by phase.' : 'Regular season first.'}
+          </Text>
           <Text style={styles.heroSubtitle}>
-            This screen mirrors the existing standings flow: choose the competition context, stay on the regular season, and inspect the selected round or date before we add play-ins and playoffs.
+            {selectedSeasonHasPostseason
+              ? 'This screen now keeps the regular-season flow intact while adding mobile-friendly Play-ins and Playoffs views for seasons that actually have postseason data.'
+              : 'This screen mirrors the existing standings flow: choose the competition context and inspect the selected round or date.'}
           </Text>
           <Text style={styles.heroMeta}>{headerContext || `Backend: ${getApiBaseUrl()}`}</Text>
         </View>
@@ -707,94 +953,115 @@ export default function RegularSeasonScreen() {
                 onSelect={(value) => setSeasonId(Number(value))}
                 emptyLabel={leagueId === null ? 'Choose a league first.' : 'No seasons found for this league.'}
               />
-              <SelectorStrip
-                title={scheduleIsDateBased ? 'Date' : 'Round'}
-                options={scheduleIsDateBased ? dateOptions : roundOptions}
-                selectedKey={scheduleIsDateBased ? matchDate : roundId !== null ? String(roundId) : null}
-                onSelect={(value) => {
-                  if (scheduleIsDateBased) {
-                    setMatchDate(value);
-                  } else {
-                    setRoundId(Number(value));
-                  }
-                }}
-                emptyLabel={seasonId === null ? 'Choose a season first.' : 'No regular-season slices found yet.'}
-              />
+              {selectedSeasonHasPostseason ? (
+                <SelectorStrip
+                  title="Phase"
+                  options={seasonPhaseOptions}
+                  selectedKey={seasonPhase}
+                  onSelect={(value) => setSeasonPhase(value)}
+                  emptyLabel="No phases available."
+                />
+              ) : null}
+              {!isPostseasonView ? (
+                <SelectorStrip
+                  title={scheduleIsDateBased ? 'Date' : 'Round'}
+                  options={scheduleIsDateBased ? dateOptions : roundOptions}
+                  selectedKey={scheduleIsDateBased ? matchDate : roundId !== null ? String(roundId) : null}
+                  onSelect={(value) => {
+                    if (scheduleIsDateBased) {
+                      setMatchDate(value);
+                    } else {
+                      setRoundId(Number(value));
+                    }
+                  }}
+                  emptyLabel={seasonId === null ? 'Choose a season first.' : 'No regular-season slices found yet.'}
+                />
+              ) : null}
+              {isPostseasonView && seasonPhase === 'Playoffs' ? (
+                <SelectorStrip
+                  title="Stage"
+                  options={playoffDetailOptions}
+                  selectedKey={seasonPhaseDetail}
+                  onSelect={(value) => setSeasonPhaseDetail(value)}
+                  emptyLabel="No playoff stages found yet."
+                />
+              ) : null}
             </>
           ) : null}
         </SectionCard>
 
-        <SectionCard
-          title="Standings"
-          subtitle={showGroupedStandings ? 'Regular-season table split by group for the selected slice.' : 'Regular-season table for the selected slice.'}
-          rightText={scheduleIsDateBased ? matchDate || 'No date' : currentRound ? `Round ${currentRound.roundNumber}` : 'No round'}
-        >
-          {standingsQuery.isLoading ? <LoadingState label="Loading standings…" /> : null}
-          {standingsQuery.isError ? (
-            <ErrorState label="Could not load standings." onRetry={() => void standingsQuery.refetch()} />
-          ) : null}
-          {!standingsQuery.isLoading && !standingsQuery.isError && standings.length === 0 ? (
-            <Text style={styles.emptyText}>No regular-season standings found for the current selection.</Text>
-          ) : null}
-          {!standingsQuery.isLoading && !standingsQuery.isError
-            ? showGroupedStandings
-              ? groupedStandings.map((section) => (
-                  <View key={section.key} style={styles.groupStandingsSection}>
-                    <View style={styles.groupStandingsHeader}>
-                      <Text style={styles.groupStandingsTitle}>{section.title}</Text>
-                      <Text style={styles.groupStandingsMeta}>{section.standings.length} teams</Text>
-                    </View>
-                    {renderStandingsRows(section.standings)}
-                  </View>
-                ))
-              : renderStandingsRows(standings)
-            : null}
-        </SectionCard>
+        {!isPostseasonView ? (
+          <>
+            <SectionCard
+              title="Standings"
+              subtitle={showGroupedStandings ? 'Regular-season table split by group for the selected slice.' : 'Regular-season table for the selected slice.'}
+              rightText={scheduleIsDateBased ? matchDate || 'No date' : currentRound ? `Round ${currentRound.roundNumber}` : 'No round'}
+            >
+              {standingsQuery.isLoading ? <LoadingState label="Loading standings…" /> : null}
+              {standingsQuery.isError ? (
+                <ErrorState label="Could not load standings." onRetry={() => void standingsQuery.refetch()} />
+              ) : null}
+              {!standingsQuery.isLoading && !standingsQuery.isError && standings.length === 0 ? (
+                <Text style={styles.emptyText}>No regular-season standings found for the current selection.</Text>
+              ) : null}
+              {!standingsQuery.isLoading && !standingsQuery.isError
+                ? showGroupedStandings
+                  ? groupedStandings.map((section) => (
+                      <View key={section.key} style={styles.groupStandingsSection}>
+                        <View style={styles.groupStandingsHeader}>
+                          <Text style={styles.groupStandingsTitle}>{section.title}</Text>
+                          <Text style={styles.groupStandingsMeta}>{section.standings.length} teams</Text>
+                        </View>
+                        {renderStandingsRows(section.standings)}
+                      </View>
+                    ))
+                  : renderStandingsRows(standings)
+                : null}
+            </SectionCard>
 
-        <SectionCard
-          title="Games"
-          subtitle="Regular-season slate for the same round or date."
-          rightText={`${matchesQuery.data?.length ?? 0} listed`}
-        >
-          {matchesQuery.isLoading ? <LoadingState label="Loading games…" /> : null}
-          {matchesQuery.isError ? (
-            <ErrorState label="Could not load games." onRetry={() => void matchesQuery.refetch()} />
-          ) : null}
-          {!matchesQuery.isLoading && !matchesQuery.isError && (matchesQuery.data?.length ?? 0) === 0 ? (
-            <Text style={styles.emptyText}>No regular-season games found for the current selection.</Text>
-          ) : null}
-          {!matchesQuery.isLoading && !matchesQuery.isError
-            ? (matchesQuery.data ?? []).map((match) => {
-                const homeLabel = getMatchTeamLabel(match, 'home', clubMap);
-                const awayLabel = getMatchTeamLabel(match, 'away', clubMap);
-                const hasScore = typeof match.homeScore === 'number' && typeof match.awayScore === 'number';
-
-                return (
-                  <View key={match.id} style={styles.matchCard}>
-                    <View style={styles.matchHeader}>
-                      <Text style={styles.matchStatus}>{match.status || 'Scheduled'}</Text>
-                      <Text style={styles.matchDate}>{formatMatchDate(match.date)}</Text>
-                    </View>
-                    <View style={styles.matchTeamsRow}>
-                      <View style={styles.matchTeamColumn}>
-                        <Text style={styles.matchTeamLabel}>{homeLabel}</Text>
-                        <Text style={styles.matchTeamSubLabel}>Home</Text>
-                      </View>
-                      <View style={styles.matchScoreBlock}>
-                        <Text style={styles.matchScoreText}>
-                          {hasScore ? `${match.homeScore} - ${match.awayScore}` : 'vs'}
-                        </Text>
-                      </View>
-                      <View style={[styles.matchTeamColumn, styles.matchTeamColumnRight]}>
-                        <Text style={styles.matchTeamLabel}>{awayLabel}</Text>
-                        <Text style={styles.matchTeamSubLabel}>Away</Text>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
-            : null}
-        </SectionCard>
+            <SectionCard
+              title="Games"
+              subtitle="Regular-season slate for the same round or date."
+              rightText={`${matchesQuery.data?.length ?? 0} listed`}
+            >
+              {matchesQuery.isLoading ? <LoadingState label="Loading games…" /> : null}
+              {matchesQuery.isError ? (
+                <ErrorState label="Could not load games." onRetry={() => void matchesQuery.refetch()} />
+              ) : null}
+              {!matchesQuery.isLoading && !matchesQuery.isError && (matchesQuery.data?.length ?? 0) === 0 ? (
+                <Text style={styles.emptyText}>No regular-season games found for the current selection.</Text>
+              ) : null}
+              {!matchesQuery.isLoading && !matchesQuery.isError ? renderMatchCards(matchesQuery.data ?? []) : null}
+            </SectionCard>
+          </>
+        ) : (
+          <SectionCard
+            title={seasonPhase === 'Play-ins' ? 'Play-ins' : 'Playoffs'}
+            subtitle={
+              seasonPhase === 'Play-ins'
+                ? 'Bracket view for the play-in phase.'
+                : `${getPhaseDisplayLabel(selectedSport, seasonPhaseDetail)} highlighted inside the full postseason bracket.`
+            }
+            rightText={seasonPhase === 'Playoffs' ? getPhaseDisplayLabel(selectedSport, seasonPhaseDetail) : seasonPhase}
+          >
+            {postseasonBracketQuery.isLoading ? <LoadingState label="Loading postseason…" /> : null}
+            {postseasonBracketQuery.isError ? (
+              <ErrorState label="Could not load postseason data." onRetry={() => void postseasonBracketQuery.refetch()} />
+            ) : null}
+            {!postseasonBracketQuery.isLoading && !postseasonBracketQuery.isError && postseasonPhases.length === 0 ? (
+              <Text style={styles.emptyText}>No postseason matches found for the selected phase.</Text>
+            ) : null}
+            {!postseasonBracketQuery.isLoading && !postseasonBracketQuery.isError ? (
+              <PostseasonBracket
+                bracket={postseasonBracketQuery.data}
+                activePhase={seasonPhase}
+                activePhaseDetail={seasonPhaseDetail}
+                sportKey={sportKey}
+                groupLabelMap={seasonGroupData.groupLabelMap}
+              />
+            ) : null}
+          </SectionCard>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -978,6 +1245,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   standingRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -985,6 +1253,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f3e8',
     paddingHorizontal: 12,
     paddingVertical: 12,
+  },
+  standingRowWrap: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 10,
+  },
+  standingAccent: {
+    width: 6,
+    borderRadius: 4,
+    marginTop: 6,
+    marginBottom: 6,
   },
   positionBadge: {
     width: 34,
