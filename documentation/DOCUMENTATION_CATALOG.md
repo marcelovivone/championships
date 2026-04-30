@@ -1,6 +1,6 @@
 # Championships Documentation Catalog
 
-Last updated: 2026-04-14
+Last updated: 2026-04-30
 
 ## Purpose
 
@@ -60,6 +60,7 @@ Recommended entry point:
 | Rules research by sport/league | `documentation/MULTI_SPORT_TIEBREAKER_RULES.md` |
 | Public standings frontend architecture | `documentation/STANDINGS_PAGE_ARCHITECTURE.md` |
 | Repository-wide architecture summary | `documentation/ARCHITECTURE_SUMMARY.md` |
+| Mobile app onboarding and architecture | `documentation/MOBILE_ONBOARDING.md` |
 
 ## Notes on Scope
 
@@ -68,6 +69,42 @@ Recommended entry point:
 - The design document and the implementation reference serve different purposes:
   - Design document: why the system was designed this way.
   - Implementation reference: what is currently implemented in code and how to operate it.
+
+## Agent Platform & Automation
+
+- `documentation/PLAN_AGENTS.md` — roadmap for the Agent Control Plane, agent catalog, verified triggers, and recommended Phase 1 execution plan.
+
+## Mobile Application
+
+- `documentation/MOBILE_ONBOARDING.md` — canonical onboarding guide for the Expo mobile app: architecture decisions, network setup, backend dependency, developer workflow, security notes, and next steps.
+- `mobile/README.md` — quick-start reference for running the mobile app locally.
+
+### Mobile application state (as of 2026-04-30)
+
+The Expo SDK 54 mobile app (`mobile/`) is fully scaffolded and tested on iPhone via Expo Go. Current implementation:
+
+- `mobile/src/api.ts` — axios client + typed helpers: `fetchSports`, `fetchLeagues`, `fetchSeasons`, `fetchRounds`, `fetchSeasonClubs`, `fetchSeasonMatches`, `fetchStandings`, `fetchMatchesSlice`, `fetchGroups`. LAN host is derived from Expo's `hostUri` when `.env.development` is absent.
+- `mobile/src/RegularSeasonScreen.tsx` — sport → league → season → round/date selectors; standings grouped by conference for basketball (Eastern/Western); games list with correct score display (no null values for unplayed games).
+- SDK: Expo 54.0.34, React Native 0.81.5, React 19.1.0.
+
+#### Pending mobile tasks (priority order)
+
+1. Add NBA-specific standing columns: GB, HOME W-L, AWAY W-L, OT W-L — see `basketball-standings-spec.md` memory.
+2. Fix `SafeAreaView` deprecation warning: replace `react-native` import with `react-native-safe-area-context`.
+3. Build Play-ins screen (`PlayInsScreen.tsx`) using `fetchMatchesSlice` with `seasonPhase=Play-ins`.
+4. Build Playoffs / Postseason bracket screen mirroring web `PostseasonBracket.tsx`.
+
+#### Key runtime facts
+
+| Fact | Value |
+|---|---|
+| Expo start command | `cd mobile && npx expo start --host lan --clear` |
+| Real iPhone backend URL | `API_BASE_URL=http://192.168.1.156:3000` |
+| Android emulator URL | `API_BASE_URL=http://10.0.2.2:3000` |
+| NBA league id | 57 |
+| Active season id | 80 (2025/2026) |
+| Eastern Conference group id | 10 |
+| Western Conference group id | 11 |
 
 ## Current Documentation Structure Decision
 

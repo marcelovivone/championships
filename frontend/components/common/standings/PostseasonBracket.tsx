@@ -74,8 +74,15 @@ const PHASE_SLOT_COUNTS: Record<string, number | undefined> = {
   // Play-ins: variable, keep as-is (undefined)
 };
 
-function getClubLabel(club?: { shortName?: string | null; name?: string | null } | null, fallback?: number | null, placeholder?: string | null) {
-  return club?.shortName || club?.name || placeholder || (fallback ? `Club ${fallback}` : 'TBD');
+function getClubLabel(club?: any | null, fallback?: number | null, placeholder?: string | null) {
+  if (typeof placeholder === 'string' && placeholder.trim().toUpperCase() === 'TBD') return 'TBD';
+  if (!club) return placeholder || (fallback ? `Club ${fallback}` : 'TBD');
+
+  // Prefer short name variants, then display/name variants
+  const shortName = club.shortName ?? club.short_name ?? club.short ?? club.reducedName ?? club.reduced_name;
+  const displayName = club.displayName ?? club.display_name ?? club.name ?? club.fullName ?? club.full_name ?? club.originalName ?? club.original_name;
+
+  return shortName || displayName || placeholder || (fallback ? `Club ${fallback}` : 'TBD');
 }
 
 function getClubDisplayWithSeed(
@@ -169,6 +176,28 @@ function seriesClubIds(s: Series): number[] {
   return ids;
 }
 
+/** Try to find a club display object for a given clubId by scanning series matches */
+function findClubInSeries(s: Series, clubId?: number | null) {
+  if (clubId == null) return undefined;
+  for (const m of s.matches) {
+    if (m.homeClubId === clubId && m.homeClub) return m.homeClub;
+    if (m.awayClubId === clubId && m.awayClub) return m.awayClub;
+  }
+  return undefined;
+}
+
+/** Search across all phases' matches for a club object with the given id */
+function findClubAcrossPhases(phases: BracketPhase[], clubId?: number | null) {
+  if (clubId == null) return undefined;
+  for (const phase of phases) {
+    for (const m of phase.matches || []) {
+      if (m.homeClubId === clubId && m.homeClub) return m.homeClub;
+      if (m.awayClubId === clubId && m.awayClub) return m.awayClub;
+    }
+  }
+  return undefined;
+}
+
 /** Reusable series card */
 function SeriesCard({
   s,
@@ -185,12 +214,24 @@ function SeriesCard({
   const shouldFlip = homeSeed != null && awaySeed != null && awaySeed < homeSeed;
   const single = isSingleMatch ?? s.matches.length === 1;
 
-  const top = shouldFlip
+  let top = shouldFlip
     ? { club: rep.awayClub, seed: awaySeed, score: rep.awayScore, fallbackId: rep.awayClubId, placeholder: rep.awayClubPlaceholder, winsIdx: 1 }
     : { club: rep.homeClub, seed: homeSeed, score: rep.homeScore, fallbackId: rep.homeClubId, placeholder: rep.homeClubPlaceholder, winsIdx: 0 };
-  const bottom = shouldFlip
+  let bottom = shouldFlip
     ? { club: rep.homeClub, seed: homeSeed, score: rep.homeScore, fallbackId: rep.homeClubId, placeholder: rep.homeClubPlaceholder, winsIdx: 0 }
     : { club: rep.awayClub, seed: awaySeed, score: rep.awayScore, fallbackId: rep.awayClubId, placeholder: rep.awayClubPlaceholder, winsIdx: 1 };
+
+  // If the payload for the representative match lacks a club object, try to
+  // recover a display name by scanning all matches in the series for any
+  // match that includes the desired club object.
+  if ((!top.club || (typeof top.club === 'object' && Object.keys(top.club).length === 0)) && top.fallbackId) {
+    const found = findClubInSeries(s, top.fallbackId);
+    if (found) top = { ...top, club: found };
+  }
+  if ((!bottom.club || (typeof bottom.club === 'object' && Object.keys(bottom.club).length === 0)) && bottom.fallbackId) {
+    const found = findClubInSeries(s, bottom.fallbackId);
+    if (found) bottom = { ...bottom, club: found };
+  }
 
   const nextGame = s.matches
     .filter((m) => m.status !== 'Finished')
@@ -207,14 +248,22 @@ function SeriesCard({
           <div key={`${s.id}-${i}`} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
             <div className="min-w-0 flex items-center gap-1">
               {/* <p className="text-xs text-gray-500">Seed {entry.seed ?? '-'}</p> */}
-              {entry.club?.imageUrl && (
-                <img 
-                  src={entry.club.imageUrl} 
-                  alt="" 
-                  className="w-6 h-6 object-contain flex-shrink-0"
-                />
-              )}
-              <p className="truncate text-sm font-medium text-gray-900">{getClubDisplayWithSeed(entry.club, entry.fallbackId, entry.placeholder, entry.seed)}</p>
+                  {(() => {
+                    const label = getClubLabel(entry.club, entry.fallbackId, entry.placeholder);
+                    const showImage = label !== 'TBD' && !!entry.club?.imageUrl;
+                    return (
+                      <>
+                        {showImage && (
+                          <img
+                            src={entry.club?.imageUrl ?? undefined}
+                            alt=""
+                            className="w-6 h-6 object-contain flex-shrink-0"
+                          />
+                        )}
+                        <p className="truncate text-sm font-medium text-gray-900">{getClubDisplayWithSeed(entry.club, entry.fallbackId, entry.placeholder, entry.seed)}</p>
+                      </>
+                    );
+                  })()}
             </div>
             <div className="text-right">
               <p className="text-xs text-gray-500">{single ? 'Score' : 'Series'}</p>
@@ -647,7 +696,7 @@ function NbaBracket({
         const parentIndex = Math.floor(ci / 2);
         while (nextArr.length <= parentIndex) nextArr.push(null);
 
-        if (nextArr[parentIndex] == null) {
+          if (nextArr[parentIndex] == null) {
           // Determine both children that feed this parent so connectors link
           // to both rectangles. Use the first club id observed for each child
           // where available.
@@ -664,8 +713,11 @@ function NbaBracket({
             id: -(parentIndex + 1),
             homeClubId: leftClub ?? (rep && rep.homeClubId) ?? undefined,
             awayClubId: rightClub ?? (rep && rep.awayClubId) ?? undefined,
-            homeClub: (rep && rep.homeClubId === leftClub) ? rep.homeClub : undefined,
-            awayClub: (rep && rep.awayClubId === rightClub) ? rep.awayClub : undefined,
+            // Attempt to populate club objects by preferring the rep's club
+            // when it matches, otherwise search across all phases for any
+            // match that includes the club object.
+            homeClub: (rep && rep.homeClubId === leftClub) ? rep.homeClub : findClubAcrossPhases(phases, leftClub) ?? undefined,
+            awayClub: (rep && rep.awayClubId === rightClub) ? rep.awayClub : findClubAcrossPhases(phases, rightClub) ?? undefined,
             // Use placeholder for the non-winner side so it renders as TBD
             homeClubPlaceholder: (leftClub && leftClub !== winnerId) ? 'TBD' : undefined,
             awayClubPlaceholder: (rightClub && rightClub !== winnerId) ? 'TBD' : undefined,
