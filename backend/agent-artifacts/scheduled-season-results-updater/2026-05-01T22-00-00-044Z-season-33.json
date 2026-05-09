@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-01T22:00:00.044Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:0 */22 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 33,
+    "label": "2025/2026",
+    "leagueId": 49,
+    "sportId": 36,
+    "leagueNames": [
+      "Spanish LaLiga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 171,
+    "externalLeagueCode": "esp.1",
+    "parsedLeagueName": "Spanish LALIGA",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-01T22:00:05.853Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 2,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 379,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 330,
+    "pendingMatches": 50,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 8848,
+      "date": "2026-04-27T21:00:00.000Z",
+      "roundId": 886,
+      "roundNumber": 33,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Espanyol",
+      "awayClub": "Levante",
+      "score": "0-0"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 33,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 171,
+    "sportId": 36,
+    "leagueId": 49,
+    "seasonId": 33,
+    "seasonPhase": "Regular"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-05T06:31:00.016Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:31 8 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 42,
+    "label": "2025/2026",
+    "leagueId": 52,
+    "sportId": 36,
+    "leagueNames": [
+      "Italian Serie A"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 244,
+    "externalLeagueCode": "ita.1",
+    "parsedLeagueName": "Italian Serie A",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-05T06:31:07.642Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 2,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 4,
+    "proposedDivisionWrites": 4,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 378,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 348,
+    "pendingMatches": 32,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 12291,
+      "date": "2026-05-03T20:45:00.000Z",
+      "roundId": 1230,
+      "roundNumber": 35,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Internazionale",
+      "awayClub": "Parma",
+      "score": "2-0"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 35,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 244,
+    "sportId": 36,
+    "leagueId": 52,
+    "seasonId": 42,
+    "seasonPhase": "Regular"
+  }
+}

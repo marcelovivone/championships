@@ -96,6 +96,12 @@ export default function BaseStandings({
   );
   const selectedSeasonHasPostseason = Boolean(selectedSeasonData?.flgHasPostseason);
   const isPostseasonView = selectedSeasonHasPostseason && seasonPhase !== 'Regular';
+  const shouldAutoRefreshPostseasonBracket = Boolean(
+    selectedSeasonHasPostseason &&
+    selectedSeasonData?.flgDefault &&
+    league &&
+    season
+  );
 
   React.useEffect(() => {
     if (!selectedSeasonData) {
@@ -373,13 +379,16 @@ export default function BaseStandings({
   });
 
   const postseasonBracketQuery = useQuery({
-    queryKey: ['postseasonBracket', league, season, group],
+    queryKey: ['postseasonBracket', league, season, group, selectedSeasonData?.currentPhase, selectedSeasonData?.currentPhaseDetail],
     queryFn: () => matchesApi.getPostseasonBracket(Number(league), Number(season), group !== 'all' ? Number(group) : undefined),
     // Fetch whenever the season has a postseason (not just when already in postseason view),
     // so availablePhases/availablePhaseDetails are populated for the Phase dropdown immediately.
     enabled: Boolean(selectedSeasonHasPostseason && league && season),
-    staleTime: 1000 * 60 * 2,
-    refetchOnWindowFocus: false,
+    staleTime: shouldAutoRefreshPostseasonBracket ? 1000 * 30 : 1000 * 60 * 2,
+    refetchOnMount: shouldAutoRefreshPostseasonBracket ? 'always' : false,
+    refetchOnWindowFocus: shouldAutoRefreshPostseasonBracket ? 'always' : false,
+    refetchInterval: shouldAutoRefreshPostseasonBracket ? 1000 * 30 : false,
+    refetchIntervalInBackground: false,
   });
 
   // Derive the set of phases and details that actually exist in the bracket data.

@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd /c/Users/milen/Documents/Personal/Championships && psql \"postgresql://admin:knpt041121@localhost:5433/championships_db\" -c \"\nSELECT rh\\.id, rh\\.status, rh\\.trigger_type, rh\\.mode, rh\\.summary, rh\\.started_at, rh\\.finished_at,\n       rh\\.error_code, rh\\.error_message\nFROM run_history rh\nJOIN agent_definitions ad ON rh\\.agent_definition_id = ad\\.id\nWHERE ad\\.agent_key = 'scheduled-season-results-updater'\nORDER BY rh\\.started_at DESC\nLIMIT 10;\" 2>&1 \\| head -60$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

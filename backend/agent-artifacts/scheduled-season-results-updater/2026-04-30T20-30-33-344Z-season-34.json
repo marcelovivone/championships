@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-04-30T20:30:33.344Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-agent-setup",
+  "mode": "semi-automatic",
+  "season": {
+    "id": 34,
+    "label": "2025/2026",
+    "leagueId": 48,
+    "sportId": 36,
+    "leagueNames": [
+      "Premier League",
+      "English Premier League"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 143,
+    "externalLeagueCode": "eng.1",
+    "parsedLeagueName": "English Premier League",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-04-28T14:49:11.833Z",
+    "fetchStatus": "done",
+    "alreadyApplied": true,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 0,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 8,
+    "downstreamRecalculationNeeded": false,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 339,
+    "pendingMatches": 41,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 9245,
+      "date": "2026-04-27T20:00:00.000Z",
+      "roundId": 925,
+      "roundNumber": 34,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Manchester United",
+      "awayClub": "Brentford",
+      "score": "2-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 34,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 143,
+    "sportId": 36,
+    "leagueId": 48,
+    "seasonId": 34,
+    "seasonPhase": "Regular"
+  }
+}

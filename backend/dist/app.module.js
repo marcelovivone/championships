@@ -33,6 +33,8 @@ const permissions_module_1 = require("./permissions/permissions.module");
 const admin_module_1 = require("./admin/admin.module");
 const standing_zones_module_1 = require("./standing-zones/standing-zones.module");
 const standing_order_rules_module_1 = require("./standing-order-rules/standing-order-rules.module");
+const agents_module_1 = require("./agents/agents.module");
+const schedule_1 = require("@nestjs/schedule");
 const throttler_1 = require("@nestjs/throttler");
 const core_1 = require("@nestjs/core");
 let AppModule = class AppModule {
@@ -43,6 +45,7 @@ exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [
+            schedule_1.ScheduleModule.forRoot(),
             throttler_1.ThrottlerModule.forRoot([{
                     ttl: 60000,
                     limit: 300,
@@ -72,6 +75,7 @@ exports.AppModule = AppModule = __decorate([
             admin_module_1.AdminModule,
             standing_zones_module_1.StandingZonesModule,
             standing_order_rules_module_1.StandingOrderRulesModule,
+            agents_module_1.AgentsModule,
         ],
         providers: [
             {

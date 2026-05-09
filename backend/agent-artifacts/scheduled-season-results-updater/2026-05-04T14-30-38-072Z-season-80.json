@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-04T14:30:38.072Z",
+  "triggerType": "schedule",
+  "triggerSource": "manual-test",
+  "mode": "autonomous",
+  "season": {
+    "id": 80,
+    "label": "2025/2026",
+    "leagueId": 57,
+    "sportId": 34,
+    "leagueNames": [
+      "National Basketball Association",
+      "NBA"
+    ],
+    "currentPhase": "Playoffs",
+    "currentPhaseDetail": "Round of 16"
+  },
+  "transitionalSource": {
+    "id": 228,
+    "externalLeagueCode": "nba",
+    "parsedLeagueName": "National Basketball Association",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-04T14:35:45.057Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 13,
+    "proposedNewMatches": 14,
+    "proposedStandingsWrites": 0,
+    "proposedDivisionWrites": 100,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 62,
+    "downstreamRecalculationNeeded": false,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 1389,
+    "finishedMatches": 1350,
+    "pendingMatches": 39,
+    "currentPhaseMatchCount": 56,
+    "latestFinishedMatch": {
+      "matchId": 42730,
+      "date": "2026-04-30T21:30:00.000Z",
+      "roundId": null,
+      "roundNumber": null,
+      "seasonPhase": "Playoffs",
+      "seasonPhaseDetail": "Round of 16",
+      "homeClub": "Timberwolves",
+      "awayClub": "Nuggets",
+      "score": "110-98"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "date",
+    "reference": "2026-04-12",
+    "rowCount": 34
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 228,
+    "sportId": 34,
+    "leagueId": 57,
+    "seasonId": 80,
+    "seasonPhase": "Playoffs"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:37:47.139Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-manual",
+  "mode": "autonomous",
+  "season": {
+    "id": 26,
+    "label": "2026/2026",
+    "leagueId": 47,
+    "sportId": 36,
+    "leagueNames": [
+      "Brazilian Serie A"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 310,
+    "externalLeagueCode": "bra.1",
+    "parsedLeagueName": "Brazilian Serie A",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:37:48.560Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "single-candidate"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 243,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 486,
+    "proposedDivisionWrites": 486,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 137,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 137,
+    "pendingMatches": 243,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 5622,
+      "date": "2026-05-03T23:30:00.000Z",
+      "roundId": 563,
+      "roundNumber": 14,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Mirassol",
+      "awayClub": "Corinthians",
+      "score": "2-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 14,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 310,
+    "sportId": 36,
+    "leagueId": 47,
+    "seasonId": 26,
+    "seasonPhase": "Regular"
+  }
+}

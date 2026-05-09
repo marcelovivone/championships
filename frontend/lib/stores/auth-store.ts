@@ -6,6 +6,7 @@ interface AuthState {
   token: string | null;
   allowedMenuItems: MenuItem[];
   isAuthenticated: boolean;
+  isInitialized: boolean;
   login: (token: string, user: User, allowedMenuItems?: MenuItem[]) => void;
   logout: () => void;
   initializeAuth: () => void;
@@ -16,19 +17,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   allowedMenuItems: [],
   isAuthenticated: false,
+  isInitialized: false,
 
   login: (token, user, allowedMenuItems = []) => {
     localStorage.setItem('authToken', token);
     localStorage.setItem('user', JSON.stringify(user));
     localStorage.setItem('allowedMenuItems', JSON.stringify(allowedMenuItems));
-    set({ token, user, allowedMenuItems, isAuthenticated: true });
+    set({ token, user, allowedMenuItems, isAuthenticated: true, isInitialized: true });
   },
 
   logout: () => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     localStorage.removeItem('allowedMenuItems');
-    set({ token: null, user: null, allowedMenuItems: [], isAuthenticated: false });
+    set({ token: null, user: null, allowedMenuItems: [], isAuthenticated: false, isInitialized: true });
   },
 
   initializeAuth: () => {
@@ -39,7 +41,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (token && userStr) {
       const user = JSON.parse(userStr);
       const allowedMenuItems = menuItemsStr ? JSON.parse(menuItemsStr) : [];
-      set({ token, user, allowedMenuItems, isAuthenticated: true });
+      set({ token, user, allowedMenuItems, isAuthenticated: true, isInitialized: true });
+      return;
     }
+
+    set({ token: null, user: null, allowedMenuItems: [], isAuthenticated: false, isInitialized: true });
   },
 }));

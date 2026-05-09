@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-01T18:00:00.073Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:0 */20 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 80,
+    "label": "2025/2026",
+    "leagueId": 57,
+    "sportId": 34,
+    "leagueNames": [
+      "National Basketball Association",
+      "NBA"
+    ],
+    "currentPhase": "Playoffs",
+    "currentPhaseDetail": "Round of 16"
+  },
+  "transitionalSource": {
+    "id": 158,
+    "externalLeagueCode": "nba",
+    "parsedLeagueName": "National Basketball Association",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-01T18:04:57.301Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 0,
+    "proposedNewMatches": 76,
+    "proposedStandingsWrites": 0,
+    "proposedDivisionWrites": 380,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 0,
+    "downstreamRecalculationNeeded": false,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 1299,
+    "finishedMatches": 1275,
+    "pendingMatches": 24,
+    "currentPhaseMatchCount": 56,
+    "latestFinishedMatch": {
+      "matchId": 42726,
+      "date": "2026-04-29T22:00:00.000Z",
+      "roundId": null,
+      "roundNumber": null,
+      "seasonPhase": "Playoffs",
+      "seasonPhaseDetail": "Round of 16",
+      "homeClub": "Lakers",
+      "awayClub": "Rockets",
+      "score": "93-99"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "date",
+    "reference": "2026-04-12",
+    "rowCount": 30
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 158,
+    "sportId": 34,
+    "leagueId": 57,
+    "seasonId": 80,
+    "seasonPhase": "Playoffs"
+  }
+}

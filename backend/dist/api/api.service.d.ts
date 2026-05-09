@@ -249,7 +249,7 @@ export declare class ApiService {
         reason: string;
         details: {
             leagueId: number;
-            seasonId: any;
+            seasonId: number;
             message?: undefined;
         };
         error?: undefined;
@@ -259,7 +259,7 @@ export declare class ApiService {
         details: {
             message: string;
             leagueId: number;
-            seasonId: any;
+            seasonId: number;
         };
         error?: undefined;
     }>;
@@ -348,6 +348,8 @@ export declare class ApiService {
     }>;
     private formatEspnDate;
     private getEspnSeasonStartYear;
+    private findPreferredSeasonRow;
+    private findPreferredSeasonRowForYears;
     private fetchEspnScoreboardByDate;
     private fetchEspnSeasonByDay;
     private fetchEspnEventLinescores;

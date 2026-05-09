@@ -20,6 +20,12 @@ let SeasonsController = class SeasonsController {
     constructor(seasonsService) {
         this.seasonsService = seasonsService;
     }
+    async findCurrentEspnExtractionSettings() {
+        return this.seasonsService.findCurrentEspnExtractionSettings();
+    }
+    async saveCurrentEspnExtractionSettings(body) {
+        return this.seasonsService.saveCurrentEspnExtractionSettings(body);
+    }
     async findAll(page, limit, sortBy, sortOrder, leagueId) {
         if (leagueId) {
             return this.seasonsService.findAllByLeague(Number(leagueId));
@@ -44,6 +50,19 @@ let SeasonsController = class SeasonsController {
     }
 };
 exports.SeasonsController = SeasonsController;
+__decorate([
+    (0, common_1.Get)('current-espn-extraction'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], SeasonsController.prototype, "findCurrentEspnExtractionSettings", null);
+__decorate([
+    (0, common_1.Put)('current-espn-extraction'),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], SeasonsController.prototype, "saveCurrentEspnExtractionSettings", null);
 __decorate([
     (0, common_1.Get)(),
     __param(0, (0, common_1.Query)('page')),

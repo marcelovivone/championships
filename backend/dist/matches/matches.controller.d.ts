@@ -12,6 +12,7 @@ export declare class MatchesController {
         leagueId: number;
         status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         seasonId: number;
+        updatedAt: Date;
         groupId: number;
         roundId: number;
         homeClubId: number;
@@ -23,7 +24,6 @@ export declare class MatchesController {
         homeScore: number;
         awayScore: number;
         originApiId: string;
-        updatedAt: Date;
     }>;
     findAll(groupId?: string, roundId?: string, sportId?: string, leagueId?: string, seasonId?: string, date?: string, seasonPhase?: string, seasonPhaseDetail?: string, page?: string, limit?: string, sortBy?: string, sortOrder?: string): Promise<MatchResponseDto[]>;
     getPostseasonBracket(leagueId?: string, seasonId?: string, groupId?: string): Promise<{

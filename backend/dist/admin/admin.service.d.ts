@@ -31,7 +31,7 @@ export declare class AdminService {
         matchesUpdated: number;
         standingsRecalculated: number;
         details: {
-            adjustmentType: "country" | "manual" | "set";
+            adjustmentType: "manual" | "country" | "set";
             timezone: string;
             manualHours: number;
             setTime: string;

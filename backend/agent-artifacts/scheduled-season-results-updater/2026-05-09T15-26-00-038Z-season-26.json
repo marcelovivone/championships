@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T15:26:00.038Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:26 17 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 26,
+    "label": "2026/2026",
+    "leagueId": 47,
+    "sportId": 36,
+    "leagueNames": [
+      "Brazilian Serie A"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 153,
+    "externalLeagueCode": "bra.1",
+    "parsedLeagueName": "Brazilian Serie A",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T15:26:01.676Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 253,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 506,
+    "proposedDivisionWrites": 506,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 127,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 127,
+    "pendingMatches": 253,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 5611,
+      "date": "2026-04-26T23:30:00.000Z",
+      "roundId": 562,
+      "roundNumber": 13,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Fluminense",
+      "awayClub": "Chapecoense",
+      "score": "2-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 13,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 153,
+    "sportId": 36,
+    "leagueId": 47,
+    "seasonId": 26,
+    "seasonPhase": "Regular"
+  }
+}

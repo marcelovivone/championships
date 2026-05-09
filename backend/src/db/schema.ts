@@ -1,4 +1,18 @@
-import { pgEnum, pgTable, serial, varchar, integer, boolean, timestamp, text, decimal } from 'drizzle-orm/pg-core';
+import {
+  pgEnum,
+  pgTable,
+  serial,
+  varchar,
+  integer,
+  boolean,
+  timestamp,
+  date,
+  text,
+  decimal,
+  jsonb,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/pg-core';
 
 /**
  * ============================================================================
@@ -181,6 +195,30 @@ export const seasons = pgTable('seasons', {
   flgEspnApiPartialScores: boolean('flg_default').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// ============================================================================
+// 10AA. SEASON_ESPN_EXTRACTION_CONFIGS TABLE - Stored extraction settings for
+// current-season ESPN loads
+// ============================================================================
+export const seasonEspnExtractionConfigs = pgTable('season_espn_extraction_configs', {
+  id: serial('id').primaryKey(),
+  seasonId: integer('season_id').references(() => seasons.id).notNull(),
+  externalLeagueCode: varchar('external_league_code', { length: 120 }).notNull(),
+  startDate: date('start_date').notNull(),
+  endDate: date('end_date').notNull(),
+  sameYears: boolean('same_years').default(false).notNull(),
+  hasPostseason: boolean('has_postseason').default(false).notNull(),
+  scheduleType: varchar('schedule_type', { length: 10 }).default('Date').notNull(),
+  hasGroups: boolean('has_groups').default(false).notNull(),
+  numberOfGroups: integer('number_of_groups').default(0).notNull(),
+  hasDivisions: boolean('has_divisions').default(true).notNull(),
+  runInBackground: boolean('run_in_background').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  seasonIdUnique: uniqueIndex('season_espn_extraction_configs_season_id_uq').on(table.seasonId),
+  externalLeagueCodeIdx: index('season_espn_extraction_configs_external_league_code_idx').on(table.externalLeagueCode),
+}));
 
 // ============================================================================
 // 10A. SEASON_CLUBS TABLE - Associates clubs to league seasons
@@ -448,3 +486,201 @@ export const standingOrderRules = pgTable('standing_order_rules', {
   direction: varchar('direction', { length: 4 }).default('DESC').notNull(), // 'DESC' or 'ASC'
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// ============================================================================
+// 26. AGENT CONTROL PLANE ENUMS
+// ============================================================================
+export const agentModeEnum = pgEnum('agent_mode', ['dry-run', 'manual', 'semi-automatic', 'autonomous']);
+
+export const agentTriggerTypeEnum = pgEnum('agent_trigger_type', ['manual', 'schedule', 'event']);
+
+export const agentRunStatusEnum = pgEnum('agent_run_status', [
+  'queued',
+  'running',
+  'waiting-approval',
+  'completed',
+  'failed',
+  'cancelled',
+  'rejected',
+]);
+
+export const agentActionKindEnum = pgEnum('agent_action_kind', ['read', 'notify', 'generate-script', 'write']);
+
+export const agentActionStatusEnum = pgEnum('agent_action_status', [
+  'planned',
+  'pending-approval',
+  'approved',
+  'executed',
+  'blocked',
+  'skipped',
+  'failed',
+  'rejected',
+]);
+
+export const approvalStatusEnum = pgEnum('approval_status', ['pending', 'approved', 'rejected', 'cancelled']);
+
+export const notificationChannelEnum = pgEnum('notification_channel', ['email', 'in-app']);
+
+export const notificationStatusEnum = pgEnum('notification_status', ['pending', 'sent', 'failed', 'cancelled']);
+
+// ============================================================================
+// 27. AGENT_DEFINITIONS TABLE
+// ============================================================================
+export const agentDefinitions = pgTable('agent_definitions', {
+  id: serial('id').primaryKey(),
+  agentKey: varchar('agent_key', { length: 80 }).notNull(),
+  name: varchar('name', { length: 150 }).notNull(),
+  description: text('description'),
+  version: varchar('version', { length: 30 }).default('1.0.0').notNull(),
+  defaultMode: agentModeEnum('default_mode').default('dry-run').notNull(),
+  supportsManualTrigger: boolean('supports_manual_trigger').default(true).notNull(),
+  supportsSchedule: boolean('supports_schedule').default(false).notNull(),
+  supportsEventTrigger: boolean('supports_event_trigger').default(false).notNull(),
+  owner: varchar('owner', { length: 120 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  agentKeyUnique: uniqueIndex('agent_definitions_agent_key_uq').on(table.agentKey),
+  agentKeyIdx: index('agent_definitions_agent_key_idx').on(table.agentKey),
+}));
+
+// ============================================================================
+// 28. AGENT_CONFIG TABLE
+// ============================================================================
+export const agentConfig = pgTable('agent_config', {
+  id: serial('id').primaryKey(),
+  agentDefinitionId: integer('agent_definition_id').references(() => agentDefinitions.id).notNull(),
+  isEnabled: boolean('is_enabled').default(false).notNull(),
+  mode: agentModeEnum('mode').default('dry-run').notNull(),
+  scheduleExpression: varchar('schedule_expression', { length: 120 }),
+  timeoutSeconds: integer('timeout_seconds').default(300).notNull(),
+  maxRetries: integer('max_retries').default(0).notNull(),
+  approvalRequiredForWrites: boolean('approval_required_for_writes').default(true).notNull(),
+  notificationRecipients: jsonb('notification_recipients'),
+  triggerFilters: jsonb('trigger_filters'),
+  configJson: jsonb('config_json'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  agentDefinitionIdIdx: index('agent_config_agent_definition_id_idx').on(table.agentDefinitionId),
+}));
+
+// ============================================================================
+// 29. RUN_HISTORY TABLE
+// ============================================================================
+export const runHistory = pgTable('run_history', {
+  id: serial('id').primaryKey(),
+  agentDefinitionId: integer('agent_definition_id').references(() => agentDefinitions.id).notNull(),
+  agentConfigId: integer('agent_config_id').references(() => agentConfig.id),
+  runKey: varchar('run_key', { length: 120 }).notNull(),
+  triggerType: agentTriggerTypeEnum('trigger_type').notNull(),
+  triggerSource: varchar('trigger_source', { length: 120 }).notNull(),
+  mode: agentModeEnum('mode').notNull(),
+  status: agentRunStatusEnum('status').default('queued').notNull(),
+  initiatedBy: varchar('initiated_by', { length: 120 }),
+  idempotencyKey: varchar('idempotency_key', { length: 150 }),
+  correlationId: varchar('correlation_id', { length: 150 }),
+  summary: text('summary'),
+  payload: jsonb('payload'),
+  resultJson: jsonb('result_json'),
+  errorCode: varchar('error_code', { length: 80 }),
+  errorMessage: text('error_message'),
+  startedAt: timestamp('started_at'),
+  finishedAt: timestamp('finished_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  runKeyUnique: uniqueIndex('run_history_run_key_uq').on(table.runKey),
+  agentDefinitionIdIdx: index('run_history_agent_definition_id_idx').on(table.agentDefinitionId),
+  statusIdx: index('run_history_status_idx').on(table.status),
+  createdAtIdx: index('run_history_created_at_idx').on(table.createdAt),
+  idempotencyKeyIdx: index('run_history_idempotency_key_idx').on(table.idempotencyKey),
+}));
+
+// ============================================================================
+// 30. ACTION_LOGS TABLE
+// ============================================================================
+export const actionLogs = pgTable('action_logs', {
+  id: serial('id').primaryKey(),
+  runHistoryId: integer('run_history_id').references(() => runHistory.id).notNull(),
+  actionKey: varchar('action_key', { length: 150 }).notNull(),
+  kind: agentActionKindEnum('kind').notNull(),
+  status: agentActionStatusEnum('status').default('planned').notNull(),
+  summary: text('summary').notNull(),
+  targetType: varchar('target_type', { length: 80 }),
+  targetId: varchar('target_id', { length: 120 }),
+  requiresApproval: boolean('requires_approval').default(false).notNull(),
+  requiresHumanExecution: boolean('requires_human_execution').default(false).notNull(),
+  generatedArtifactPath: text('generated_artifact_path'),
+  actionPayload: jsonb('action_payload'),
+  resultPayload: jsonb('result_payload'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  runHistoryIdIdx: index('action_logs_run_history_id_idx').on(table.runHistoryId),
+  actionKeyIdx: index('action_logs_action_key_idx').on(table.actionKey),
+  statusIdx: index('action_logs_status_idx').on(table.status),
+}));
+
+// ============================================================================
+// 31. APPROVALS TABLE
+// ============================================================================
+export const approvals = pgTable('approvals', {
+  id: serial('id').primaryKey(),
+  runHistoryId: integer('run_history_id').references(() => runHistory.id).notNull(),
+  actionLogId: integer('action_log_id').references(() => actionLogs.id),
+  requestedByUserId: integer('requested_by_user_id').references(() => users.id),
+  decidedByUserId: integer('decided_by_user_id').references(() => users.id),
+  status: approvalStatusEnum('status').default('pending').notNull(),
+  summary: text('summary').notNull(),
+  reason: text('reason'),
+  requestedAt: timestamp('requested_at').defaultNow().notNull(),
+  decidedAt: timestamp('decided_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  runHistoryIdIdx: index('approvals_run_history_id_idx').on(table.runHistoryId),
+  actionLogIdIdx: index('approvals_action_log_id_idx').on(table.actionLogId),
+  statusIdx: index('approvals_status_idx').on(table.status),
+  requestedAtIdx: index('approvals_requested_at_idx').on(table.requestedAt),
+}));
+
+// ============================================================================
+// 32. NOTIFICATIONS TABLE
+// ============================================================================
+export const notifications = pgTable('notifications', {
+  id: serial('id').primaryKey(),
+  agentDefinitionId: integer('agent_definition_id').references(() => agentDefinitions.id),
+  runHistoryId: integer('run_history_id').references(() => runHistory.id),
+  approvalId: integer('approval_id').references(() => approvals.id),
+  channel: notificationChannelEnum('channel').notNull(),
+  status: notificationStatusEnum('status').default('pending').notNull(),
+  recipient: varchar('recipient', { length: 255 }).notNull(),
+  subject: varchar('subject', { length: 200 }),
+  message: text('message').notNull(),
+  metadata: jsonb('metadata'),
+  sentAt: timestamp('sent_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  runHistoryIdIdx: index('notifications_run_history_id_idx').on(table.runHistoryId),
+  statusIdx: index('notifications_status_idx').on(table.status),
+  createdAtIdx: index('notifications_created_at_idx').on(table.createdAt),
+}));
+
+// ============================================================================
+// 33. TRIGGER_METADATA TABLE
+// ============================================================================
+export const triggerMetadata = pgTable('trigger_metadata', {
+  id: serial('id').primaryKey(),
+  agentDefinitionId: integer('agent_definition_id').references(() => agentDefinitions.id).notNull(),
+  triggerType: agentTriggerTypeEnum('trigger_type').notNull(),
+  triggerKey: varchar('trigger_key', { length: 150 }).notNull(),
+  triggerSource: varchar('trigger_source', { length: 120 }),
+  metadata: jsonb('metadata'),
+  lastFiredAt: timestamp('last_fired_at'),
+  nextScheduledAt: timestamp('next_scheduled_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+  agentDefinitionIdIdx: index('trigger_metadata_agent_definition_id_idx').on(table.agentDefinitionId),
+  triggerKeyIdx: index('trigger_metadata_trigger_key_idx').on(table.triggerKey),
+  createdAtIdx: index('trigger_metadata_created_at_idx').on(table.createdAt),
+}));

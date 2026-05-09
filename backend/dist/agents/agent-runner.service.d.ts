@@ -1,0 +1,30 @@
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import * as schema from '../db/schema';
+import { AgentRunExecutionReport, AgentRunLifecycleHook, AgentRunRequest } from './contracts';
+import { AgentRegistry } from './agent-registry.service';
+export declare class AgentRunner {
+    private readonly db;
+    private readonly registry;
+    private readonly lifecycleHooks;
+    private readonly logger;
+    constructor(db: NodePgDatabase<typeof schema>, registry: AgentRegistry, lifecycleHooks?: AgentRunLifecycleHook[]);
+    run(request: AgentRunRequest): Promise<AgentRunExecutionReport>;
+    private ensureAgentDefinition;
+    private resolveAgentConfig;
+    private findExistingRunByIdempotencyKey;
+    private buildExistingRunReport;
+    private persistRunArtifacts;
+    private enforceModePolicies;
+    private resolveActionStatus;
+    private isWriteAction;
+    private buildApprovalRequest;
+    private buildModeWarning;
+    private buildModeSummary;
+    private buildMetrics;
+    private normalizeError;
+    private buildRunKey;
+    private asStoredResult;
+    private asRunStatus;
+    private asObject;
+    private invokeLifecycleHook;
+}

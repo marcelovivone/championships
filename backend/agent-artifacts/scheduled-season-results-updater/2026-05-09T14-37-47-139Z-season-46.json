@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:37:47.139Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-manual",
+  "mode": "autonomous",
+  "season": {
+    "id": 46,
+    "label": "2025/2026",
+    "leagueId": 53,
+    "sportId": 36,
+    "leagueNames": [
+      "French Ligue 1",
+      "Ligue 1"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 314,
+    "externalLeagueCode": "fra.1",
+    "parsedLeagueName": "French Ligue 1",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:37:56.128Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 20,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 40,
+    "proposedDivisionWrites": 40,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 286,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 286,
+    "pendingMatches": 20,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 23628,
+      "date": "2026-05-03T20:45:00.000Z",
+      "roundId": 2367,
+      "roundNumber": 32,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Lyon",
+      "awayClub": "Rennes",
+      "score": "4-2"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 32,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 314,
+    "sportId": 36,
+    "leagueId": 53,
+    "seasonId": 46,
+    "seasonPhase": "Regular"
+  }
+}

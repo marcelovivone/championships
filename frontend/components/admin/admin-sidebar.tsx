@@ -20,6 +20,7 @@ import {
     Link2,
     ClipboardList,
     ListOrdered,
+    Bot,
 } from 'lucide-react';
 
 interface MenuItem {
@@ -27,6 +28,16 @@ interface MenuItem {
     icon: React.ReactNode;
     href: string;
     children?: MenuItem[];
+}
+
+function isMenuItemActive(item: MenuItem, pathname: string): boolean {
+    if (item.href && pathname === item.href) {
+        return true;
+    }
+
+    return Array.isArray(item.children)
+        ? item.children.some((child) => isMenuItemActive(child, pathname))
+        : false;
 }
 
 const menuItems: MenuItem[] = [
@@ -45,6 +56,16 @@ const menuItems: MenuItem[] = [
     { label: 'Sport Clubs', icon: <Users size={20} />, href: '/admin/sport-clubs' },
     { label: 'Stadiums', icon: <Building2 size={20} />, href: '/admin/stadiums' },
     { label: 'Standing Zones', icon: <Table size={20} />, href: '/admin/standing-zones' },
+    {
+        label: 'Agents',
+        icon: <Bot size={20} />,
+        href: '',
+        children: [
+            { label: 'List of Agents', icon: <Bot size={16} />, href: '/admin/agents' },
+            { label: 'Agent Console', icon: <Bot size={16} />, href: '/admin/agents/console' },
+            { label: 'Current Seasons', icon: <ClipboardList size={16} />, href: '/admin/agents/current-seasons' },
+        ],
+    },
     {
         label: 'Standing Order',
         icon: <ListOrdered size={20} />,
@@ -124,7 +145,7 @@ export default function AdminSidebar() {
                     {(() => {
                         const renderMenu = (items: MenuItem[], depth = 0) => {
                             return items.map((it) => {
-                                const isActive = pathname === it.href;
+                                const isActive = isMenuItemActive(it, pathname);
                                 const padding = { paddingLeft: depth * 12 } as React.CSSProperties;
                                 if (it.children && it.children.length) {
                                     return (

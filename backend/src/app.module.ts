@@ -26,11 +26,14 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { AdminModule } from './admin/admin.module';
 import { StandingZonesModule } from './standing-zones/standing-zones.module';
 import { StandingOrderRulesModule } from './standing-order-rules/standing-order-rules.module';
+import { AgentsModule } from './agents/agents.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{
       ttl: 60000,
       limit: 300,
@@ -60,6 +63,7 @@ import { APP_GUARD } from '@nestjs/core';
     AdminModule,
     StandingZonesModule,
     StandingOrderRulesModule,
+    AgentsModule,
   ],
   providers: [
     {

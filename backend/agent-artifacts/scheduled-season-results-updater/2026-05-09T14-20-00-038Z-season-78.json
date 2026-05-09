@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:20:00.038Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:20 16 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 78,
+    "label": "2025/2026",
+    "leagueId": 55,
+    "sportId": 36,
+    "leagueNames": [
+      "German Bundesliga",
+      "Bundesliga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 308,
+    "externalLeagueCode": "eng.1",
+    "parsedLeagueName": "English Premier League",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:20:02.174Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "single-candidate"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 2,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 379,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 288,
+    "pendingMatches": 18,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 32478,
+      "date": "2026-05-03T19:30:00.000Z",
+      "roundId": 3305,
+      "roundNumber": 32,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Freiburg",
+      "awayClub": "Wolfsburg",
+      "score": "1-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 32,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 308,
+    "sportId": 36,
+    "leagueId": 55,
+    "seasonId": 78,
+    "seasonPhase": "Regular"
+  }
+}

@@ -48,6 +48,164 @@ export interface ApiError {
   error?: string;
 }
 
+export type AgentExecutionMode = 'dry-run' | 'manual' | 'semi-automatic' | 'autonomous';
+export type AgentTriggerType = 'manual' | 'schedule' | 'event';
+export type AgentRunStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting-approval'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'rejected';
+
+export interface AgentSetupDefinition {
+  id: number;
+  agentKey: string;
+  name: string;
+  description: string | null;
+  defaultMode: AgentExecutionMode;
+  supportsManualTrigger: boolean;
+  supportsSchedule: boolean;
+  supportsEventTrigger: boolean;
+  version: string;
+  owner: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentSetupConfig {
+  id: number;
+  isEnabled: boolean;
+  mode: AgentExecutionMode;
+  scheduleExpression: string | null;
+  timeoutSeconds: number;
+  maxRetries: number;
+  approvalRequiredForWrites: boolean;
+  notificationRecipients: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentLatestRunSummary {
+  id: number;
+  runKey: string;
+  status: AgentRunStatus;
+  mode: AgentExecutionMode;
+  triggerType: AgentTriggerType;
+  triggerSource: string;
+  initiatedBy: string | null;
+  summary: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  agentDefinitionId?: number;
+  agentConfigId?: number | null;
+  agentKey?: string;
+  agentName?: string;
+}
+
+export interface AgentScheduleSummary {
+  jobName: string;
+  agentKey: string;
+  agentName: string;
+  scheduleExpression: string;
+  nextScheduledAt: string | null;
+  agentConfigId: number;
+}
+
+export interface AgentSetupSummary {
+  definition: AgentSetupDefinition;
+  config: AgentSetupConfig | null;
+  latestRun: AgentLatestRunSummary | null;
+  schedules: AgentScheduleSummary[];
+}
+
+export interface AgentActionLogSummary {
+  id: number;
+  runHistoryId: number;
+  actionKey: string;
+  kind: 'read' | 'notify' | 'generate-script' | 'write';
+  status: 'planned' | 'pending-approval' | 'approved' | 'executed' | 'blocked' | 'skipped' | 'failed' | 'rejected';
+  summary: string;
+  targetType: string | null;
+  targetId: string | null;
+  requiresApproval: boolean;
+  requiresHumanExecution: boolean;
+  generatedArtifactPath: string | null;
+  actionPayload: unknown;
+  resultPayload: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentApprovalQueueItem {
+  id: number;
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
+  summary: string;
+  reason: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  requestedByUserId: number | null;
+  decidedByUserId: number | null;
+  runId: number;
+  runKey: string;
+  runStatus: AgentRunStatus;
+  initiatedBy: string | null;
+  triggerType: AgentTriggerType;
+  triggerSource: string;
+  agentKey: string;
+  agentName: string;
+  actionLogId: number | null;
+  actionKey: string | null;
+  actionStatus: string | null;
+  actionSummary: string | null;
+}
+
+export interface AgentNotificationSummary {
+  id: number;
+  agentDefinitionId: number | null;
+  runHistoryId: number | null;
+  approvalId: number | null;
+  channel: 'email' | 'in-app';
+  status: 'pending' | 'sent' | 'failed' | 'cancelled';
+  recipient: string;
+  subject: string | null;
+  message: string;
+  metadata: unknown;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+export interface AgentRunDetail {
+  run: AgentLatestRunSummary;
+  warnings: Array<{ code: string; message: string; details?: unknown }> | null;
+  errors: Array<{ code: string; message: string; details?: unknown; retryable?: boolean }> | null;
+  approvals: AgentApprovalQueueItem[];
+  actions: AgentActionLogSummary[];
+  notifications: AgentNotificationSummary[];
+  metrics: Record<string, unknown> | null;
+  result: unknown;
+  payload: unknown;
+}
+
+export interface UpdateAgentSetupDto {
+  isEnabled: boolean;
+  mode: AgentExecutionMode;
+  scheduleExpression?: string;
+  timeoutSeconds: number;
+  maxRetries: number;
+  approvalRequiredForWrites: boolean;
+  notificationRecipients?: string[];
+}
+
+export interface ApprovalDecisionDto {
+  decidedByUserId?: number;
+  note?: string;
+}
+
 // Entity Types
 export interface Sport {
   id: number;
@@ -166,6 +324,38 @@ export interface Season {
   sport?: Sport;
   league?: League;
   createdAt: string;
+}
+
+export interface CurrentSeasonEspnExtractionSettingsRow {
+  seasonId: number;
+  sportId: number;
+  leagueId: number;
+  sportName: string | null;
+  leagueName: string;
+  seasonLabel: string;
+  seasonStatus: string;
+  isSeasonDefault: boolean;
+  isLeagueDefault: boolean;
+  externalLeagueCode: string;
+  startDate: string;
+  endDate: string;
+  sameYears: boolean;
+  hasPostseason: boolean;
+  scheduleType: 'Round' | 'Date';
+  hasGroups: boolean;
+  numberOfGroups: number;
+  hasDivisions: boolean;
+  runInBackground: boolean;
+  inferClubs: boolean;
+  isConfigured: boolean;
+}
+
+export interface CurrentSeasonEspnExtractionSettingsResponse {
+  header: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  rows: CurrentSeasonEspnExtractionSettingsRow[];
 }
 
 export interface CreateSeasonDto {

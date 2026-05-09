@@ -72,7 +72,18 @@ Recommended entry point:
 
 ## Agent Platform & Automation
 
-- `documentation/PLAN_AGENTS.md` — roadmap for the Agent Control Plane, agent catalog, verified triggers, and recommended Phase 1 execution plan.
+- `documentation/PLAN_AGENTS.md` — roadmap for the local-first Agent Control Plane, agent catalog, verified triggers, and recommended Phase 1 execution plan.
+- `documentation/AGENT_PHASE1_EXECUTION_PLAN.md` — concrete ticket list for Phase 1: control plane foundation, admin workflow, and the Scheduled Season Results Updater on the local stack.
+- `documentation/AGENT_PHASE1_LOCAL_VALIDATION.md` — repeatable validation matrix, command pack, regression coverage, and operator checklist for the Phase 1 local stack.
+- `documentation/AGENT_PHASE1_HANDOFF_2026-05-01.md` — latest end-of-session stop point, implementation snapshot, residual follow-ups, and ready-to-paste restart prompt.
+
+### Current execution status
+
+- The current implementation is verified only on the local stack: local PostgreSQL + local Nest backend + local Next.js web app + local Expo mobile app.
+- Agent Phase 1 is implemented on that local stack.
+- The Scheduled Season Results Updater is locally demonstrable with approval-aware execution, notifications, and run-console visibility.
+- The latest regression hardening and restart instructions are documented in `documentation/AGENT_PHASE1_LOCAL_VALIDATION.md` and `documentation/AGENT_PHASE1_HANDOFF_2026-05-01.md`.
+- Deployment of the public web app and the mobile app is a separate future workstream.
 
 ## Mobile Application
 
@@ -81,18 +92,20 @@ Recommended entry point:
 
 ### Mobile application state (as of 2026-04-30)
 
-The Expo SDK 54 mobile app (`mobile/`) is fully scaffolded and tested on iPhone via Expo Go. Current implementation:
+The Expo SDK 54 mobile app (`mobile/`) is tested locally on iPhone via Expo Go against the local Nest backend. Current implementation:
 
-- `mobile/src/api.ts` — axios client + typed helpers: `fetchSports`, `fetchLeagues`, `fetchSeasons`, `fetchRounds`, `fetchSeasonClubs`, `fetchSeasonMatches`, `fetchStandings`, `fetchMatchesSlice`, `fetchGroups`. LAN host is derived from Expo's `hostUri` when `.env.development` is absent.
-- `mobile/src/RegularSeasonScreen.tsx` — sport → league → season → round/date selectors; standings grouped by conference for basketball (Eastern/Western); games list with correct score display (no null values for unplayed games).
+- `mobile/src/api.ts` — axios client + typed helpers for sports/leagues/seasons/rounds, standings, sliced matches, standing zones, season clubs, and postseason brackets. LAN host is derived from Expo's `hostUri` when `.env.development` is absent.
+- `mobile/src/RegularSeasonScreen.tsx` — sport → league → season → phase → stage selectors; standings grouped by conference for basketball; standing-zone colors; regular-season games list; postseason switch into bracket rendering.
+- `mobile/src/PostseasonBracket.tsx` — generic postseason bracket; NBA play-ins bracket; NBA mirrored playoffs bracket with round-to-round connectors, placeholder slots, and winner propagation once a series reaches 4 wins.
 - SDK: Expo 54.0.34, React Native 0.81.5, React 19.1.0.
 
 #### Pending mobile tasks (priority order)
 
 1. Add NBA-specific standing columns: GB, HOME W-L, AWAY W-L, OT W-L — see `basketball-standings-spec.md` memory.
 2. Fix `SafeAreaView` deprecation warning: replace `react-native` import with `react-native-safe-area-context`.
-3. Build Play-ins screen (`PlayInsScreen.tsx`) using `fetchMatchesSlice` with `seasonPhase=Play-ins`.
-4. Build Playoffs / Postseason bracket screen mirroring web `PostseasonBracket.tsx`.
+3. Decide whether to extract shared web/mobile API types into a small shared package.
+4. Start the Agent Control Plane work described in `documentation/PLAN_AGENTS.md`.
+5. Open the deployment workstream for the public web app and the mobile app after local validation remains stable.
 
 #### Key runtime facts
 
@@ -101,6 +114,7 @@ The Expo SDK 54 mobile app (`mobile/`) is fully scaffolded and tested on iPhone 
 | Expo start command | `cd mobile && npx expo start --host lan --clear` |
 | Real iPhone backend URL | `API_BASE_URL=http://192.168.1.156:3000` |
 | Android emulator URL | `API_BASE_URL=http://10.0.2.2:3000` |
+| Deployment status | Local only; not yet deployed |
 | NBA league id | 57 |
 | Active season id | 80 (2025/2026) |
 | Eastern Conference group id | 10 |

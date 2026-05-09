@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T15:26:00.038Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:26 17 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 42,
+    "label": "2025/2026",
+    "leagueId": 52,
+    "sportId": 36,
+    "leagueNames": [
+      "Italian Serie A"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 156,
+    "externalLeagueCode": "ita.1",
+    "parsedLeagueName": "Italian Serie A",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T15:26:06.833Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 40,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 80,
+    "proposedDivisionWrites": 80,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 340,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 340,
+    "pendingMatches": 40,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 12285,
+      "date": "2026-04-27T20:45:00.000Z",
+      "roundId": 1229,
+      "roundNumber": 34,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Lazio",
+      "awayClub": "Udinese",
+      "score": "3-3"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 34,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 156,
+    "sportId": 36,
+    "leagueId": 52,
+    "seasonId": 42,
+    "seasonPhase": "Regular"
+  }
+}

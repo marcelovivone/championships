@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:46:24.478Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-manual",
+  "mode": "autonomous",
+  "season": {
+    "id": 34,
+    "label": "2025/2026",
+    "leagueId": 48,
+    "sportId": 36,
+    "leagueNames": [
+      "English Premier League",
+      "Premier League"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 320,
+    "externalLeagueCode": "eng.1",
+    "parsedLeagueName": "English Premier League",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:46:28.103Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 30,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 60,
+    "proposedDivisionWrites": 60,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 350,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 350,
+    "pendingMatches": 30,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 9260,
+      "date": "2026-05-09T12:30:00.000Z",
+      "roundId": 927,
+      "roundNumber": 36,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Liverpool",
+      "awayClub": "Chelsea",
+      "score": "1-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 36,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 320,
+    "sportId": 36,
+    "leagueId": 48,
+    "seasonId": 34,
+    "seasonPhase": "Regular"
+  }
+}

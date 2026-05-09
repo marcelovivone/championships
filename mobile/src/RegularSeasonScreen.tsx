@@ -598,6 +598,15 @@ export default function RegularSeasonScreen() {
     queryKey: ['mobile', 'postseason-bracket', leagueId, seasonId],
     queryFn: () => fetchPostseasonBracket({ leagueId: leagueId as number, seasonId: seasonId as number }),
     enabled: leagueId !== null && seasonId !== null && selectedSeasonHasPostseason,
+    // Poll while the selected season is the current default and is actively in
+    // a postseason phase so the bracket stays fresh as the updater agent writes
+    // new game results in the background.
+    refetchInterval:
+      selectedSeasonHasPostseason &&
+      selectedSeason?.flgDefault === true &&
+      selectedSeason?.currentPhase !== 'Regular'
+        ? 3 * 60 * 1000
+        : false,
   });
 
   const postseasonPhases = React.useMemo(

@@ -28,6 +28,7 @@ export declare class MatchesService {
         leagueId: number;
         status: "Scheduled" | "Finished" | "Postponed" | "Cancelled";
         seasonId: number;
+        updatedAt: Date;
         groupId: number;
         roundId: number;
         homeClubId: number;
@@ -39,7 +40,6 @@ export declare class MatchesService {
         homeScore: number;
         awayScore: number;
         originApiId: string;
-        updatedAt: Date;
     }>;
     update(id: number, updateMatchDto: UpdateMatchDto): Promise<{
         status: MatchStatus;

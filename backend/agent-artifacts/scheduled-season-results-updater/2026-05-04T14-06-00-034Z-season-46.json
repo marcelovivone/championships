@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-04T14:06:00.034Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:06 16 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 46,
+    "label": "2025/2026",
+    "leagueId": 53,
+    "sportId": 36,
+    "leagueNames": [
+      "French Ligue 1",
+      "Ligue 1"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 216,
+    "externalLeagueCode": "fra.1",
+    "parsedLeagueName": "French Ligue 1",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-04T14:06:10.194Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 9,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 18,
+    "proposedDivisionWrites": 18,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 297,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 277,
+    "pendingMatches": 29,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 23625,
+      "date": "2026-04-26T20:45:00.000Z",
+      "roundId": 2366,
+      "roundNumber": 31,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Marseille",
+      "awayClub": "Nice",
+      "score": "1-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 31,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 216,
+    "sportId": 36,
+    "leagueId": 53,
+    "seasonId": 46,
+    "seasonPhase": "Regular"
+  }
+}

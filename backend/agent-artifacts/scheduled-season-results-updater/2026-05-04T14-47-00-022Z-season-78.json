@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-04T14:47:00.022Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:47 16 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 78,
+    "label": "2025/2026",
+    "leagueId": 55,
+    "sportId": 36,
+    "leagueNames": [
+      "German Bundesliga",
+      "Bundesliga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 236,
+    "externalLeagueCode": "ger.1",
+    "parsedLeagueName": "German Bundesliga",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-04T14:47:15.911Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 9,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 18,
+    "proposedDivisionWrites": 18,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 297,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 279,
+    "pendingMatches": 27,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 32469,
+      "date": "2026-04-26T17:30:00.000Z",
+      "roundId": 3304,
+      "roundNumber": 31,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Borussia Dortmund",
+      "awayClub": "Freiburg",
+      "score": "4-0"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 31,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 236,
+    "sportId": 36,
+    "leagueId": 55,
+    "seasonId": 78,
+    "seasonPhase": "Regular"
+  }
+}

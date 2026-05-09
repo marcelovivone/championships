@@ -110,6 +110,16 @@ type Series = {
   earliestDate: string;
 };
 
+type BracketSlot = {
+  key: string;
+  series: Series | null;
+  isPlaceholder: boolean;
+};
+
+function isTbdPlaceholder(value?: string | null): boolean {
+  return typeof value === 'string' && value.trim().toUpperCase() === 'TBD';
+}
+
 /** Build series list from a phase's matches. */
 function buildSeries(matches: BracketMatch[]): Series[] {
   const seriesMap = new Map<string, Series>();
@@ -203,10 +213,12 @@ function SeriesCard({
   s,
   seedMap,
   isSingleMatch,
+  preferredClubOrder,
 }: {
   s: Series;
   seedMap: Map<number, number>;
   isSingleMatch?: boolean;
+  preferredClubOrder?: [number | undefined, number | undefined];
 }) {
   const rep = s.matches.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')).at(-1)!;
   const homeSeed = rep.homeClubId ? seedMap.get(Number(rep.homeClubId)) : undefined;
@@ -231,6 +243,42 @@ function SeriesCard({
   if ((!bottom.club || (typeof bottom.club === 'object' && Object.keys(bottom.club).length === 0)) && bottom.fallbackId) {
     const found = findClubInSeries(s, bottom.fallbackId);
     if (found) bottom = { ...bottom, club: found };
+  }
+
+  if (preferredClubOrder) {
+    const buildPreferredEntry = (clubId?: number): typeof top => {
+      if (clubId == null) {
+        return {
+          club: undefined,
+          seed: undefined,
+          score: undefined,
+          fallbackId: null,
+          placeholder: 'TBD',
+          winsIdx: 0,
+        };
+      }
+
+      const isHomeSide = s.homeClubId === clubId && !isTbdPlaceholder(s.homePlaceholder);
+      const isAwaySide = s.awayClubId === clubId && !isTbdPlaceholder(s.awayPlaceholder);
+      const club = (rep.homeClubId === clubId)
+        ? rep.homeClub
+        : (rep.awayClubId === clubId)
+          ? rep.awayClub
+          : findClubInSeries(s, clubId);
+
+      return {
+        club,
+        seed: seedMap.get(Number(clubId)),
+        score: rep.homeClubId === clubId ? rep.homeScore : rep.awayClubId === clubId ? rep.awayScore : undefined,
+        fallbackId: clubId,
+        placeholder: isHomeSide ? (s.homePlaceholder ?? rep.homeClubPlaceholder ?? null) : isAwaySide ? (s.awayPlaceholder ?? rep.awayClubPlaceholder ?? null) : null,
+        winsIdx: isHomeSide ? 0 : 1,
+      };
+    };
+
+    const [preferredTop, preferredBottom] = preferredClubOrder;
+    top = buildPreferredEntry(preferredTop);
+    bottom = buildPreferredEntry(preferredBottom);
   }
 
   const nextGame = s.matches
@@ -353,6 +401,13 @@ function NbaBracket({
 
   const finalsPhase = displayPhases.find((p) => p.detail === 'Finals');
   const bracketPhases = displayPhases.filter((p) => p.detail !== 'Finals');
+
+  const getVisibleSeriesClubIds = (series: Series): number[] => {
+    const clubIds: number[] = [];
+    if (series.homeClubId != null && !isTbdPlaceholder(series.homePlaceholder)) clubIds.push(series.homeClubId);
+    if (series.awayClubId != null && !isTbdPlaceholder(series.awayPlaceholder)) clubIds.push(series.awayClubId);
+    return clubIds;
+  };
 
   const clubToConf = new Map<number, number>();
   (regularSeasonStandings || []).forEach((standing) => {
@@ -501,7 +556,7 @@ function NbaBracket({
     phases: BracketPhase[],
     confId: number | null,
     side: 'left' | 'right'
-  ): Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> => {
+  ): Record<string, BracketSlot[]> => {
     // Build series per phase, filtered by conference
     const seriesByPhase: Record<string, Series[]> = {};
     phases.forEach((phase) => {
@@ -544,7 +599,7 @@ function NbaBracket({
 
     // If no phase has data at all, fall back to all placeholders
     if (topDataIdx === -1) {
-      const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
+      const result: Record<string, BracketSlot[]> = {};
       phases.forEach((phase) => {
         const totalExpected = PHASE_SLOT_COUNTS[phase.detail];
         const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : 0;
@@ -667,9 +722,19 @@ function NbaBracket({
         }
       }
 
+      const remainingParents = parentPool
+        .filter((series) => !usedIds.has(series.id))
+        .sort((a, b) => a.earliestDate.localeCompare(b.earliestDate));
+      ordered.push(...remainingParents);
+
       // Fill remaining expected slots with placeholders
       const totalExpected = PHASE_SLOT_COUNTS[parentDetail];
       const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : ordered.length;
+      if (ordered.length > expectedPerSide) {
+        const actualOrdered = ordered.filter((series): series is Series => series != null);
+        ordered.length = 0;
+        ordered.push(...actualOrdered.slice(0, expectedPerSide));
+      }
       while (ordered.length < expectedPerSide) ordered.push(null);
 
       orderedByPhase[parentDetail] = ordered;
@@ -747,11 +812,11 @@ function NbaBracket({
     
 
     // Convert to slot format
-    const result: Record<string, Array<{ key: string; series: Series | null; isPlaceholder: boolean }>> = {};
+    const result: Record<string, BracketSlot[]> = {};
     phases.forEach((phase) => {
       const totalExpected = PHASE_SLOT_COUNTS[phase.detail];
       const expectedPerSide = totalExpected != null ? Math.floor(totalExpected / 2) : 0;
-      const slots: Array<{ key: string; series: Series | null; isPlaceholder: boolean }> = [];
+      const slots: BracketSlot[] = [];
 
       // Special deterministic ordering for Round of 16 (First Round)
       if (phase.detail === 'Round of 16') {
@@ -812,7 +877,7 @@ function NbaBracket({
       }
 
       // Default conversion for other phases
-      let ordered = orderedByPhase[phase.detail] || [];
+      const ordered = orderedByPhase[phase.detail] || [];
       const maxCount = expectedPerSide || ordered.length;
       for (let i = 0; i < Math.max(ordered.length, maxCount); i++) {
         const series = ordered[i] ?? null;
@@ -822,6 +887,48 @@ function NbaBracket({
     });
 
     return result;
+  };
+
+  const getPreferredClubOrderForSlot = (
+    phaseDetail: string,
+    slotIndex: number,
+    slotsByPhase: Record<string, BracketSlot[]>,
+  ): [number | undefined, number | undefined] | undefined => {
+    const phaseIndex = bracketPhases.findIndex((phase) => phase.detail === phaseDetail);
+    if (phaseIndex <= 0) return undefined;
+
+    const currentSlot = slotsByPhase[phaseDetail]?.[slotIndex];
+    if (!currentSlot?.series) return undefined;
+
+    const previousDetail = bracketPhases[phaseIndex - 1]?.detail;
+    if (!previousDetail) return undefined;
+
+    const previousSlots = slotsByPhase[previousDetail] || [];
+    const currentSeries = currentSlot.series;
+    const allCurrentClubIds = seriesClubIds(currentSeries);
+    const visibleCurrentClubIds = getVisibleSeriesClubIds(currentSeries);
+
+    const matchingPreviousIndexes = previousSlots
+      .map((parentSlot, index) => ({ parentSlot, index }))
+      .filter(({ parentSlot }) => parentSlot?.series && seriesClubIds(parentSlot.series).some((clubId) => allCurrentClubIds.includes(clubId)))
+      .map(({ index }) => index);
+
+    const feederIndexes = (matchingPreviousIndexes.length > 0 ? matchingPreviousIndexes : [slotIndex * 2, slotIndex * 2 + 1])
+      .filter((index, arrayIndex, arr) => index >= 0 && index < previousSlots.length && arr.indexOf(index) === arrayIndex)
+      .sort((a, b) => a - b)
+      .slice(0, 2);
+
+    if (feederIndexes.length === 0) return undefined;
+
+    const preferredOrder = feederIndexes.map((index) => {
+      const parentSeries = previousSlots[index]?.series;
+      if (!parentSeries) return undefined;
+      return visibleCurrentClubIds.find((clubId) => seriesClubIds(parentSeries).includes(clubId));
+    });
+
+    while (preferredOrder.length < 2) preferredOrder.push(undefined);
+
+    return [preferredOrder[0], preferredOrder[1]];
   };
 
   const leftSlotsByPhase = React.useMemo(
@@ -1056,7 +1163,12 @@ function NbaBracket({
     };
   }, [bracketPhases, leftSlotsByPhase, rightSlotsByPhase, finalSlot.key]);
 
-  const renderSlot = (slot: { key: string; series: Series | null; isPlaceholder: boolean }) => (
+  const renderSlot = (
+    slot: BracketSlot,
+    phaseDetail: string,
+    slotIndex: number,
+    slotsByPhase: Record<string, BracketSlot[]>,
+  ) => (
     <div
       key={slot.key}
       ref={(element) => { cardRefs.current[slot.key] = element; }}
@@ -1074,7 +1186,7 @@ function NbaBracket({
             if (g != null) localSeedMap.set(cid, g);
           }
         });
-        return <SeriesCard s={slot.series!} seedMap={localSeedMap} />;
+        return <SeriesCard s={slot.series!} seedMap={localSeedMap} preferredClubOrder={getPreferredClubOrderForSlot(phaseDetail, slotIndex, slotsByPhase)} />;
       })()}
     </div>
   );
@@ -1114,7 +1226,7 @@ function NbaBracket({
               <h3 className="text-base font-semibold text-gray-900">{getNbaPhaseDisplayName(phase.detail)}</h3>
             </header>
             <div className="space-y-3">
-              {(leftSlotsByPhase[phase.detail] || []).map(renderSlot)}
+              {(leftSlotsByPhase[phase.detail] || []).map((slot, slotIndex) => renderSlot(slot, phase.detail, slotIndex, leftSlotsByPhase))}
             </div>
           </section>
         ))}
@@ -1128,7 +1240,7 @@ function NbaBracket({
             <h3 className="text-base font-semibold text-gray-900">Finals</h3>
           </header>
           <div className="space-y-3">
-            {renderSlot(finalSlot)}
+            {renderSlot(finalSlot, 'Finals', 0, { Finals: [finalSlot] })}
           </div>
         </section>
 
@@ -1143,7 +1255,7 @@ function NbaBracket({
               <h3 className="text-base font-semibold text-gray-900">{getNbaPhaseDisplayName(phase.detail)}</h3>
             </header>
             <div className="space-y-3">
-              {(rightSlotsByPhase[phase.detail] || []).map(renderSlot)}
+              {(rightSlotsByPhase[phase.detail] || []).map((slot, slotIndex) => renderSlot(slot, phase.detail, slotIndex, rightSlotsByPhase))}
             </div>
           </section>
         ))}

@@ -2,6 +2,26 @@ import { SeasonsService } from './seasons.service';
 export declare class SeasonsController {
     private readonly seasonsService;
     constructor(seasonsService: SeasonsService);
+    findCurrentEspnExtractionSettings(): Promise<import("./seasons.service").CurrentSeasonEspnExtractionSettingsResponse>;
+    saveCurrentEspnExtractionSettings(body: {
+        header?: {
+            startDate?: string | null;
+            endDate?: string | null;
+        };
+        rows?: Array<{
+            seasonId: number;
+            externalLeagueCode?: string;
+            startDate?: string;
+            endDate?: string;
+            sameYears?: boolean;
+            hasPostseason?: boolean;
+            scheduleType?: string;
+            hasGroups?: boolean;
+            numberOfGroups?: number;
+            hasDivisions?: boolean;
+            runInBackground?: boolean;
+        }>;
+    }): Promise<import("./seasons.service").CurrentSeasonEspnExtractionSettingsResponse>;
     findAll(page?: string, limit?: string, sortBy?: string, sortOrder?: string, leagueId?: string): Promise<{
         id: number;
         sportId: number;

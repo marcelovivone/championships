@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:46:24.478Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-manual",
+  "mode": "autonomous",
+  "season": {
+    "id": 80,
+    "label": "2025/2026",
+    "leagueId": 57,
+    "sportId": 34,
+    "leagueNames": [
+      "National Basketball Association",
+      "NBA"
+    ],
+    "currentPhase": "Playoffs",
+    "currentPhaseDetail": "Round of 16"
+  },
+  "transitionalSource": {
+    "id": 326,
+    "externalLeagueCode": "nba",
+    "parsedLeagueName": "National Basketball Association",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:51:28.330Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 25,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 0,
+    "proposedDivisionWrites": 125,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 64,
+    "downstreamRecalculationNeeded": false,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 1389,
+    "finishedMatches": 1354,
+    "pendingMatches": 35,
+    "currentPhaseMatchCount": 56,
+    "latestFinishedMatch": {
+      "matchId": 42735,
+      "date": "2026-05-01T00:00:00.000Z",
+      "roundId": null,
+      "roundNumber": null,
+      "seasonPhase": "Playoffs",
+      "seasonPhaseDetail": "Round of 16",
+      "homeClub": "Magic",
+      "awayClub": "Pistons",
+      "score": "79-93"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "date",
+    "reference": "2026-04-12",
+    "rowCount": 34
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 326,
+    "sportId": 34,
+    "leagueId": 57,
+    "seasonId": 80,
+    "seasonPhase": "Playoffs"
+  }
+}

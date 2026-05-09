@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.standingOrderRules = exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasons = exports.leagueLinks = exports.seasonPhaseDetailEnum = exports.seasonPhaseEnum = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
+exports.triggerMetadata = exports.notifications = exports.approvals = exports.actionLogs = exports.runHistory = exports.agentConfig = exports.agentDefinitions = exports.notificationStatusEnum = exports.notificationChannelEnum = exports.approvalStatusEnum = exports.agentActionStatusEnum = exports.agentActionKindEnum = exports.agentRunStatusEnum = exports.agentTriggerTypeEnum = exports.agentModeEnum = exports.standingOrderRules = exports.standingZones = exports.sportClubs = exports.userPermissions = exports.profilePermissions = exports.menuItems = exports.users = exports.standings = exports.matchEvents = exports.matchDivisions = exports.matches = exports.typeOfStandingEnum = exports.matchStatusEnum = exports.groups = exports.rounds = exports.seasonClubs = exports.seasonEspnExtractionConfigs = exports.seasons = exports.leagueLinks = exports.seasonPhaseDetailEnum = exports.seasonPhaseEnum = exports.leagues = exports.clubStadiums = exports.clubs = exports.stadiums = exports.cities = exports.countries = exports.sports = void 0;
 const pg_core_1 = require("drizzle-orm/pg-core");
 exports.sports = (0, pg_core_1.pgTable)('sports', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
@@ -125,6 +125,25 @@ exports.seasons = (0, pg_core_1.pgTable)('seasons', {
     flgEspnApiPartialScores: (0, pg_core_1.boolean)('flg_default').default(false).notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
+exports.seasonEspnExtractionConfigs = (0, pg_core_1.pgTable)('season_espn_extraction_configs', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    seasonId: (0, pg_core_1.integer)('season_id').references(() => exports.seasons.id).notNull(),
+    externalLeagueCode: (0, pg_core_1.varchar)('external_league_code', { length: 120 }).notNull(),
+    startDate: (0, pg_core_1.date)('start_date').notNull(),
+    endDate: (0, pg_core_1.date)('end_date').notNull(),
+    sameYears: (0, pg_core_1.boolean)('same_years').default(false).notNull(),
+    hasPostseason: (0, pg_core_1.boolean)('has_postseason').default(false).notNull(),
+    scheduleType: (0, pg_core_1.varchar)('schedule_type', { length: 10 }).default('Date').notNull(),
+    hasGroups: (0, pg_core_1.boolean)('has_groups').default(false).notNull(),
+    numberOfGroups: (0, pg_core_1.integer)('number_of_groups').default(0).notNull(),
+    hasDivisions: (0, pg_core_1.boolean)('has_divisions').default(true).notNull(),
+    runInBackground: (0, pg_core_1.boolean)('run_in_background').default(false).notNull(),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    seasonIdUnique: (0, pg_core_1.uniqueIndex)('season_espn_extraction_configs_season_id_uq').on(table.seasonId),
+    externalLeagueCodeIdx: (0, pg_core_1.index)('season_espn_extraction_configs_external_league_code_idx').on(table.externalLeagueCode),
+}));
 exports.seasonClubs = (0, pg_core_1.pgTable)('season_clubs', {
     id: (0, pg_core_1.serial)('id').primaryKey(),
     sportId: (0, pg_core_1.integer)('sport_id').references(() => exports.sports.id).notNull(),
@@ -314,4 +333,163 @@ exports.standingOrderRules = (0, pg_core_1.pgTable)('standing_order_rules', {
     direction: (0, pg_core_1.varchar)('direction', { length: 4 }).default('DESC').notNull(),
     createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
 });
+exports.agentModeEnum = (0, pg_core_1.pgEnum)('agent_mode', ['dry-run', 'manual', 'semi-automatic', 'autonomous']);
+exports.agentTriggerTypeEnum = (0, pg_core_1.pgEnum)('agent_trigger_type', ['manual', 'schedule', 'event']);
+exports.agentRunStatusEnum = (0, pg_core_1.pgEnum)('agent_run_status', [
+    'queued',
+    'running',
+    'waiting-approval',
+    'completed',
+    'failed',
+    'cancelled',
+    'rejected',
+]);
+exports.agentActionKindEnum = (0, pg_core_1.pgEnum)('agent_action_kind', ['read', 'notify', 'generate-script', 'write']);
+exports.agentActionStatusEnum = (0, pg_core_1.pgEnum)('agent_action_status', [
+    'planned',
+    'pending-approval',
+    'approved',
+    'executed',
+    'blocked',
+    'skipped',
+    'failed',
+    'rejected',
+]);
+exports.approvalStatusEnum = (0, pg_core_1.pgEnum)('approval_status', ['pending', 'approved', 'rejected', 'cancelled']);
+exports.notificationChannelEnum = (0, pg_core_1.pgEnum)('notification_channel', ['email', 'in-app']);
+exports.notificationStatusEnum = (0, pg_core_1.pgEnum)('notification_status', ['pending', 'sent', 'failed', 'cancelled']);
+exports.agentDefinitions = (0, pg_core_1.pgTable)('agent_definitions', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    agentKey: (0, pg_core_1.varchar)('agent_key', { length: 80 }).notNull(),
+    name: (0, pg_core_1.varchar)('name', { length: 150 }).notNull(),
+    description: (0, pg_core_1.text)('description'),
+    version: (0, pg_core_1.varchar)('version', { length: 30 }).default('1.0.0').notNull(),
+    defaultMode: (0, exports.agentModeEnum)('default_mode').default('dry-run').notNull(),
+    supportsManualTrigger: (0, pg_core_1.boolean)('supports_manual_trigger').default(true).notNull(),
+    supportsSchedule: (0, pg_core_1.boolean)('supports_schedule').default(false).notNull(),
+    supportsEventTrigger: (0, pg_core_1.boolean)('supports_event_trigger').default(false).notNull(),
+    owner: (0, pg_core_1.varchar)('owner', { length: 120 }),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    agentKeyUnique: (0, pg_core_1.uniqueIndex)('agent_definitions_agent_key_uq').on(table.agentKey),
+    agentKeyIdx: (0, pg_core_1.index)('agent_definitions_agent_key_idx').on(table.agentKey),
+}));
+exports.agentConfig = (0, pg_core_1.pgTable)('agent_config', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    agentDefinitionId: (0, pg_core_1.integer)('agent_definition_id').references(() => exports.agentDefinitions.id).notNull(),
+    isEnabled: (0, pg_core_1.boolean)('is_enabled').default(false).notNull(),
+    mode: (0, exports.agentModeEnum)('mode').default('dry-run').notNull(),
+    scheduleExpression: (0, pg_core_1.varchar)('schedule_expression', { length: 120 }),
+    timeoutSeconds: (0, pg_core_1.integer)('timeout_seconds').default(300).notNull(),
+    maxRetries: (0, pg_core_1.integer)('max_retries').default(0).notNull(),
+    approvalRequiredForWrites: (0, pg_core_1.boolean)('approval_required_for_writes').default(true).notNull(),
+    notificationRecipients: (0, pg_core_1.jsonb)('notification_recipients'),
+    triggerFilters: (0, pg_core_1.jsonb)('trigger_filters'),
+    configJson: (0, pg_core_1.jsonb)('config_json'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    agentDefinitionIdIdx: (0, pg_core_1.index)('agent_config_agent_definition_id_idx').on(table.agentDefinitionId),
+}));
+exports.runHistory = (0, pg_core_1.pgTable)('run_history', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    agentDefinitionId: (0, pg_core_1.integer)('agent_definition_id').references(() => exports.agentDefinitions.id).notNull(),
+    agentConfigId: (0, pg_core_1.integer)('agent_config_id').references(() => exports.agentConfig.id),
+    runKey: (0, pg_core_1.varchar)('run_key', { length: 120 }).notNull(),
+    triggerType: (0, exports.agentTriggerTypeEnum)('trigger_type').notNull(),
+    triggerSource: (0, pg_core_1.varchar)('trigger_source', { length: 120 }).notNull(),
+    mode: (0, exports.agentModeEnum)('mode').notNull(),
+    status: (0, exports.agentRunStatusEnum)('status').default('queued').notNull(),
+    initiatedBy: (0, pg_core_1.varchar)('initiated_by', { length: 120 }),
+    idempotencyKey: (0, pg_core_1.varchar)('idempotency_key', { length: 150 }),
+    correlationId: (0, pg_core_1.varchar)('correlation_id', { length: 150 }),
+    summary: (0, pg_core_1.text)('summary'),
+    payload: (0, pg_core_1.jsonb)('payload'),
+    resultJson: (0, pg_core_1.jsonb)('result_json'),
+    errorCode: (0, pg_core_1.varchar)('error_code', { length: 80 }),
+    errorMessage: (0, pg_core_1.text)('error_message'),
+    startedAt: (0, pg_core_1.timestamp)('started_at'),
+    finishedAt: (0, pg_core_1.timestamp)('finished_at'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+}, (table) => ({
+    runKeyUnique: (0, pg_core_1.uniqueIndex)('run_history_run_key_uq').on(table.runKey),
+    agentDefinitionIdIdx: (0, pg_core_1.index)('run_history_agent_definition_id_idx').on(table.agentDefinitionId),
+    statusIdx: (0, pg_core_1.index)('run_history_status_idx').on(table.status),
+    createdAtIdx: (0, pg_core_1.index)('run_history_created_at_idx').on(table.createdAt),
+    idempotencyKeyIdx: (0, pg_core_1.index)('run_history_idempotency_key_idx').on(table.idempotencyKey),
+}));
+exports.actionLogs = (0, pg_core_1.pgTable)('action_logs', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    runHistoryId: (0, pg_core_1.integer)('run_history_id').references(() => exports.runHistory.id).notNull(),
+    actionKey: (0, pg_core_1.varchar)('action_key', { length: 150 }).notNull(),
+    kind: (0, exports.agentActionKindEnum)('kind').notNull(),
+    status: (0, exports.agentActionStatusEnum)('status').default('planned').notNull(),
+    summary: (0, pg_core_1.text)('summary').notNull(),
+    targetType: (0, pg_core_1.varchar)('target_type', { length: 80 }),
+    targetId: (0, pg_core_1.varchar)('target_id', { length: 120 }),
+    requiresApproval: (0, pg_core_1.boolean)('requires_approval').default(false).notNull(),
+    requiresHumanExecution: (0, pg_core_1.boolean)('requires_human_execution').default(false).notNull(),
+    generatedArtifactPath: (0, pg_core_1.text)('generated_artifact_path'),
+    actionPayload: (0, pg_core_1.jsonb)('action_payload'),
+    resultPayload: (0, pg_core_1.jsonb)('result_payload'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    runHistoryIdIdx: (0, pg_core_1.index)('action_logs_run_history_id_idx').on(table.runHistoryId),
+    actionKeyIdx: (0, pg_core_1.index)('action_logs_action_key_idx').on(table.actionKey),
+    statusIdx: (0, pg_core_1.index)('action_logs_status_idx').on(table.status),
+}));
+exports.approvals = (0, pg_core_1.pgTable)('approvals', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    runHistoryId: (0, pg_core_1.integer)('run_history_id').references(() => exports.runHistory.id).notNull(),
+    actionLogId: (0, pg_core_1.integer)('action_log_id').references(() => exports.actionLogs.id),
+    requestedByUserId: (0, pg_core_1.integer)('requested_by_user_id').references(() => exports.users.id),
+    decidedByUserId: (0, pg_core_1.integer)('decided_by_user_id').references(() => exports.users.id),
+    status: (0, exports.approvalStatusEnum)('status').default('pending').notNull(),
+    summary: (0, pg_core_1.text)('summary').notNull(),
+    reason: (0, pg_core_1.text)('reason'),
+    requestedAt: (0, pg_core_1.timestamp)('requested_at').defaultNow().notNull(),
+    decidedAt: (0, pg_core_1.timestamp)('decided_at'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+}, (table) => ({
+    runHistoryIdIdx: (0, pg_core_1.index)('approvals_run_history_id_idx').on(table.runHistoryId),
+    actionLogIdIdx: (0, pg_core_1.index)('approvals_action_log_id_idx').on(table.actionLogId),
+    statusIdx: (0, pg_core_1.index)('approvals_status_idx').on(table.status),
+    requestedAtIdx: (0, pg_core_1.index)('approvals_requested_at_idx').on(table.requestedAt),
+}));
+exports.notifications = (0, pg_core_1.pgTable)('notifications', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    agentDefinitionId: (0, pg_core_1.integer)('agent_definition_id').references(() => exports.agentDefinitions.id),
+    runHistoryId: (0, pg_core_1.integer)('run_history_id').references(() => exports.runHistory.id),
+    approvalId: (0, pg_core_1.integer)('approval_id').references(() => exports.approvals.id),
+    channel: (0, exports.notificationChannelEnum)('channel').notNull(),
+    status: (0, exports.notificationStatusEnum)('status').default('pending').notNull(),
+    recipient: (0, pg_core_1.varchar)('recipient', { length: 255 }).notNull(),
+    subject: (0, pg_core_1.varchar)('subject', { length: 200 }),
+    message: (0, pg_core_1.text)('message').notNull(),
+    metadata: (0, pg_core_1.jsonb)('metadata'),
+    sentAt: (0, pg_core_1.timestamp)('sent_at'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+}, (table) => ({
+    runHistoryIdIdx: (0, pg_core_1.index)('notifications_run_history_id_idx').on(table.runHistoryId),
+    statusIdx: (0, pg_core_1.index)('notifications_status_idx').on(table.status),
+    createdAtIdx: (0, pg_core_1.index)('notifications_created_at_idx').on(table.createdAt),
+}));
+exports.triggerMetadata = (0, pg_core_1.pgTable)('trigger_metadata', {
+    id: (0, pg_core_1.serial)('id').primaryKey(),
+    agentDefinitionId: (0, pg_core_1.integer)('agent_definition_id').references(() => exports.agentDefinitions.id).notNull(),
+    triggerType: (0, exports.agentTriggerTypeEnum)('trigger_type').notNull(),
+    triggerKey: (0, pg_core_1.varchar)('trigger_key', { length: 150 }).notNull(),
+    triggerSource: (0, pg_core_1.varchar)('trigger_source', { length: 120 }),
+    metadata: (0, pg_core_1.jsonb)('metadata'),
+    lastFiredAt: (0, pg_core_1.timestamp)('last_fired_at'),
+    nextScheduledAt: (0, pg_core_1.timestamp)('next_scheduled_at'),
+    createdAt: (0, pg_core_1.timestamp)('created_at').defaultNow().notNull(),
+    updatedAt: (0, pg_core_1.timestamp)('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    agentDefinitionIdIdx: (0, pg_core_1.index)('trigger_metadata_agent_definition_id_idx').on(table.agentDefinitionId),
+    triggerKeyIdx: (0, pg_core_1.index)('trigger_metadata_trigger_key_idx').on(table.triggerKey),
+    createdAtIdx: (0, pg_core_1.index)('trigger_metadata_created_at_idx').on(table.createdAt),
+}));
 //# sourceMappingURL=schema.js.map

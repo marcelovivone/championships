@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-05T06:31:00.016Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:31 8 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 33,
+    "label": "2025/2026",
+    "leagueId": 49,
+    "sportId": 36,
+    "leagueNames": [
+      "Spanish LaLiga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 243,
+    "externalLeagueCode": "esp.1",
+    "parsedLeagueName": "Spanish LALIGA",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-05T06:31:05.206Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 2,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 379,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 339,
+    "pendingMatches": 41,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 8858,
+      "date": "2026-05-03T21:00:00.000Z",
+      "roundId": 887,
+      "roundNumber": 34,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Espanyol",
+      "awayClub": "Real Madrid",
+      "score": "0-2"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 34,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 243,
+    "sportId": 36,
+    "leagueId": 49,
+    "seasonId": 33,
+    "seasonPhase": "Regular"
+  }
+}

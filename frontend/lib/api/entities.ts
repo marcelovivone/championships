@@ -8,6 +8,7 @@ import {
   ClubStadium,
   League,
   Season,
+  CurrentSeasonEspnExtractionSettingsResponse,
   Round,
   Group,
   SeasonClub,
@@ -151,7 +152,17 @@ export const seasonsApi = {
     const response = await apiClient.get<Season[]>(`/v1/seasons?leagueId=${leagueId}`);
     const result = response.data as any;
     return Array.isArray(result) ? result : (result.data || []);
-  }
+  },
+  getCurrentEspnExtractionSettings: async (): Promise<CurrentSeasonEspnExtractionSettingsResponse> => {
+    const response = await apiClient.get<CurrentSeasonEspnExtractionSettingsResponse>('/v1/seasons/current-espn-extraction');
+    return response.data;
+  },
+  saveCurrentEspnExtractionSettings: async (
+    data: CurrentSeasonEspnExtractionSettingsResponse,
+  ): Promise<CurrentSeasonEspnExtractionSettingsResponse> => {
+    const response = await apiClient.put<CurrentSeasonEspnExtractionSettingsResponse>('/v1/seasons/current-espn-extraction', data);
+    return response.data;
+  },
 };
 
 export const standingZonesApi = {

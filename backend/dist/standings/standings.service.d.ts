@@ -323,9 +323,9 @@ export declare class StandingsService {
         clubId: number;
         leagueId: number;
         seasonId: number;
+        updatedAt: Date;
         groupId: number;
         roundId: number;
-        updatedAt: Date;
         matchId: number;
         matchDate: Date;
         points: number;
@@ -366,9 +366,9 @@ export declare class StandingsService {
         clubId: number;
         leagueId: number;
         seasonId: number;
+        updatedAt: Date;
         groupId: number;
         roundId: number;
-        updatedAt: Date;
         matchId: number;
         matchDate: Date;
         points: number;

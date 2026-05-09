@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:37:47.139Z",
+  "triggerType": "manual",
+  "triggerSource": "admin-manual",
+  "mode": "autonomous",
+  "season": {
+    "id": 33,
+    "label": "2025/2026",
+    "leagueId": 49,
+    "sportId": 36,
+    "leagueNames": [
+      "Spanish LaLiga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 312,
+    "externalLeagueCode": "esp.1",
+    "parsedLeagueName": "Spanish LALIGA",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:37:52.148Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 40,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 80,
+    "proposedDivisionWrites": 80,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 340,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 340,
+    "pendingMatches": 40,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 8863,
+      "date": "2026-05-04T21:00:00.000Z",
+      "roundId": 887,
+      "roundNumber": 34,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Sevilla",
+      "awayClub": "Real Sociedad",
+      "score": "1-0"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 34,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 312,
+    "sportId": 36,
+    "leagueId": 49,
+    "seasonId": 33,
+    "seasonPhase": "Regular"
+  }
+}

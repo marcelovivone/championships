@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T15:26:00.038Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:26 17 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 72,
+    "label": "2025/2026",
+    "leagueId": 54,
+    "sportId": 36,
+    "leagueNames": [
+      "Portuguese Primeira Liga",
+      "Portuguese Liga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 158,
+    "externalLeagueCode": "por.1",
+    "parsedLeagueName": "Portuguese Primeira Liga",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T15:26:10.983Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 28,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 56,
+    "proposedDivisionWrites": 56,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 278,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 278,
+    "pendingMatches": 28,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 30630,
+      "date": "2026-04-27T20:15:00.000Z",
+      "roundId": 3100,
+      "roundNumber": 31,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Gil Vicente",
+      "awayClub": "Casa Pia",
+      "score": "2-1"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 31,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 158,
+    "sportId": 36,
+    "leagueId": 54,
+    "seasonId": 72,
+    "seasonPhase": "Regular"
+  }
+}

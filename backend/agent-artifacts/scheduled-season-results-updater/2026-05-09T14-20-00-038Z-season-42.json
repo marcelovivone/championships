@@ -1,0 +1,70 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-09T14:20:00.038Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:20 16 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 42,
+    "label": "2025/2026",
+    "leagueId": 52,
+    "sportId": 36,
+    "leagueNames": [
+      "Italian Serie A"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 308,
+    "externalLeagueCode": "eng.1",
+    "parsedLeagueName": "English Premier League",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-09T14:20:02.174Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "single-candidate"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 2,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 379,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 350,
+    "pendingMatches": 30,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 12286,
+      "date": "2026-05-04T20:45:00.000Z",
+      "roundId": 1230,
+      "roundNumber": 35,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Roma",
+      "awayClub": "Fiorentina",
+      "score": "4-0"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 35,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 308,
+    "sportId": 36,
+    "leagueId": 52,
+    "seasonId": 42,
+    "seasonPhase": "Regular"
+  }
+}

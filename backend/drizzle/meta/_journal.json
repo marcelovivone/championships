@@ -169,6 +169,20 @@
       "when": 1776390000000,
       "tag": "0023_allow_placeholder_participants_on_matches",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777557871409,
+      "tag": "0024_create_agent_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1777654477000,
+      "tag": "0025_create_season_espn_extraction_configs",
+      "breakpoints": true
     }
   ]
 }

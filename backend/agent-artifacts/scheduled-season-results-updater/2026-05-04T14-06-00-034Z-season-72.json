@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-04T14:06:00.034Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:06 16 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 72,
+    "label": "2025/2026",
+    "leagueId": 54,
+    "sportId": 36,
+    "leagueNames": [
+      "Portuguese Primeira Liga",
+      "Portuguese Liga"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 217,
+    "externalLeagueCode": "por.1",
+    "parsedLeagueName": "Portuguese Primeira Liga",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-04T14:06:12.595Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 8,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 16,
+    "proposedDivisionWrites": 16,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 298,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 306,
+    "finishedMatches": 279,
+    "pendingMatches": 27,
+    "currentPhaseMatchCount": 306,
+    "latestFinishedMatch": {
+      "matchId": 30586,
+      "date": "2026-04-29T20:15:00.000Z",
+      "roundId": 3095,
+      "roundNumber": 26,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Sporting",
+      "awayClub": "Tondela",
+      "score": "2-2"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 26,
+    "rowCount": 18
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 217,
+    "sportId": 36,
+    "leagueId": 54,
+    "seasonId": 72,
+    "seasonPhase": "Regular"
+  }
+}

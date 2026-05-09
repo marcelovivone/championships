@@ -1,0 +1,71 @@
+{
+  "agentKey": "scheduled-season-results-updater",
+  "generatedAt": "2026-05-05T11:55:00.028Z",
+  "triggerType": "schedule",
+  "triggerSource": "cron:55 13 * * *",
+  "mode": "autonomous",
+  "season": {
+    "id": 34,
+    "label": "2025/2026",
+    "leagueId": 48,
+    "sportId": 36,
+    "leagueNames": [
+      "English Premier League",
+      "Premier League"
+    ],
+    "currentPhase": "Regular",
+    "currentPhaseDetail": "Regular"
+  },
+  "transitionalSource": {
+    "id": 251,
+    "externalLeagueCode": "eng.1",
+    "parsedLeagueName": "English Premier League",
+    "origin": "Api-Espn",
+    "fetchedAt": "2026-05-05T11:55:03.613Z",
+    "fetchStatus": "done",
+    "alreadyApplied": false,
+    "matchedBy": "league-name"
+  },
+  "expectedPlan": {
+    "hasChanges": true,
+    "proposedMatchUpdates": 1,
+    "proposedNewMatches": 0,
+    "proposedStandingsWrites": 2,
+    "proposedDivisionWrites": 2,
+    "proposedRoundCreates": 0,
+    "skippedUnchanged": 379,
+    "downstreamRecalculationNeeded": true,
+    "dryRunReason": null,
+    "dryRunError": null
+  },
+  "localSnapshot": {
+    "totalMatches": 380,
+    "finishedMatches": 348,
+    "pendingMatches": 32,
+    "currentPhaseMatchCount": 380,
+    "latestFinishedMatch": {
+      "matchId": 9250,
+      "date": "2026-05-04T15:00:00.000Z",
+      "roundId": 926,
+      "roundNumber": 35,
+      "seasonPhase": "Regular",
+      "seasonPhaseDetail": "Regular",
+      "homeClub": "Chelsea",
+      "awayClub": "Nottingham Forest",
+      "score": "1-3"
+    }
+  },
+  "standingsSnapshot": {
+    "basis": "round",
+    "reference": 35,
+    "rowCount": 20
+  },
+  "executionRequest": {
+    "executor": "scheduled-season-results-updater.apply-season-plan",
+    "transitionalId": 251,
+    "sportId": 36,
+    "leagueId": 48,
+    "seasonId": 34,
+    "seasonPhase": "Regular"
+  }
+}

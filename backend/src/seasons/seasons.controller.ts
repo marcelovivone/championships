@@ -17,6 +17,37 @@ import { SeasonsService } from './seasons.service';
 export class SeasonsController {
   constructor(private readonly seasonsService: SeasonsService) {}
 
+  @Get('current-espn-extraction')
+  async findCurrentEspnExtractionSettings() {
+    return this.seasonsService.findCurrentEspnExtractionSettings();
+  }
+
+  @Put('current-espn-extraction')
+  async saveCurrentEspnExtractionSettings(
+    @Body()
+    body: {
+      header?: {
+        startDate?: string | null;
+        endDate?: string | null;
+      };
+      rows?: Array<{
+        seasonId: number;
+        externalLeagueCode?: string;
+        startDate?: string;
+        endDate?: string;
+        sameYears?: boolean;
+        hasPostseason?: boolean;
+        scheduleType?: string;
+        hasGroups?: boolean;
+        numberOfGroups?: number;
+        hasDivisions?: boolean;
+        runInBackground?: boolean;
+      }>;
+    },
+  ) {
+    return this.seasonsService.saveCurrentEspnExtractionSettings(body);
+  }
+
   @Get()
   async findAll(
     @Query('page') page?: string,

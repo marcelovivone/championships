@@ -1,0 +1,1 @@
+export { default } from '../../seasons/current-espn-extraction/page';

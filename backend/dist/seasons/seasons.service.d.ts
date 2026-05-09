@@ -1,6 +1,36 @@
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
 import { CreateSeasonDto, UpdateSeasonDto } from '../common/dtos';
+export type CurrentSeasonEspnExtractionSettingsRow = {
+    seasonId: number;
+    sportId: number;
+    leagueId: number;
+    sportName: string | null;
+    leagueName: string;
+    seasonLabel: string;
+    seasonStatus: string;
+    isSeasonDefault: boolean;
+    isLeagueDefault: boolean;
+    externalLeagueCode: string;
+    startDate: string;
+    endDate: string;
+    sameYears: boolean;
+    hasPostseason: boolean;
+    scheduleType: 'Round' | 'Date';
+    hasGroups: boolean;
+    numberOfGroups: number;
+    hasDivisions: boolean;
+    runInBackground: boolean;
+    inferClubs: boolean;
+    isConfigured: boolean;
+};
+export type CurrentSeasonEspnExtractionSettingsResponse = {
+    header: {
+        startDate: string | null;
+        endDate: string | null;
+    };
+    rows: CurrentSeasonEspnExtractionSettingsRow[];
+};
 export declare class SeasonsService {
     private db;
     constructor(db: NodePgDatabase<typeof schema>);
@@ -50,6 +80,7 @@ export declare class SeasonsService {
         };
         league: {
             id: number;
+            originalName: string;
             secondaryName: string;
         };
     }[]>;
@@ -140,6 +171,17 @@ export declare class SeasonsService {
         flgEspnApiPartialScores: boolean;
         createdAt: Date;
     }[]>;
+    findCurrentEspnExtractionSettings(): Promise<CurrentSeasonEspnExtractionSettingsResponse>;
+    getEspnExtractionSettingsBySeasonIds(seasonIds: number[]): Promise<Record<number, CurrentSeasonEspnExtractionSettingsRow>>;
+    saveCurrentEspnExtractionSettings(payload: {
+        header?: {
+            startDate?: string | null;
+            endDate?: string | null;
+        };
+        rows?: Array<Partial<CurrentSeasonEspnExtractionSettingsRow> & {
+            seasonId: number;
+        }>;
+    }): Promise<CurrentSeasonEspnExtractionSettingsResponse>;
     findDefaultSeasonByLeague(leagueId: number, excludeSeasonId?: number): Promise<{
         id: number;
         sportId: number;
@@ -215,4 +257,26 @@ export declare class SeasonsService {
         currentPhase: "Regular" | "Play-ins" | "Playoffs";
         currentPhaseDetail: "Regular" | "Play-ins" | "Round of 64" | "Round of 32" | "Round of 16" | "Quarterfinals" | "Semifinals" | "Finals";
     }>;
+    private querySeasonsWithEspnExtractionSettings;
+    private isMissingSeasonEspnExtractionConfigsTableError;
+    private mapEspnExtractionSettingsRow;
+    private normalizeEspnExtractionSettingsInput;
+    private buildEspnSportRuleDefaults;
+    private buildDefaultStartDate;
+    private buildDefaultEndDate;
+    private normalizeDateValue;
+    private computeSameYears;
+    private normalizeScheduleType;
+    private resolveSeasonStatus;
+    private capitalizeStatus;
+    private resolveLeagueName;
+    private buildSeasonLabel;
+    private deriveHeaderDefaults;
+    private inferMissingEspnLeagueCodes;
+    private loadInferredEspnLeagueCodeCandidates;
+    private findInferredEspnLeagueCode;
+    private collectEspnLeagueMatchNames;
+    private matchesEspnLeagueName;
+    private hasAllLeagueTokens;
+    private normalizeLeagueName;
 }

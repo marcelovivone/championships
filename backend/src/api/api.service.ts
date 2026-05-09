@@ -354,87 +354,100 @@ export class ApiService {
 
                 if (usesDayByDay) {
                     // Day-by-day fetch takes 60-120 seconds for a full NBA season.
-                    // Insert a placeholder row immediately so the HTTP response is not
-                    // blocked, then continue the fetch in the background and patch the row.
+                    // Honor runInBackground=false so callers such as the updater agent can
+                    // fetch, inspect, and apply within the same execution.
                     const resolvedStart = startDate ?? `${season}-08-01`;
                     const resolvedEnd = endDate ?? `${Number(season) + 1}-05-31`;
+                    const shouldRunInBackground = runInBackground !== false;
 
-                    await pool.query(`
-                        CREATE TABLE IF NOT EXISTS api_transitional (
-                        id SERIAL PRIMARY KEY,
-                        league VARCHAR(255),
-                        season INTEGER,
-                        sport INTEGER,
-                        origin TEXT,
-                        source_url TEXT,
-                        payload JSONB,
-                        status BOOLEAN DEFAULT false,
-                        fetched_at TIMESTAMPTZ DEFAULT now(),
-                        season_status VARCHAR(20) DEFAULT 'Finished'::character varying,
-                        flg_season_default BOOLEAN DEFAULT false,
-                        flg_season_same_years BOOLEAN DEFAULT false,
-                        league_schedule_type TEXT DEFAULT 'Round',
-                        flg_League_default BOOLEAN DEFAULT false,
-                        flg_has_divisions BOOLEAN DEFAULT true,
-                        flg_run_in_background BOOLEAN DEFAULT true
+                    if (shouldRunInBackground) {
+                        await pool.query(`
+                            CREATE TABLE IF NOT EXISTS api_transitional (
+                            id SERIAL PRIMARY KEY,
+                            league VARCHAR(255),
+                            season INTEGER,
+                            sport INTEGER,
+                            origin TEXT,
+                            source_url TEXT,
+                            payload JSONB,
+                            status BOOLEAN DEFAULT false,
+                            fetched_at TIMESTAMPTZ DEFAULT now(),
+                            season_status VARCHAR(20) DEFAULT 'Finished'::character varying,
+                            flg_season_default BOOLEAN DEFAULT false,
+                            flg_season_same_years BOOLEAN DEFAULT false,
+                            league_schedule_type TEXT DEFAULT 'Round',
+                            flg_League_default BOOLEAN DEFAULT false,
+                            flg_has_divisions BOOLEAN DEFAULT true,
+                            flg_run_in_background BOOLEAN DEFAULT true
+                            );
+                        `);
+                        await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS fetch_status TEXT DEFAULT 'done'`);
+                        await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
+                        await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
+                        await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
+                        await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
+
+                        const placeholderRes = await pool.query(
+                            `INSERT INTO api_transitional 
+                                 (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
+                                  flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
+                                  flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status,
+                                  flg_has_postseason)
+                             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                             RETURNING id, fetched_at`,
+                            [league || null, season || null, sport || null, url.toString(), '{}', effectiveOrigin,
+                             seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, 
+                             hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching', 
+                             hasPostseason ?? false],
                         );
-                    `);
-                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS fetch_status TEXT DEFAULT 'done'`);
-                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_infer_clubs BOOLEAN DEFAULT false NOT NULL`);
-                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_groups BOOLEAN DEFAULT false NOT NULL`);
-                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS number_of_groups INTEGER DEFAULT 0 NOT NULL`);
-                    await pool.query(`ALTER TABLE api_transitional ADD COLUMN IF NOT EXISTS flg_has_postseason BOOLEAN DEFAULT false NOT NULL`);
 
-                    const placeholderRes = await pool.query(
-                        `INSERT INTO api_transitional 
-                             (league, season, sport, source_url, payload, origin, season_status, flg_season_default, 
-                              flg_season_same_years, league_schedule_type, flg_League_default, flg_has_divisions, 
-                              flg_has_groups, number_of_groups, flg_run_in_background, flg_infer_clubs, fetch_status,
-                              flg_has_postseason)
-                         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-                         RETURNING id, fetched_at`,
-                        [league || null, season || null, sport || null, url.toString(), '{}', effectiveOrigin,
-                         seasonStatus, isSeasonDefault, sameYears, scheduleType, isLeagueDefault, hasDivisions, 
-                         hasGroups ?? false, numberOfGroups ?? 0, runInBackground, inferClubs ?? true, 'fetching', 
-                         hasPostseason ?? false],
-                    );
+                        const bgId: number = placeholderRes.rows[0].id;
+                        const bgFetchedAt = placeholderRes.rows[0].fetched_at;
 
-                    const bgId: number = placeholderRes.rows[0].id;
-                    const bgFetchedAt = placeholderRes.rows[0].fetched_at;
-
-                    // Fire background job — uses its own pool so the HTTP response can return now.
-                    const self = this;
-                    setImmediate(async () => {
-                        const bgPool = new Pool({ connectionString: process.env.DATABASE_URL! });
-                        try {
-                            const dayByDayResult = await self.fetchEspnSeasonByDay(
-                                sportName!,
-                                league,
-                                resolvedStart,
-                                resolvedEnd,
-                                300,
-                            );
-                            await bgPool.query(
-                                `UPDATE api_transitional SET payload = $1, fetch_status = 'done' WHERE id = $2`,
-                                [dayByDayResult.payload, bgId],
-                            );
-                            self.logger.log(`[ESPN day-by-day] Background fetch done for id=${bgId}, events=${dayByDayResult.totalEvents}`);
-                        } catch (e) {
-                            self.logger.error(`[ESPN day-by-day] Background fetch failed for id=${bgId}: ${String(e)}`);
+                        // Fire background job — uses its own pool so the HTTP response can return now.
+                        const self = this;
+                        setImmediate(async () => {
+                            const bgPool = new Pool({ connectionString: process.env.DATABASE_URL! });
                             try {
-                                await bgPool.query(
-                                    `UPDATE api_transitional SET fetch_status = 'error' WHERE id = $1`,
-                                    [bgId],
+                                const dayByDayResult = await self.fetchEspnSeasonByDay(
+                                    sportName!,
+                                    league,
+                                    resolvedStart,
+                                    resolvedEnd,
+                                    300,
                                 );
-                            } catch (_) {}
-                        } finally {
-                            await bgPool.end();
-                        }
-                    });
+                                await bgPool.query(
+                                    `UPDATE api_transitional SET payload = $1, fetch_status = 'done' WHERE id = $2`,
+                                    [dayByDayResult.payload, bgId],
+                                );
+                                self.logger.log(`[ESPN day-by-day] Background fetch done for id=${bgId}, events=${dayByDayResult.totalEvents}`);
+                            } catch (e) {
+                                self.logger.error(`[ESPN day-by-day] Background fetch failed for id=${bgId}: ${String(e)}`);
+                                try {
+                                    await bgPool.query(
+                                        `UPDATE api_transitional SET fetch_status = 'error' WHERE id = $1`,
+                                        [bgId],
+                                    );
+                                } catch (_) {}
+                            } finally {
+                                await bgPool.end();
+                            }
+                        });
 
-                    // Return immediately — the finally block will close the sync pool.
-                    // The background job uses its own bgPool, so there is no conflict.
-                    return { id: bgId, fetched_at: bgFetchedAt, background: true, startDate: resolvedStart, endDate: resolvedEnd };
+                        // Return immediately — the finally block will close the sync pool.
+                        // The background job uses its own bgPool, so there is no conflict.
+                        return { id: bgId, fetched_at: bgFetchedAt, background: true, startDate: resolvedStart, endDate: resolvedEnd };
+                    }
+
+                    const dayByDayResult = await this.fetchEspnSeasonByDay(
+                        sportName!,
+                        league,
+                        resolvedStart,
+                        resolvedEnd,
+                        300,
+                    );
+                    json = dayByDayResult.payload;
+                    this.logger.log(`[ESPN day-by-day] Synchronous fetch done for ${sportName}/${league}, events=${dayByDayResult.totalEvents}`);
                 } else {
                     // Soccer: single request with date-range
                     if (startDate && endDate) {
@@ -3910,11 +3923,28 @@ export class ApiService {
         const statusShort = row['fixture.status.short'] ?? null;
         const statusCompleted = row['fixture.status.completed'];
 
+        // DEBUG: Log status values for basketball to diagnose parsing issue
+        const originId = row['origin_api_id'];
+        if (originId && String(originId).startsWith('4018694')) {
+            console.log(`[DEBUG isParsedFixtureFinished] event=${originId} statusShort="${statusShort}" statusCompleted=${statusCompleted} goals.home=${row['goals.home']} goals.away=${row['goals.away']}`);
+        }
+
         if (statusCompleted === true || statusCompleted === 'true') {
             return true;
         }
 
-        return statusShort === 'FT';
+        // Check for various "finished" status values:
+        // - "FT" = Full Time (football/soccer)
+        // - "Final" = ESPN basketball final status
+        // - Other ESPN final-state values
+        if (typeof statusShort === 'string') {
+            const normalizedStatus = statusShort.trim().toLowerCase();
+            if (normalizedStatus === 'ft' || normalizedStatus === 'final' || normalizedStatus === 'f') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Lightweight ESPN event extraction that produces the same row format as
@@ -4610,7 +4640,7 @@ export class ApiService {
                         }
 
                         const _existingRes = await client.query(
-                            `SELECT id, status, round_id, home_club_id, away_club_id FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
+                            `SELECT id, status, round_id, home_club_id, away_club_id, home_score, away_score FROM matches WHERE origin_api_id = $1 AND league_id = $2 AND season_id = $3 LIMIT 1`,
                             [_originApiId, leagueId, seasonId],
                         );
 
@@ -4646,15 +4676,9 @@ export class ApiService {
                                 // Continue below into the standard entity-resolution + upsert flow.
                             } else {
 
-                            if (_existing.status === 'Finished') {
-                                skippedUnchanged += 1;
-                                applied += 1;
-                                continue;
-                            }
-
                             const _dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                             const _dateVal = formatTimestampForDb(_dateRaw);
-                            const _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                            let _status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                             const _phaseInfo = transitionalOrigin === 'Api-Espn'
                                 ? {
                                     seasonPhase: String(r['season.phase'] ?? 'Regular'),
@@ -4663,11 +4687,34 @@ export class ApiService {
                                 : this.inferApiFootballSeasonPhase(r);
                             // Track postseason phase for current-phase inference
                             trackPostseasonPhase(_phaseInfo.seasonPhase, _phaseInfo.seasonPhaseDetail, _status);
-                            const _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
-                            const _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+                            let _homeScore = _status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+                            let _awayScore = _status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+
+                            // Fallback: if both scores exist and are valid numbers, treat as finished
+                            // even if status parsing failed (handles ESPN events with unknown status strings).
+                            if (_status !== 'Finished' && r['goals.home'] !== undefined && r['goals.away'] !== undefined) {
+                                const homeScoreVal = Number(r['goals.home']);
+                                const awayScoreVal = Number(r['goals.away']);
+                                if (!Number.isNaN(homeScoreVal) && !Number.isNaN(awayScoreVal) && homeScoreVal >= 0 && awayScoreVal >= 0) {
+                                    _status = 'Finished';
+                                    _homeScore = homeScoreVal;
+                                    _awayScore = awayScoreVal;
+                                }
+                            }
 
                             if (_status !== 'Finished' || _homeScore == null || _awayScore == null) {
                                 // Not yet finished in this payload — nothing to do
+                                skippedUnchanged += 1;
+                                applied += 1;
+                                continue;
+                            }
+
+                            const _finishedScoreChanged =
+                                _existing.status !== 'Finished'
+                                || Number(_existing.home_score ?? Number.NaN) !== _homeScore
+                                || Number(_existing.away_score ?? Number.NaN) !== _awayScore;
+
+                            if (!_finishedScoreChanged) {
                                 skippedUnchanged += 1;
                                 applied += 1;
                                 continue;
@@ -5130,7 +5177,7 @@ export class ApiService {
                     // Prepare match insert
                     const dateRaw = r['fixture.date'] ?? r['date'] ?? null;
                     const dateVal = formatTimestampForDb(dateRaw);
-                    const status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
+                    let status = this.isParsedFixtureFinished(r) ? 'Finished' : 'Scheduled';
                     const phaseInfo = transitionalOrigin === 'Api-Espn'
                         ? {
                             seasonPhase: String(r['season.phase'] ?? 'Regular'),
@@ -5139,8 +5186,21 @@ export class ApiService {
                         : this.inferApiFootballSeasonPhase(r);
                     // Track postseason phase for current-phase inference
                     trackPostseasonPhase(phaseInfo.seasonPhase, phaseInfo.seasonPhaseDetail, status);
-                    const homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
-                    const awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+                    let homeScore = status === 'Finished' && r['goals.home'] !== undefined ? Number(r['goals.home']) : null;
+                    let awayScore = status === 'Finished' && r['goals.away'] !== undefined ? Number(r['goals.away']) : null;
+
+                    // Fallback: if both scores exist and are valid numbers, treat as finished
+                    // even if status parsing failed (handles ESPN events with unknown status strings).
+                    if (status !== 'Finished' && r['goals.home'] !== undefined && r['goals.away'] !== undefined) {
+                        const homeScoreVal = Number(r['goals.home']);
+                        const awayScoreVal = Number(r['goals.away']);
+                        if (!Number.isNaN(homeScoreVal) && !Number.isNaN(awayScoreVal) && homeScoreVal >= 0 && awayScoreVal >= 0) {
+                            status = 'Finished';
+                            homeScore = homeScoreVal;
+                            awayScore = awayScoreVal;
+                        }
+                    }
+
                     // Resolve the origin API identifier from whichever key the parser emitted:
                     //   ESPN rows  -> 'origin_api_id' (new) or legacy 'espn_event_id'
                     //   Api-Football rows -> 'fixture.id' (produced by the generic flattener)
@@ -5764,6 +5824,7 @@ export class ApiService {
                 await client.query('COMMIT');
                 await this.deleteRoundReview(id);
                 await this.deleteEntityReview(id);
+                await client.query(`UPDATE api_transitional SET status = true WHERE id = $1`, [id]);
             }
 
             const result: any = {
